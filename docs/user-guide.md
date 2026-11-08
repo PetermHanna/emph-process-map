@@ -2,9 +2,11 @@
 
 Open the app **EMPH Process Map** and choose **Process map**. The navigation rail on the left has seven pages.
 
-## Overview
+## Our processes
 
-Totals at the top: business processes in scope, how many are confirmed, active requirements, gaps, confirmed flows and answered configuration decisions. Below, one card per end-to-end process with its progress. Click a card to open it under Processes.
+The main page. Totals at the top: business processes in scope, how many are confirmed, active requirements, gaps, confirmed flows and answered decisions.
+
+Below, each end-to-end process in scope is a section with its progress (confirmed, on target applications). Each process area is a row with its icon, and its business processes follow as numbered cards: application today → target, disposition, gaps, requirements, and a flow icon when there's a reference flow or our own. Click a card to open the process. End-to-end processes not in scope are listed at the bottom.
 
 ## Processes
 

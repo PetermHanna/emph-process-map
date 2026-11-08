@@ -14,6 +14,7 @@ const routes = {
   "/bundle.js": path.join(root, "pcf", "out", "controls", "ProcessMap", "bundle.js"),
   "/sample-data.js": path.join(root, "schema", "sample-data.js"),
   "/catalog.json": path.join(root, "schema", "catalog.json"),
+  "/flows.json": path.join(root, "schema", "flows.json"),
 };
 const types = { ".html": "text/html", ".js": "text/javascript", ".json": "application/json" };
 http.createServer((req, res) => {

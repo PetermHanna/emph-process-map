@@ -37,11 +37,12 @@ By hand instead: open the Workspace main form, select **Host column**, Component
    python map/schema/import-catalog.py "<path to the catalog .xlsx>"
    ```
 
-   This writes `map/schema/catalog.json` and `map/schema/catalog-load.js`: 16 end-to-end processes, about 100 process areas and about 700 business processes (scenarios, test cases and deprecated rows are left out). Both files hold Microsoft's text and stay out of git.
+   This writes `map/schema/catalog.json` and `map/schema/catalog-load.js` (which also carries Microsoft's reference flows from `map/schema/flows.json`): 16 end-to-end processes, about 100 process areas and about 700 business processes (scenarios, test cases and deprecated rows are left out). Both files hold Microsoft's text and stay out of git.
 3. On the same WhoAmI page and console:
    1. Paste all of `map/schema/catalog-load.js`.
    2. Choose what to load: `window.EMPH_SAMPLE_NAME = 'catalog'` (the catalog only, nothing in scope), `'realestate'` (the default) or `'engineering'`.
-   3. Paste all of [`map/schema/sample-data.js`](../map/schema/sample-data.js) and press Enter. It takes a few minutes; `window.__emphSample` shows progress.
+   3. Optional: `window.EMPH_FLOWS_ALL = true` loads Microsoft's reference flow for every catalog process (634 flows, about 6,500 activities; this takes a while). Without it, only the processes in scope get their flow.
+   4. Paste all of [`map/schema/sample-data.js`](../map/schema/sample-data.js) and press Enter. It takes a few minutes; `window.__emphSample` shows progress.
 
 The demos put their own processes in scope on top of the real catalog, with owners, applications, a reference flow, configuration decisions and requirements. Everything else stays out of scope. Load once per environment: it adds records each time it runs.
 

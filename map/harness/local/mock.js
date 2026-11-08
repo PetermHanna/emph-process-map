@@ -39,7 +39,8 @@ window.__boot = async () => {
   await add("emph_workspace", "", { emph_name: "EMPH Process Map", emph_organisation: S.organisation });
   const res = await fetch("catalog.json");
   if (!res.ok) { document.getElementById("host").innerText = "No catalog.json. Run: python map/schema/import-catalog.py <Microsoft catalog .xlsx>"; return; }
-  const procs = await window.EMPH_LOAD(await res.json(), S, add, s => console.log("[EMPH]", s));
+  const fr = await fetch("flows.json");
+  const procs = await window.EMPH_LOAD(await res.json(), S, add, s => console.log("[EMPH]", s), fr.ok ? await fr.json() : null, true);
   window.__procs = procs;
   window.__writes.length = 0;
   const ctl = new window.__ctor();

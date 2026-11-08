@@ -63,7 +63,9 @@ def main(src, out):
     open(out, "w", encoding="utf8").write(text)
     paste = os.path.join(os.path.dirname(out), "catalog-load.js")
     head = "// Paste into the console before sample-data.js. Made by import-catalog.py from " + data["source"]
-    open(paste, "w", encoding="utf8").write(head + "\nwindow.EMPH_CATALOG = " + text + ";\n'catalog ready';\n")
+    flows = os.path.join(os.path.dirname(out), "flows.json")
+    extra = ("\n// Microsoft reference flows, CC BY 4.0: https://github.com/microsoft/dynamics365patternspractices\nwindow.EMPH_FLOWS = " + open(flows, encoding="utf8").read() + ";") if os.path.exists(flows) else ""
+    open(paste, "w", encoding="utf8").write(head + "\nwindow.EMPH_CATALOG = " + text + ";" + extra + "\n'catalog ready';\n")
     print("written", out, "and", paste, counts)
 
 if __name__ == "__main__":

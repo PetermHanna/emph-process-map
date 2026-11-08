@@ -1,10 +1,11 @@
 // EMPH Process Map: loads the Microsoft Business Process Catalog, optionally with a demo organisation on top.
 //
 // 1. Convert Microsoft's catalog workbook once: python map/schema/import-catalog.py "<catalog .xlsx>"
-//    This writes map/schema/catalog.json and map/schema/catalog-load.js.
+//    This writes map/schema/catalog.json and map/schema/catalog-load.js, which also carries the reference flows from flows.json.
 // 2. On the /api/data/v9.2/WhoAmI page of your environment, in the console:
 //    a. paste catalog-load.js (defines window.EMPH_CATALOG);
-//    b. pick what to load: window.EMPH_SAMPLE_NAME = 'realestate' (default), 'engineering' or 'catalog' (catalog only, nothing in scope);
+//    b. pick what to load: window.EMPH_SAMPLE_NAME = 'realestate' (default), 'engineering' or 'catalog' (catalog only, nothing in scope).
+//       Microsoft's reference flows load for the processes in scope; window.EMPH_FLOWS_ALL = true loads all of them (slower);
 //    c. paste this file.
 // Run it once per environment: it adds records each time. Progress goes to window.__emphSample.
 //
@@ -48,16 +49,20 @@ window.EMPH_SAMPLES.realestate = {
   ],
   // our own processes, not in the catalog: [process area ID, name, owner, application today, target application, disposition]
   own: [['93.40', 'Index rent to inflation', 'Accountant', 'Spreadsheets', null, 3]],
-  // a reference flow: [code, name, shape (0 start, 1 activity, 2 decision, 3 end), lane, [[to, label]]]
-  flow: { process: '95.25.100', name: 'Receive service requests: unit maintenance reference', activities: [
-    ['A10', 'Tenant reports an issue', 0, 'Property manager', [['A20', '']]],
-    ['A20', 'Create the work order for the unit', 1, 'Property manager', [['A30', '']]],
-    ['A30', 'Urgent?', 2, 'Maintenance planner', [['A40', 'Yes'], ['A50', 'No']]],
-    ['A40', 'Dispatch the nearest technician now', 1, 'Maintenance planner', [['A60', '']]],
-    ['A50', 'Book a visit with the tenant', 1, 'Maintenance planner', [['A60', '']]],
-    ['A60', 'Do the work and record time and parts', 1, 'Technician', [['A70', '']]],
-    ['A70', 'Post the cost to the unit maintenance project', 1, 'Accountant', [['A90', '']]],
-    ['A90', 'Work order closed', 3, 'Accountant', []],
+  // our process, adapted from Microsoft's reference flow for the same catalog process:
+  // [code, name, shape (0 start, 1 activity, 2 decision, 3 end), lane, [[to, label]], change (0 same, 1 added, 2 changed, 3 dropped), rationale]
+  ours: { process: '95.25.100', name: 'Receive service requests: our process', activities: [
+    ['P100', 'Tenant reports an issue', 0, 'Property manager', [['P200', '']], 2, 'Tenants report issues themselves, not through a coordinator.'],
+    ['P200', 'Receive the request from the tenant portal', 1, 'Property manager', [['P300', '']], 2, 'Requests arrive through the tenant portal.'],
+    ['P300', 'Validate Request Details', 1, 'Service Coordinator', [['P400', '']], 0, ''],
+    ['P400', 'Create the work order for the unit', 1, 'Service Coordinator', [['P550', '']], 2, 'Each request becomes a Field Service work order on the unit.'],
+    ['P500', 'Confirm Request Entry', 1, 'Service Coordinator', [['P600', '']], 3, 'The work order replaces a separate confirmation step.'],
+    ['P550', 'Urgent?', 2, 'Maintenance planner', [['P560', 'Yes'], ['P600', 'No']], 1, 'Leaks and lockouts need a technician the same day.'],
+    ['P560', 'Dispatch the nearest technician now', 1, 'Maintenance planner', [['P700', '']], 1, 'Same-day dispatch for urgent repairs.'],
+    ['P600', 'Approved?', 2, 'Service Coordinator', [['P700', 'Yes'], ['P800', 'No']], 0, ''],
+    ['P700', 'Confirm the visit with the tenant', 1, 'Service Coordinator', [['P900', '']], 2, 'The tenant is told when the technician comes.'],
+    ['P800', 'Revise Request Details', 1, 'Service Coordinator', [['P400', '']], 0, ''],
+    ['P900', 'End', 3, 'Service Coordinator', [], 0, ''],
   ] },
   // [question, answer type (0 choice, 2 yes or no, 3 number), choices, catalog ID]
   decisions: [
@@ -93,14 +98,6 @@ window.EMPH_SAMPLES.engineering = {
     ['75.40.030', 'Buyer', 'Legacy ERP', 'Dynamics 365 Finance', 1],
   ],
   own: [],
-  flow: { process: '80.50.050', name: 'Invoice project milestones: reference', activities: [
-    ['A10', 'Start', 0, 'Project manager', [['A20', '']]],
-    ['A20', 'Review unbilled time and expenses', 1, 'Project manager', [['A30', '']]],
-    ['A30', 'Ready to invoice?', 2, 'Project manager', [['A40', 'Yes'], ['A20', 'No']]],
-    ['A40', 'Create the invoice proposal', 1, 'Accountant', [['A50', '']]],
-    ['A50', 'Post the invoice', 1, 'Accountant', [['A90', '']]],
-    ['A90', 'End', 3, 'Accountant', []],
-  ] },
   decisions: [
     ['Which invoicing method do you use for fixed-price projects?', 0, 'Milestones\nProgress billing\nOn completion', '80.50.050'],
     ['Do project managers approve time before it is invoiced?', 2, '', '80.40.050'],
@@ -114,13 +111,14 @@ window.EMPH_SAMPLES.engineering = {
 };
 
 // The catalog alone, everything out of scope.
-window.EMPH_SAMPLES.catalog = { organisation: '', roles: [], apps: [], accents: {}, scope: [], own: [], flow: null, decisions: [], requirements: [] };
+window.EMPH_SAMPLES.catalog = { organisation: '', roles: [], apps: [], accents: {}, scope: [], own: [], decisions: [], requirements: [] };
 
 /**
  * Loads the catalog and a demo through `add(table, setName, data) -> id`, so the same steps run against Dataverse
- * and against the local test page's in-memory data.
+ * and against the local test page's in-memory data. `flows` is flows.json, Microsoft's reference flows by catalog ID,
+ * added for every loaded process (allFlows) or only for the processes in scope.
  */
-window.EMPH_LOAD = async (catalog, S, add, say = () => {}) => {
+window.EMPH_LOAD = async (catalog, S, add, say = () => {}, flows = null, allFlows = true) => {
   const V = n => 582100000 + n, to = (set, id) => `/${set}(${id})`;
   if (!catalog || !catalog.endToEnd) throw new Error('No catalog. Paste catalog-load.js first (made by import-catalog.py).');
   const roles = {}, apps = {}, procs = {};
@@ -157,10 +155,26 @@ window.EMPH_LOAD = async (catalog, S, add, say = () => {}) => {
     }
     say('loaded ' + e.code + ' ' + e.name);
   }
-  if (S.flow && procs[S.flow.process]) {
-    const flow = await add('emph_processflow', 'emph_processflows', { emph_name: S.flow.name, emph_flowtype: V(0), emph_state: V(1), emph_catalogcode: S.flow.process, 'emph_BusinessProcess@odata.bind': to('emph_businessprocesses', procs[S.flow.process]) });
-    for (const [i, [code, name, shape, lane, links]] of S.flow.activities.entries())
-      await add('emph_flowactivity', 'emph_flowactivities', { emph_name: name, emph_activitycode: code, emph_shape: V(shape), emph_lane: lane, emph_links: JSON.stringify(links.map(([t, l]) => ({ to: t, label: l }))), emph_delta: V(0), emph_rank: (i + 1) * 10, 'emph_ProcessFlow@odata.bind': to('emph_processflows', flow) });
+  const addActivities = async (flowId, list) => {
+    for (const [i, [code, name, shape, lane, stage, links, summary, delta, rationale]] of list.entries())
+      await add('emph_flowactivity', 'emph_flowactivities', { emph_name: (name || code).slice(0, 300), emph_activitycode: code, emph_shape: V(shape), emph_lane: lane || null, emph_stage: stage || null,
+        emph_links: JSON.stringify(links), emph_summary: summary || null, emph_delta: V(delta || 0), emph_rationale: rationale || null, emph_rank: (i + 1) * 10, 'emph_ProcessFlow@odata.bind': to('emph_processflows', flowId) });
+  };
+  const refs = {};
+  let flowCount = 0;
+  for (const [code, f] of Object.entries((flows && flows.flows) || {})) {
+    if (!procs[code] || (!allFlows && !chosen.has(code))) continue;
+    refs[code] = await add('emph_processflow', 'emph_processflows', { emph_name: (code + ' ' + f.title).slice(0, 300), emph_flowtype: V(0), emph_state: V(1), emph_catalogcode: code,
+      emph_sourcelink: 'https://github.com/microsoft/dynamics365patternspractices', emph_comments: 'Microsoft reference flow, CC BY 4.0.', 'emph_BusinessProcess@odata.bind': to('emph_businessprocesses', procs[code]) });
+    await addActivities(refs[code], f.activities);
+    if (++flowCount % 50 === 0) say(flowCount + ' reference flows');
+  }
+  if (flowCount) say(flowCount + ' Microsoft reference flows');
+  if (S.ours && procs[S.ours.process]) {
+    const body = { emph_name: S.ours.name, emph_flowtype: V(1), emph_state: V(0), emph_catalogcode: S.ours.process, 'emph_BusinessProcess@odata.bind': to('emph_businessprocesses', procs[S.ours.process]) };
+    if (refs[S.ours.process]) body['emph_ReferenceFlow@odata.bind'] = to('emph_processflows', refs[S.ours.process]);
+    const oursId = await add('emph_processflow', 'emph_processflows', body);
+    await addActivities(oursId, S.ours.activities.map(([code, name, shape, lane, links, delta, rationale]) => [code, name, shape, lane, 'Operate', links.map(([t, l]) => ({ to: t, label: l })), '', delta, rationale]));
   }
   for (const [i, [q, type, choices, code]] of S.decisions.entries()) if (procs[code])
     await add('emph_configdecision', 'emph_configdecisions', { emph_name: q, emph_code: 'CD-' + String(i + 1).padStart(3, '0'), emph_answertype: V(type), emph_choices: choices || null, emph_rank: (i + 1) * 10, emph_state: V(0), 'emph_BusinessProcess@odata.bind': to('emph_businessprocesses', procs[code]) });
@@ -187,7 +201,7 @@ if (!window.EMPH_SAMPLE_ONLY) (async () => {
     if (ws.value.length) await fetch(API + `emph_workspaces(${ws.value[0].emph_workspaceid})`, { method: 'PATCH', headers: H, body: JSON.stringify({ emph_organisation: S.organisation }) });
     else await add('emph_workspace', 'emph_workspaces', { emph_name: 'EMPH Process Map', emph_organisation: S.organisation });
   }
-  await window.EMPH_LOAD(window.EMPH_CATALOG, S, add, say);
+  await window.EMPH_LOAD(window.EMPH_CATALOG, S, add, say, window.EMPH_FLOWS || null, !!window.EMPH_FLOWS_ALL);
   window.__emphSample.done = true;
 })().catch(e => { window.__emphSample.error = String(e); console.error('[EMPH]', e); });
 'started';

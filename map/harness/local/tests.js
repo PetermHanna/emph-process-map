@@ -19,13 +19,15 @@
     [...document.querySelectorAll('[data-emph="process-tree"] div')].find(d => /^80\.50\s*Manage project financials$/.test(d.innerText.trim())).click(); await wait(200);
     (await until(() => [...document.querySelectorAll('[data-emph="process-node"]')].find(d => /Invoice project milestones/.test(d.innerText)))).click();
     await until(() => q('[data-emph="process-panel"]'));
+    const before = rows("emph_processflow").length;
     q('[data-emph="open-flow"]').click();
     (await until(() => q('[data-emph="flow-adapt"]'))).click();
-    await until(() => rows("emph_processflow").length === 2);
+    await until(() => rows("emph_processflow").length === before + 1);
     await until(() => q('[data-emph="flow-confirm"]'));
-    const acts = rows("emph_flowactivity").filter(a => a._emph_processflow_value === rows("emph_processflow")[1].emph_processflowid).length;
+    const ours = rows("emph_processflow")[before];
+    const acts = rows("emph_flowactivity").filter(a => a._emph_processflow_value === ours.emph_processflowid).length;
     q('[data-emph="flow-confirm"]').click(); await wait(500);
-    const state = rows("emph_processflow")[1].emph_state;
+    const state = ours.emph_state;
     return "copied " + acts + " activities, state " + state;
   }
   async function capture() {

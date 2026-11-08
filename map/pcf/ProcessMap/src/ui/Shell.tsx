@@ -22,7 +22,7 @@ export type PageKey = "overview" | "processes" | "requirements" | "workshops" | 
 export interface Nav { go: (page: PageKey, focus?: string | null) => void; focus: string | null }
 
 const PAGES: { key: PageKey; label: string; icon: React.ReactElement; hint: string }[] = [
-  { key: "overview", label: "Overview", icon: <Board20Regular />, hint: "Scope and progress across the end-to-end processes" },
+  { key: "overview", label: "Our processes", icon: <Board20Regular />, hint: "The business processes we run, by end-to-end process and process area" },
   { key: "processes", label: "Processes", icon: <BranchFork20Regular />, hint: "End-to-end processes, process areas and business processes" },
   { key: "requirements", label: "Requirements", icon: <TaskListLtr20Regular />, hint: "What standard doesn't cover, with priority and coverage" },
   { key: "workshops", label: "Workshops", icon: <PeopleTeam20Regular />, hint: "Guided discovery sessions" },

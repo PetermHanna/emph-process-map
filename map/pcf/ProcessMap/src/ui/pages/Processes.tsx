@@ -11,6 +11,7 @@ import { areasOf, processesOf, rolesOf, flowsOf, effectiveScope } from "../../do
 import type { BusinessProcess, ConfigDecision, EndToEnd, ProcessArea, Model } from "../../domain/types";
 import type { Repository } from "../../domain/repository";
 import { FlowStudio } from "../flow/FlowStudio";
+import { areaIcon, endToEndIcon, Tile } from "../icons";
 import { RequirementList, Capture } from "./Requirements";
 
 type Sel = { kind: "e2e" | "area" | "process"; id: string } | null;
@@ -41,7 +42,7 @@ export function Processes({ model, repo, apply, nav }: PageProps & { nav: Nav })
           {model.endToEnds.map(e => (
             <React.Fragment key={e.id}>
               <div className={l.node + (sel?.id === e.id ? " " + l.nodeOn : "")} onClick={() => { pick("e2e", e.id, false); toggle(e.id); }} style={{ fontWeight: 600, opacity: e.inScope ? 1 : 0.5 }}>
-                {chevron(e.id)}<span style={{ width: 8, height: 8, borderRadius: 4, background: e.accent || C.railActive }} /><span className={l.code} style={{ minWidth: 24 }}>{e.code}</span>{e.name}
+                {chevron(e.id)}<Tile icon={endToEndIcon(e.code)} colour={e.inScope && e.accent ? e.accent : "#64748B"} size={20} filled={e.inScope} /><span className={l.code} style={{ minWidth: 24 }}>{e.code}</span>{e.name}
               </div>
               {(open.has(e.id) || f) && areasOf(model, e.id).map(a => {
                 const procs = processesOf(model, a.id).filter(match);
@@ -49,7 +50,7 @@ export function Processes({ model, repo, apply, nav }: PageProps & { nav: Nav })
                 return (
                   <React.Fragment key={a.id}>
                     <div className={l.node + (sel?.id === a.id ? " " + l.nodeOn : "")} style={{ paddingLeft: 22, opacity: a.inScope ? 1 : 0.5 }} onClick={() => { pick("area", a.id, false); toggle(a.id); }}>
-                      {chevron(a.id)}<span className={l.code} style={{ minWidth: 40 }}>{a.code}</span>{a.name}
+                      {chevron(a.id)}<Tile icon={areaIcon(a.name, e.code)} colour={a.inScope && e.inScope && e.accent ? e.accent : "#64748B"} size={20} /><span className={l.code} style={{ minWidth: 40 }}>{a.code}</span>{a.name}
                     </div>
                     {(open.has(a.id) || f) && procs.map(p => (
                       <div key={p.id} data-emph="process-node" className={l.node + (sel?.id === p.id ? " " + l.nodeOn : "")} style={{ paddingLeft: 42, opacity: effectiveScope(model, p) ? 1 : 0.5 }} onClick={() => pick("process", p.id)}>
@@ -81,7 +82,7 @@ function EndToEndPanel({ e, model, repo, apply, onPick }: PageProps & { e: EndTo
   const areas = areasOf(model, e.id);
   return (
     <div className={l.card} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div className={l.row}><Pill text="End-to-end process" tone="brand" /><span className={l.code}>{e.code}</span></div>
+      <div className={l.row}><Tile icon={endToEndIcon(e.code)} colour={e.accent || C.railActive} size={36} filled /><Pill text="End-to-end process" tone="brand" /><span className={l.code}>{e.code}</span></div>
       <div className={l.fields}>
         <Field label="Name"><Edit value={e.name} onSave={v => v.trim() && save({ name: v.trim() })} /></Field>
         <Field label="Catalog ID"><Edit value={e.code} onSave={v => save({ code: v.trim() })} /></Field>
@@ -102,7 +103,7 @@ function AreaPanel({ a, model, repo, apply, onPick }: PageProps & { a: ProcessAr
   const procs = processesOf(model, a.id);
   return (
     <div className={l.card} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div className={l.row}><Pill text="Process area" tone="info" /><span className={l.code}>{a.code}</span></div>
+      <div className={l.row}><Tile icon={areaIcon(a.name, model.endToEnds.find(x => x.id === a.endToEndId)?.code || "")} colour={model.endToEnds.find(x => x.id === a.endToEndId)?.accent || C.railActive} size={36} /><Pill text="Process area" tone="info" /><span className={l.code}>{a.code}</span></div>
       <div className={l.fields}>
         <Field label="Name"><Edit value={a.name} onSave={v => v.trim() && save({ name: v.trim() })} /></Field>
         <Field label="Catalog ID"><Edit value={a.code} onSave={v => save({ code: v.trim() })} /></Field>

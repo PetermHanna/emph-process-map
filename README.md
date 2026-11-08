@@ -12,7 +12,7 @@ You scope end-to-end processes, process areas and business processes, record who
 
 ## Pages
 
-- **Overview**: scope and progress for each end-to-end process.
+- **Our processes** (main page): the business processes in scope as a map. Each end-to-end process is a section, each process area a row of process cards with icons, showing the application today and the target, the disposition, requirements and flows.
 - **Processes**: the catalog tree. For a business process: scope, review state, disposition (retain, transition, retire, gap), owner, applications today and target, roles, configuration decisions, requirements and its flow.
 - **Flow studio**: the Microsoft reference flow next to *our process*, in swimlanes by role. Changes are tracked; confirming asks for a rationale for each one and turns it into a draft requirement.
 - **Requirements**: MoSCoW priority, category, coverage by standard (standard, configuration, extension, gap), size, owner and resolution.
@@ -22,9 +22,11 @@ You scope end-to-end processes, process areas and business processes, record who
 
 ## Microsoft catalog and demos
 
+[map/schema/flows.json](map/schema/flows.json) holds Microsoft's reference process flows for 634 catalog processes, converted by [map/schema/import-flows.py](map/schema/import-flows.py) from [microsoft/dynamics365patternspractices](https://github.com/microsoft/dynamics365patternspractices). Every loaded process gets its reference flow, ready to adapt into *our process*.
+
 [map/schema/import-catalog.py](map/schema/import-catalog.py) converts Microsoft's Business Process Catalog workbook into the three levels the app uses (16 end-to-end processes, about 100 areas, about 700 business processes). [map/schema/sample-data.js](map/schema/sample-data.js) loads it, either alone or with one of two fictional organisations whose processes point at real catalog IDs:
 
-- **Harbourview Properties**: sells and rents units (Prospect to quote, Rent to return, Order to cash) and maintains them with Dynamics 365 Field Service and Project Operations (Service to deliver, Acquire to dispose, Project to profit).
+- **Harbourview Properties**: sells and rents units (Prospect to quote, Rent to return, Order to cash) and maintains them with Dynamics 365 Field Service and Project Operations (Service to deliver, Acquire to dispose, Project to profit). Its unit-maintenance flow is Microsoft's 95.25.100 reference flow adapted with tracked changes.
 - **Lakeside Engineering**: project-based installation work.
 
 ## Getting started
@@ -36,7 +38,7 @@ You scope end-to-end processes, process areas and business processes, record who
 
 ## Attribution
 
-The catalog structure and IDs come from the [Microsoft Business Process Catalog](https://learn.microsoft.com/dynamics365/guidance/business-processes/overview); its text is not stored in this repository, you convert your own download. The demo organisations, flows, decisions and requirements are fictional.
+The catalog structure and IDs come from the [Microsoft Business Process Catalog](https://learn.microsoft.com/dynamics365/guidance/business-processes/overview); its text is not stored in this repository, you convert your own download. The reference flows in `map/schema/flows.json` come from [microsoft/dynamics365patternspractices](https://github.com/microsoft/dynamics365patternspractices) by Microsoft, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), converted to this app's format. The demo organisations, their adapted flow, decisions and requirements are fictional.
 
 ## Author
 

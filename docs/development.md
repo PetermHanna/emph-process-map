@@ -37,6 +37,16 @@ Open http://localhost:8766/main.aspx for the real-estate demo, http://localhost:
 
 Scripted end-to-end checks run from the console: `await __tests.all()`. They click through all pages, adapt and confirm a flow, capture a requirement, freeze a sign-off and start a workshop. `processAndFlow` uses the engineering demo.
 
+## Reference flows
+
+`map/schema/flows.json` is committed. To refresh it, download the `graphics/*process flow*.xlsx` workbooks from [microsoft/dynamics365patternspractices](https://github.com/microsoft/dynamics365patternspractices) into one folder, then:
+
+```powershell
+python map\schema\import-flows.py "<folder>"
+```
+
+Run `import-catalog.py` again afterwards so `catalog-load.js` carries the new flows.
+
 ## Guide test page
 
 ```powershell
