@@ -39,7 +39,7 @@ Scripted end-to-end checks run from the console: `await __tests.all()`. They cli
 
 ## Demo site
 
-[.github/workflows/pages.yml](../.github/workflows/pages.yml) publishes the local page to GitHub Pages on every push to `main` that touches it: [map/harness/site/index.html](../map/harness/site/index.html) (the page with a bar to switch demos), `map/harness/local/mock.js`, the committed bundle in `map/sol/Controls/emph_EMPH.ProcessMap/`, `sample-data.js`, `catalog.json` and `flows.json`. The bundle is the committed one, so build and commit before pushing. Pages must be set to **GitHub Actions** once (repository Settings > Pages > Source).
+[.github/workflows/pages.yml](../.github/workflows/pages.yml) publishes the local page to the `gh-pages` branch on every push to `main` that touches it: [map/harness/site/index.html](../map/harness/site/index.html) (the page with a bar to switch demos), `map/harness/local/mock.js`, the committed bundle in `map/sol/Controls/emph_EMPH.ProcessMap/`, `sample-data.js`, `catalog.json` and `flows.json`. The bundle is the committed one, so build and commit before pushing. It pushes the site to the `gh-pages` branch, which Pages serves (Settings > Pages > Source: Deploy from a branch, `gh-pages`, root).
 
 ## Reference flows
 

@@ -46,7 +46,7 @@ See README.md and docs/ (install, user guide, architecture, development).
   in Peter's Downloads). In the console: `await __tests.all()` runs 7 end-to-end checks (pages, mainMap, processAndFlow, guide, capture, signOff, workshop).
 - Guide test page: `node guide\test\serve.mjs` → http://localhost:8767/main.aspx?f=band | busy | list; `__g.reset()`, reload, `await __g.run()`; `await __g.launch()`.
 - Demo site: `.github/workflows/pages.yml` copies map/harness/site/index.html, local/mock.js, the committed bundle in
-  map/sol/Controls, sample-data.js, catalog.json and flows.json to Pages on push to main. Build and commit the bundle first.
+  map/sol/Controls, sample-data.js, catalog.json and flows.json to the gh-pages branch (served by Pages) on push to main. Build and commit the bundle first.
 - Restart the local server after changing serve.mjs routes. A hard reload picks up a new bundle.
 - Shell heredocs with mixed quotes fail here: write Python edit scripts to a file and run them.
 
