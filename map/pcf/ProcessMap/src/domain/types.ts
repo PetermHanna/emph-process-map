@@ -3,10 +3,10 @@
 import type { SessionState } from "./session";
 
 export interface Workspace { id: string | null; organisation: string }
-export interface EndToEnd { id: string; code: string; name: string; summary: string; rank: number; inScope: boolean; accent: string }
-export interface ProcessArea { id: string; endToEndId: string; code: string; name: string; summary: string; rank: number; inScope: boolean }
+export interface EndToEnd { id: string; code: string; name: string; catalogName: string; summary: string; rank: number; inScope: boolean; accent: string }
+export interface ProcessArea { id: string; endToEndId: string; code: string; name: string; catalogName: string; summary: string; rank: number; inScope: boolean }
 export interface BusinessProcess {
-  id: string; areaId: string; code: string; name: string; summary: string; rank: number; inScope: boolean; origin: number;
+  id: string; areaId: string; code: string; name: string; catalogName: string; summary: string; rank: number; inScope: boolean; origin: number;
   review: number; disposition: number | null; currentAppId: string | null; targetAppId: string | null; ownerRoleId: string | null;
   users: string; comments: string;
 }

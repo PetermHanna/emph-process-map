@@ -31,7 +31,7 @@ export function Processes({ model, repo, apply, nav }: PageProps & { nav: Nav })
   const f = filter.trim().toLowerCase();
   const match = (p: BusinessProcess) => !f || p.name.toLowerCase().includes(f) || p.code.toLowerCase().includes(f);
 
-  const addE2E = (name: string) => apply(m => repo.saveEndToEnd(m, { id: "", code: "", name, summary: "", rank: Math.max(0, ...m.endToEnds.map(x => x.rank)) + 10, inScope: true, accent: "#0D9488" }, {}));
+  const addE2E = (name: string) => apply(m => repo.saveEndToEnd(m, { id: "", code: "", name, catalogName: "", summary: "", rank: Math.max(0, ...m.endToEnds.map(x => x.rank)) + 10, inScope: true, accent: "#0D9488" }, {}));
   const chevron = (id: string) => (open.has(id) || f ? <ChevronDown16Regular /> : <ChevronRight16Regular />);
 
   return (
@@ -84,7 +84,7 @@ function EndToEndPanel({ e, model, repo, apply, onPick }: PageProps & { e: EndTo
     <div className={l.card} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div className={l.row}><Tile icon={endToEndIcon(e.code)} colour={e.accent || C.railActive} size={36} filled /><Pill text="End-to-end process" tone="brand" /><span className={l.code}>{e.code}</span></div>
       <div className={l.fields}>
-        <Field label="Name"><Edit value={e.name} onSave={v => v.trim() && save({ name: v.trim() })} /></Field>
+        <Field label="Name" hint={e.catalogName && e.catalogName !== e.name ? "Microsoft: " + e.catalogName : undefined}><Edit value={e.name} onSave={v => v.trim() && save({ name: v.trim() })} /></Field>
         <Field label="Catalog ID"><Edit value={e.code} onSave={v => save({ code: v.trim() })} /></Field>
         <Field label="Accent colour"><Edit value={e.accent} onSave={v => save({ accent: v.trim() })} placeholder="#0D9488" /></Field>
         <Field label="In scope"><Switch checked={e.inScope} onChange={(_, d) => save({ inScope: d.checked })} /></Field>
@@ -92,7 +92,7 @@ function EndToEndPanel({ e, model, repo, apply, onPick }: PageProps & { e: EndTo
       <Field label="Summary"><Edit multiline value={e.summary} onSave={v => save({ summary: v })} /></Field>
       <div className={l.section}>Process areas ({areas.length})</div>
       {areas.map(a => <div key={a.id} className={l.node} onClick={() => onPick("area", a.id)}><span className={l.code}>{a.code}</span>{a.name} <span className={l.muted}>· {processesOf(model, a.id).length} business processes</span></div>)}
-      <AddBox placeholder="New process area" onAdd={name => apply(m => repo.saveArea(m, { id: "", endToEndId: e.id, code: "", name, summary: "", rank: Math.max(0, ...areas.map(x => x.rank)) + 10, inScope: true }, {}))} />
+      <AddBox placeholder="New process area" onAdd={name => apply(m => repo.saveArea(m, { id: "", endToEndId: e.id, code: "", name, catalogName: "", summary: "", rank: Math.max(0, ...areas.map(x => x.rank)) + 10, inScope: true }, {}))} />
     </div>
   );
 }
@@ -105,7 +105,7 @@ function AreaPanel({ a, model, repo, apply, onPick }: PageProps & { a: ProcessAr
     <div className={l.card} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div className={l.row}><Tile icon={areaIcon(a.name, model.endToEnds.find(x => x.id === a.endToEndId)?.code || "")} colour={model.endToEnds.find(x => x.id === a.endToEndId)?.accent || C.railActive} size={36} /><Pill text="Process area" tone="info" /><span className={l.code}>{a.code}</span></div>
       <div className={l.fields}>
-        <Field label="Name"><Edit value={a.name} onSave={v => v.trim() && save({ name: v.trim() })} /></Field>
+        <Field label="Name" hint={a.catalogName && a.catalogName !== a.name ? "Microsoft: " + a.catalogName : undefined}><Edit value={a.name} onSave={v => v.trim() && save({ name: v.trim() })} /></Field>
         <Field label="Catalog ID"><Edit value={a.code} onSave={v => save({ code: v.trim() })} /></Field>
         <Field label="In scope"><Switch checked={a.inScope} onChange={(_, d) => save({ inScope: d.checked })} /></Field>
       </div>
@@ -149,6 +149,7 @@ function ProcessPanel({ p, model, repo, apply, onDeleted }: PageProps & { p: Bus
           {p.origin === ORIGIN.own && <Button size="small" appearance="subtle" icon={<Delete16Regular />} onClick={() => { if (window.confirm("Delete “" + p.name + "” and its flows? Requirements stay, marked for review.")) apply(async m => { const n = await repo.deleteOwnProcess(m, p); onDeleted(); return n; }); }}>Delete</Button>}
         </div>
         <Edit value={p.name} onSave={v => v.trim() && save({ name: v.trim() })} />
+        {p.catalogName && p.catalogName !== p.name && <div className={l.muted} style={{ fontSize: 12, marginTop: -6 }}>Microsoft name: {p.catalogName} <Button size="small" appearance="transparent" onClick={() => save({ name: p.catalogName })}>Use Microsoft's name</Button></div>}
         <div className={l.fields}>
           <Field label="In scope"><Switch checked={p.inScope} onChange={(_, d) => save({ inScope: d.checked })} /></Field>
           <Field label="Review"><Choice value={p.review} labels={REVIEW_LABEL} onChange={v => save({ review: v ?? REVIEW.open })} /></Field>

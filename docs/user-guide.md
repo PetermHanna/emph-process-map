@@ -4,9 +4,20 @@ Open the app **EMPH Process Map** and choose **Process map**. The navigation rai
 
 ## Our processes
 
-The main page. Totals at the top: business processes in scope, how many are confirmed, active requirements, gaps, confirmed flows and answered decisions.
+The main page draws our processes the way Microsoft's Business Process Catalog documentation does. Totals at the top: business processes in scope, how many are confirmed, active requirements, gaps, confirmed flows and answered decisions.
 
-Below, each end-to-end process in scope is a section with its progress (confirmed, on target applications). Each process area is a row with its icon, and its business processes follow as numbered cards: application today → target, disposition, gaps, requirements, and a flow icon when there's a reference flow or our own. Click a card to open the process. End-to-end processes not in scope are listed at the bottom.
+Each end-to-end process in scope is a section with its progress (confirmed, on target applications). Inside it:
+
+- its **process areas** run left to right as chevrons with arrows, in catalog order, each with its icon and how many of its processes are in scope;
+- under each area, its **business processes** run top to bottom with arrows, in catalog order. In-scope processes are highlighted and show the target application, the disposition, gaps, requirements and a flow icon; the rest are dashed.
+
+On the map you can:
+
+- **Click a process** to open it.
+- **Tick or untick the box** to put a process in or out of scope. Putting one in also brings its area and end-to-end process into scope.
+- **Rename** with the pencil next to any end-to-end process, area or business process, to use your own wording. Microsoft's name stays underneath, with **use** to go back to it. The catalog ID never changes.
+- Switch on **Only what's in scope** to hide the rest.
+- Open an end-to-end process that isn't in scope from the list at the bottom, to pick its processes.
 
 ## Processes
 

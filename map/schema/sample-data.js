@@ -144,12 +144,12 @@ window.EMPH_LOAD = async (catalog, S, add, say = () => {}, flows = null, allFlow
   };
   for (const e of catalog.endToEnd) {
     const eUsed = e.areas.some(a => a.processes.some(p => chosen.has(p.code)) || ownBy.has(a.code));
-    const eid = await add('emph_endtoendprocess', 'emph_endtoendprocesses', { emph_name: e.name, emph_catalogcode: e.code, emph_rank: Number(e.code), emph_inscope: eUsed, emph_summary: e.summary || null, emph_accent: S.accents[e.code] || '#64748B' });
+    const eid = await add('emph_endtoendprocess', 'emph_endtoendprocesses', { emph_name: e.name, emph_catalogname: e.name, emph_catalogcode: e.code, emph_rank: Number(e.code), emph_inscope: eUsed, emph_summary: e.summary || null, emph_accent: S.accents[e.code] || '#64748B' });
     for (const [ai, a] of e.areas.entries()) {
       const aUsed = a.processes.some(p => chosen.has(p.code)) || ownBy.has(a.code);
-      const aid = await add('emph_processarea', 'emph_processareas', { emph_name: a.name, emph_catalogcode: a.code, emph_rank: (ai + 1) * 10, emph_inscope: aUsed, emph_summary: a.summary || null, 'emph_EndToEndProcess@odata.bind': to('emph_endtoendprocesses', eid) });
+      const aid = await add('emph_processarea', 'emph_processareas', { emph_name: a.name, emph_catalogname: a.name, emph_catalogcode: a.code, emph_rank: (ai + 1) * 10, emph_inscope: aUsed, emph_summary: a.summary || null, 'emph_EndToEndProcess@odata.bind': to('emph_endtoendprocesses', eid) });
       for (const [pi, p] of a.processes.entries())
-        procs[p.code] = await process(aid, { emph_name: p.name, emph_catalogcode: p.code, emph_rank: (pi + 1) * 10, emph_inscope: chosen.has(p.code), emph_origin: V(0), emph_summary: p.summary || null }, chosen.get(p.code));
+        procs[p.code] = await process(aid, { emph_name: p.name, emph_catalogname: p.name, emph_catalogcode: p.code, emph_rank: (pi + 1) * 10, emph_inscope: chosen.has(p.code), emph_origin: V(0), emph_summary: p.summary || null }, chosen.get(p.code));
       for (const [k, [, name, owner, now, target, disposition]] of (ownBy.get(a.code) || []).entries())
         procs[name] = await process(aid, { emph_name: name, emph_catalogcode: 'X' + String(k + 1).padStart(3, '0'), emph_rank: 9000 + k, emph_inscope: true, emph_origin: V(1), emph_summary: 'Our own process.' }, [null, owner, now, target, disposition]);
     }

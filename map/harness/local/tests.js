@@ -52,8 +52,29 @@
     await until(() => q('[data-emph="phases"]'));
     return "workshop " + rows("emph_workshop").length;
   }
+  async function mainMap() {
+    await nav("overview");
+    const sections = document.querySelectorAll('[data-emph="e2e-section"]').length;
+    const columns = document.querySelectorAll('[data-emph="area-column"]').length;
+    // rename the first in-scope process card
+    const card = [...document.querySelectorAll('[data-emph="process-card"]')].find(c => c.querySelector('[data-emph="scope-toggle"] svg') && !c.style.opacity.startsWith("0"));
+    const before = card.querySelector('[data-emph="rename"]').getAttribute("aria-label").replace(/^Rename /, "");
+    card.querySelector('[data-emph="rename"]').click(); await wait(150);
+    const input = card.querySelector("input");
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, "Our own name for it");
+    input.dispatchEvent(new Event("input", { bubbles: true })); await wait(50);
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); await wait(400);
+    const row = rows("emph_businessprocess").find(r => r.emph_name === "Our own name for it");
+    if (!row || row.emph_catalogname !== before) throw new Error("rename did not keep Microsoft's name");
+    // take a process out of scope and back in
+    const toggle = [...document.querySelectorAll('[data-emph="scope-toggle"]')][0];
+    const id = rows("emph_businessprocess").filter(r => r.emph_inscope).length;
+    toggle.click(); await wait(300);
+    const after = rows("emph_businessprocess").filter(r => r.emph_inscope).length;
+    return sections + " sections, " + columns + " area columns, renamed \u201c" + before + "\u201d, in scope " + id + " -> " + after;
+  }
   window.__tests = {
-    pages, processAndFlow, capture, signOff, workshop,
-    async all() { const r = {}; for (const [k, f] of Object.entries({ pages, processAndFlow, capture, signOff, workshop })) { try { r[k] = await f(); } catch (e) { r[k] = "FAIL " + e.message; } } return r; },
+    pages, processAndFlow, capture, signOff, workshop, mainMap,
+    async all() { const r = {}; for (const [k, f] of Object.entries({ pages, mainMap, processAndFlow, capture, signOff, workshop })) { try { r[k] = await f(); } catch (e) { r[k] = "FAIL " + e.message; } } return r; },
   };
 })();

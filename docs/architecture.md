@@ -40,9 +40,9 @@ Choice values start at 582100000, in the order listed.
 | Table | Purpose | Main columns |
 |---|---|---|
 | `emph_workspace` | Hosts the component | Organisation, HostData, Settings |
-| `emph_endtoendprocess` | Catalog level 1, e.g. Order to cash | CatalogCode, Rank, InScope, Summary, Accent |
-| `emph_processarea` | Catalog level 2 | CatalogCode, Rank, InScope, Summary, → EndToEndProcess |
-| `emph_businessprocess` | Catalog level 3, or our own (X001…) | CatalogCode, InScope, Origin (Microsoft catalog, Our own), ReviewState (Not reviewed, Confirmed, Not used), Disposition (Retain, Transition, Retire, Gap), UserCount, Comments, → ProcessArea, → CurrentApplication, → TargetApplication, → ProcessOwner |
+| `emph_endtoendprocess` | Catalog level 1, e.g. Order to cash | CatalogCode, CatalogName (Microsoft's name, kept when renamed), Rank, InScope, Summary, Accent |
+| `emph_processarea` | Catalog level 2 | CatalogCode, CatalogName, Rank, InScope, Summary, → EndToEndProcess |
+| `emph_businessprocess` | Catalog level 3, or our own (X001…) | CatalogCode, CatalogName, InScope, Origin (Microsoft catalog, Our own), ReviewState (Not reviewed, Confirmed, Not used), Disposition (Retain, Transition, Retire, Gap), UserCount, Comments, → ProcessArea, → CurrentApplication, → TargetApplication, → ProcessOwner |
 | `emph_application` | Application in use or planned | Category, Publisher, IsMicrosoft, IsTarget, Status (In use, Planned, Retiring) |
 | `emph_role` | Lane in flows, process owner | Summary, Rank, Headcount |
 | `emph_processrole` | Role involved in a business process | → BusinessProcess, → Role |

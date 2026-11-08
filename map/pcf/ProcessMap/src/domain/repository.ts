@@ -14,9 +14,9 @@ const optional = <T>(p: Promise<T[]>) => p.catch(() => [] as T[]);
 
 const COLS = {
   workspace: "emph_workspaceid,emph_organisation",
-  e2e: "emph_endtoendprocessid,emph_name,emph_catalogcode,emph_summary,emph_rank,emph_inscope,emph_accent",
-  area: "emph_processareaid,emph_name,emph_catalogcode,emph_summary,emph_rank,emph_inscope,_emph_endtoendprocess_value",
-  process: "emph_businessprocessid,emph_name,emph_catalogcode,emph_summary,emph_rank,emph_inscope,emph_origin,emph_reviewstate,emph_disposition,emph_usercount,emph_comments,_emph_processarea_value,_emph_currentapplication_value,_emph_targetapplication_value,_emph_processowner_value",
+  e2e: "emph_endtoendprocessid,emph_name,emph_catalogname,emph_catalogcode,emph_summary,emph_rank,emph_inscope,emph_accent",
+  area: "emph_processareaid,emph_name,emph_catalogname,emph_catalogcode,emph_summary,emph_rank,emph_inscope,_emph_endtoendprocess_value",
+  process: "emph_businessprocessid,emph_name,emph_catalogname,emph_catalogcode,emph_summary,emph_rank,emph_inscope,emph_origin,emph_reviewstate,emph_disposition,emph_usercount,emph_comments,_emph_processarea_value,_emph_currentapplication_value,_emph_targetapplication_value,_emph_processowner_value",
   app: "emph_applicationid,emph_name,emph_category,emph_publisher,emph_ismicrosoft,emph_istarget,emph_status,emph_hosting,emph_summary",
   role: "emph_roleid,emph_name,emph_summary,emph_rank,emph_headcount",
   processRole: "emph_processroleid,_emph_businessprocess_value,_emph_role_value",
@@ -37,8 +37,8 @@ export async function loadModel(g: Gateway): Promise<Model> {
   ]);
   return {
     workspace: { id: id(ws[0]?.emph_workspaceid), organisation: txt(ws[0]?.emph_organisation) },
-    endToEnds: e2e.map(r => ({ id: r.emph_endtoendprocessid, code: txt(r.emph_catalogcode), name: txt(r.emph_name), summary: txt(r.emph_summary), rank: r.emph_rank ?? 0, inScope: r.emph_inscope !== false, accent: txt(r.emph_accent) || "#0D9488" })).sort(byRank),
-    areas: ar.map(r => ({ id: r.emph_processareaid, endToEndId: r._emph_endtoendprocess_value, code: txt(r.emph_catalogcode), name: txt(r.emph_name), summary: txt(r.emph_summary), rank: r.emph_rank ?? 0, inScope: r.emph_inscope !== false })).sort(byRank),
+    endToEnds: e2e.map(r => ({ id: r.emph_endtoendprocessid, code: txt(r.emph_catalogcode), name: txt(r.emph_name), catalogName: txt(r.emph_catalogname), summary: txt(r.emph_summary), rank: r.emph_rank ?? 0, inScope: r.emph_inscope !== false, accent: txt(r.emph_accent) || "#0D9488" })).sort(byRank),
+    areas: ar.map(r => ({ id: r.emph_processareaid, endToEndId: r._emph_endtoendprocess_value, code: txt(r.emph_catalogcode), name: txt(r.emph_name), catalogName: txt(r.emph_catalogname), summary: txt(r.emph_summary), rank: r.emph_rank ?? 0, inScope: r.emph_inscope !== false })).sort(byRank),
     processes: bp.map(processFrom).sort(byRank),
     apps: ap.map(r => ({ id: r.emph_applicationid, name: txt(r.emph_name), category: r.emph_category ?? null, publisher: txt(r.emph_publisher), microsoft: !!r.emph_ismicrosoft, target: !!r.emph_istarget, status: r.emph_status ?? null, hosting: txt(r.emph_hosting), summary: txt(r.emph_summary) }))
       .sort((a, b) => a.name.localeCompare(b.name)),
@@ -55,7 +55,7 @@ export async function loadModel(g: Gateway): Promise<Model> {
 }
 
 const processFrom = (r: Row): BusinessProcess => ({
-  id: r.emph_businessprocessid, areaId: r._emph_processarea_value, code: txt(r.emph_catalogcode), name: txt(r.emph_name), summary: txt(r.emph_summary), rank: r.emph_rank ?? 0,
+  id: r.emph_businessprocessid, areaId: r._emph_processarea_value, code: txt(r.emph_catalogcode), name: txt(r.emph_name), catalogName: txt(r.emph_catalogname), summary: txt(r.emph_summary), rank: r.emph_rank ?? 0,
   inScope: r.emph_inscope !== false, origin: r.emph_origin ?? ORIGIN.catalog, review: r.emph_reviewstate ?? REVIEW.open, disposition: r.emph_disposition ?? null,
   currentAppId: id(r._emph_currentapplication_value), targetAppId: id(r._emph_targetapplication_value), ownerRoleId: id(r._emph_processowner_value), users: txt(r.emph_usercount), comments: txt(r.emph_comments),
 });
@@ -131,7 +131,7 @@ export class Repository {
   // ---------- catalog hierarchy ----------
   async saveEndToEnd(m: Model, e: EndToEnd, patch: Partial<EndToEnd>): Promise<Model> {
     const n = { ...e, ...patch };
-    const data = { emph_name: n.name, emph_catalogcode: n.code || null, emph_summary: n.summary || null, emph_rank: n.rank, emph_inscope: n.inScope, emph_accent: n.accent || null };
+    const data = { emph_name: n.name, emph_catalogname: n.catalogName || null, emph_catalogcode: n.code || null, emph_summary: n.summary || null, emph_rank: n.rank, emph_inscope: n.inScope, emph_accent: n.accent || null };
     if (!e.id) { n.id = await this.g.insert("emph_endtoendprocess", data); return { ...m, endToEnds: m.endToEnds.concat(n).sort(byRank) }; }
     await this.g.patch("emph_endtoendprocess", e.id, data);
     return { ...m, endToEnds: m.endToEnds.map(x => (x.id === e.id ? n : x)) };
@@ -139,7 +139,7 @@ export class Repository {
 
   async saveArea(m: Model, a: ProcessArea, patch: Partial<ProcessArea>): Promise<Model> {
     const n = { ...a, ...patch };
-    const data: Row = { emph_name: n.name, emph_catalogcode: n.code || null, emph_summary: n.summary || null, emph_rank: n.rank, emph_inscope: n.inScope };
+    const data: Row = { emph_name: n.name, emph_catalogname: n.catalogName || null, emph_catalogcode: n.code || null, emph_summary: n.summary || null, emph_rank: n.rank, emph_inscope: n.inScope };
     if (!a.id) {
       data["emph_EndToEndProcess@odata.bind"] = ref("emph_endtoendprocess", n.endToEndId);
       n.id = await this.g.insert("emph_processarea", data);
@@ -154,7 +154,7 @@ export class Repository {
     const title = name.trim();
     if (!title) throw new Error("A business process needs a name.");
     const p: BusinessProcess = {
-      id: "", areaId, code: nextOwnCode(m.processes.map(x => x.code)), name: title, summary: "", rank: Math.max(0, ...m.processes.filter(x => x.areaId === areaId).map(x => x.rank)) + 10,
+      id: "", areaId, code: nextOwnCode(m.processes.map(x => x.code)), name: title, catalogName: "", summary: "", rank: Math.max(0, ...m.processes.filter(x => x.areaId === areaId).map(x => x.rank)) + 10,
       inScope: true, origin: ORIGIN.own, review: REVIEW.open, disposition: null, currentAppId: null, targetAppId: null, ownerRoleId: null, users: "", comments: "",
     };
     const model = await this.saveProcess(m, p, {});
@@ -164,7 +164,7 @@ export class Repository {
   async saveProcess(m: Model, p: BusinessProcess, patch: Partial<BusinessProcess>): Promise<Model> {
     const n = { ...p, ...patch };
     const data: Row = {
-      emph_name: n.name, emph_catalogcode: n.code || null, emph_summary: n.summary || null, emph_rank: n.rank, emph_inscope: n.inScope, emph_origin: n.origin,
+      emph_name: n.name, emph_catalogname: n.catalogName || null, emph_catalogcode: n.code || null, emph_summary: n.summary || null, emph_rank: n.rank, emph_inscope: n.inScope, emph_origin: n.origin,
       emph_reviewstate: n.review, emph_disposition: n.disposition, emph_usercount: n.users || null, emph_comments: n.comments || null,
     };
     const lookups: [keyof BusinessProcess, string, string][] = [["currentAppId", "emph_CurrentApplication", "emph_application"], ["targetAppId", "emph_TargetApplication", "emph_application"], ["ownerRoleId", "emph_ProcessOwner", "emph_role"]];

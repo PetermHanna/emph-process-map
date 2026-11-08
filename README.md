@@ -12,7 +12,7 @@ You scope end-to-end processes, process areas and business processes, record who
 
 ## Pages
 
-- **Our processes** (main page): the business processes in scope as a map. Each end-to-end process is a section, each process area a row of process cards with icons, showing the application today and the target, the disposition, requirements and flows.
+- **Our processes** (main page): the catalog drawn like Microsoft's documentation. Process areas run left to right with arrows, and their business processes run top to bottom. Tick processes in or out of scope, and rename any of them to your own wording while Microsoft's name stays visible.
 - **Processes**: the catalog tree. For a business process: scope, review state, disposition (retain, transition, retire, gap), owner, applications today and target, roles, configuration decisions, requirements and its flow.
 - **Flow studio**: the Microsoft reference flow next to *our process*, in swimlanes by role. Changes are tracked; confirming asks for a rationale for each one and turns it into a draft requirement.
 - **Requirements**: MoSCoW priority, category, coverage by standard (standard, configuration, extension, gap), size, owner and resolution.

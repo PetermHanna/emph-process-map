@@ -50,7 +50,7 @@ window.__emph = { log: [], done: false, error: null };
     OptionSet: { '@odata.type': NS + 'BooleanOptionSetMetadata', TrueOption: { Value: 1, Label: label('Yes') }, FalseOption: { Value: 0, Label: label('No') } } });
   const choice = (name, t, options) => ({ '@odata.type': NS + 'PicklistAttributeMetadata', ...col(name, t),
     OptionSet: { '@odata.type': NS + 'OptionSetMetadata', IsGlobal: false, OptionSetType: 'Picklist', Options: options.map((o, i) => ({ Value: FIRST + i, Label: label(o) })) } });
-  const scope = () => [whole('Rank', 'Rank'), yesno('InScope', 'In scope', true), text('CatalogCode', 'Catalog ID', 30), note('Summary', 'Summary')];
+  const scope = () => [whole('Rank', 'Rank'), yesno('InScope', 'In scope', true), text('CatalogCode', 'Catalog ID', 30), text('CatalogName', 'Microsoft name', 400), note('Summary', 'Summary')];
 
   // ---------- tables: logical name, display names, description, columns ----------
   const TABLES = [
