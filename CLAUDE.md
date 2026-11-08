@@ -41,7 +41,8 @@ See README.md and docs/ (install, user guide, architecture, development).
 - Unit tests: `node --test map\harness\rules.test.mjs` (21 tests).
 - Local page: `node map\harness\local\serve.mjs` → http://localhost:8766/main.aspx (real estate), `?sample=engineering`, `?sample=catalog`.
   Needs map/schema/catalog.json (run import-catalog.py on the catalog workbook, e.g. "Business Process Catalog OCT 2026.xlsx"
-  in Peter's Downloads). In the console: `await __tests.all()` runs 6 end-to-end checks (pages, mainMap, processAndFlow, capture, signOff, workshop).
+  in Peter's Downloads). In the console: `await __tests.all()` runs 7 end-to-end checks (pages, mainMap, processAndFlow, guide, capture, signOff, workshop).
+- Guide test page: `node guide\test\serve.mjs` → http://localhost:8767/main.aspx?f=band | busy | list; `__g.reset()`, reload, `await __g.run()`; `await __g.launch()`.
 - Restart the local server after changing serve.mjs routes. A hard reload picks up a new bundle.
 - Shell heredocs with mixed quotes fail here: write Python edit scripts to a file and run them.
 
@@ -52,5 +53,6 @@ See README.md and docs/ (install, user guide, architecture, development).
   CatalogName, "use" restores it).
 - Flow studio: Microsoft reference vs our process, tracked changes, confirm with rationale → draft requirements.
 - Requirements, workshops (7 phases), sign-off (freeze, compare, approve, Excel/Word/PDF), applications, settings.
+- Guide: flow studio has "Play in the guide" (new tab with ?emphguide=<id>; hint to install unpacked in Edge/Chrome when the extension isn't detected). The guide lists our process first and takes end-to-end names from emph_endtoendprocess.
 - Not yet tested in a real Dataverse environment (install.js, solution import, guide against the new tables).
 - GitHub may block from Chrome on this machine (504/503); Edge works. `git push` works from the terminal.

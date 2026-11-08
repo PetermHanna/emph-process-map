@@ -40,6 +40,7 @@ Two tabs: **Our process** and **Microsoft reference**.
 2. Drag activities from the palette onto the dots between activities. Select an activity to rename it, move it to another lane, change its shape or set where it goes next. Undo is available.
 3. **Confirm** when it's right. For each real change from the reference, give a rationale or link a requirement that covers it. Rationales become draft requirements.
 4. **Reopen** to change a confirmed flow. **Back to reference** deletes our flow and the requirements it generated.
+5. **Play in the guide** opens a new tab and plays the flow you're looking at (our process or the Microsoft reference) step by step over the live app. The button needs the guide extension (below); without it, the button explains how to install it.
 
 ## Requirements
 
@@ -70,4 +71,21 @@ Keep the application list (mark target applications), the organisation name and 
 
 ## The guide
 
-Load the `guide` folder as an unpacked extension in Chrome (Extensions > Developer mode > Load unpacked). On a Dynamics 365 page, open the guide, pick a flow and follow it step by step.
+The guide is a browser extension for Microsoft Edge or Google Chrome. It plays a process flow step by step over the live Dynamics 365 pages: it points at the control for each step, says what to do and the key points to make, and can run a demo on autopilot.
+
+### Install it (unpacked)
+
+1. Get the `guide` folder of EMPH Process Map onto your computer.
+2. Open `edge://extensions` in Edge or `chrome://extensions` in Chrome.
+3. Switch on **Developer mode**.
+4. Choose **Load unpacked** and select the `guide` folder.
+5. Reload any open Dynamics 365 tabs. A **Guide** button appears at the bottom right.
+
+After an update to the folder, choose **Reload** on the extension's card and reload the Dynamics 365 tabs.
+
+### Play a flow
+
+- **From the Process Map**: open a business process, then **Process flow**, then **Play in the guide**. A new tab opens and the guide starts that flow with a short introduction; choose **Continue**.
+- **From any Dynamics 365 page**: choose **Guide**, pick an end-to-end process (shown with your own names) and a flow. Our process is listed first, then the Microsoft reference.
+
+On each step, **Next** moves on; a decision shows one button per answer. The ⋯ menu has the mode (demo or training), how it runs (narrated or autopilot), the voice, **Edit this step** (where to go, what to point at, what to say; saved to the Process Map), **Minimize**, **Reset position**, **Exit this flow** and **Close the guide**. Moving or minimizing the guide never writes to Dataverse.

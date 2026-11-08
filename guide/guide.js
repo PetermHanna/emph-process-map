@@ -170,7 +170,9 @@
 
   // ---------- data ----------
   // All flows once, then filtered here: pick a process, or search across everything.
-  const PROCESSES = { "00": "EMPH Process Map", 10: "Acquire to dispose", 20: "Case to resolution", 30: "Concept to market", 40: "Design to retire", 50: "Forecast to plan", 55: "Hire to retire", 60: "Inventory to deliver", 65: "Order to cash", 70: "Plan to produce", 75: "Source to pay", 80: "Project to profit", 85: "Prospect to quote", 90: "Record to report", 93: "Rent to return", 95: "Service to deliver (Field Service)", 96: "Field Service demo: repair and maintenance", 99: "Administer to operate" };
+  // End-to-end process names come from the Process Map (emph_endtoendprocess, with the organisation's own wording); these are Microsoft's, for a code it doesn't have.
+  const PROCESSES = { 10: "Acquire to dispose", 20: "Case to resolution", 30: "Concept to market", 40: "Design to retire", 50: "Forecast to plan", 55: "Hire to retire", 60: "Inventory to deliver", 65: "Order to cash", 70: "Plan to produce", 75: "Source to pay", 80: "Project to profit", 85: "Prospect to quote", 90: "Record to report", 93: "Rent to return", 95: "Service to deliver", 99: "Administer to operate" };
+  const procName = k => (st.e2e && st.e2e[k]) || PROCESSES[k] || "";
   // A staged process: the flows of one group (96.10.x) are the stages of a slide, drawn as chevrons in the top bar while one of them runs.
   // Everything comes from the data: label = flow name after ": ", role = the Start step's function, "F&O" mark = the Start step's description.
   const STAGED = /^(96\.\d\d)\./;
@@ -193,17 +195,19 @@
     if (st.allFlows) return;
     const r = await api("emph_processflows?$select=emph_processflowid,emph_name,emph_catalogcode,emph_flowtype&$orderby=emph_catalogcode&$top=2000");
     st.allFlows = r.value;
+    try { st.e2e = Object.fromEntries((await api("emph_endtoendprocesses?$select=emph_catalogcode,emph_name")).value.filter(x => x.emph_catalogcode).map(x => [String(x.emph_catalogcode), x.emph_name || ""])); } catch { st.e2e = null; }
   }
   function flowMatches() {
     const q = (st.q || "").trim().toLowerCase(), all = st.allFlows || [];
     if (q) return all.filter(r => (r.emph_name || "").toLowerCase().includes(q)).slice(0, 60);
-    return st.proc ? all.filter(r => procOf(r) === st.proc && r.emph_flowtype !== 582100001) : [];
+    // our process first, then the Microsoft reference it was adapted from
+    return st.proc ? all.filter(r => procOf(r) === st.proc).sort((a, b) => String(a.emph_catalogcode || "").localeCompare(String(b.emph_catalogcode || "")) || (b.emph_flowtype === 582100001) - (a.emph_flowtype === 582100001)) : [];
   }
-  const flowListHtml = () => { const m = flowMatches(); return m.map(r => `<button data-flow="${r.emph_processflowid}">${esc(r.emph_name)}${r.emph_flowtype === 582100001 ? " (ours)" : ""}</button>`).join("") || `<span class="muted">${st.q || st.proc ? "No flows found" : "Pick a process above, or type to search"}</span>`; };
+  const flowListHtml = () => { const m = flowMatches(); return m.map(r => `<button data-flow="${r.emph_processflowid}">${esc(r.emph_name)}${r.emph_flowtype === 582100001 && !/our process/i.test(r.emph_name || "") ? " (ours)" : ""}</button>`).join("") || `<span class="muted">${st.q || st.proc ? "No flows found" : "Pick a process above, or type to search"}</span>`; };
   function pickerHtml() {
-    const present = [...new Set((st.allFlows || []).map(procOf))].filter(k => PROCESSES[k]).sort();
+    const present = [...new Set((st.allFlows || []).map(procOf))].filter(k => /^\d\d$/.test(k)).sort();
     return `${st.flow ? `<button class="btn" id="pick-back">← Back to ${esc(st.flow.name)}</button>` : st.resume ? `<button class="btn" id="pick-resume">Continue the last flow</button>` : ""}
-      <select id="proc" title="Process" style="width:100%"><option value="">Choose a process…</option>${present.map(k => `<option value="${k}" ${st.proc === k ? "selected" : ""}>${esc(k + " " + PROCESSES[k])}</option>`).join("")}</select>
+      <select id="proc" title="Process" style="width:100%"><option value="">Choose a process…</option>${present.map(k => `<option value="${k}" ${st.proc === k ? "selected" : ""}>${esc((k + " " + procName(k)).trim())}</option>`).join("")}</select>
       <input id="q" placeholder="Or search all flows, e.g. opportunity" value="${esc(st.q || "")}"/><div class="list" id="flist">${flowListHtml()}</div>`;
   }
   async function openFlow(id, code, keep) {

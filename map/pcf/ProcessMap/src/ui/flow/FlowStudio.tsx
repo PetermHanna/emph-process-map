@@ -4,12 +4,13 @@ import {
   OverlayDrawer, DrawerHeader, DrawerHeaderTitle, DrawerBody, Button, Spinner, Field, Input, Textarea, Dropdown, Option, OptionGroup,
   Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent, DialogActions, TabList, Tab,
 } from "@fluentui/react-components";
-import { Dismiss24Regular, Add16Regular, Delete16Regular, ArrowUp16Regular, ArrowDown16Regular, CheckmarkCircle20Regular, ArrowReset20Regular, Edit20Regular } from "@fluentui/react-icons";
+import { Dismiss24Regular, Add16Regular, Delete16Regular, ArrowUp16Regular, ArrowDown16Regular, CheckmarkCircle20Regular, ArrowReset20Regular, Edit20Regular, Play20Regular } from "@fluentui/react-icons";
 import { C, useLook } from "../look";
 import { Pill, Problem, Apply } from "../kit";
 import { FlowCanvas, swimlaneLayout } from "./Canvas";
 import { FlowStep, toStep, toActivity, STEP_TYPE, CHANGE } from "./shape";
 import { moveBranch } from "./placement";
+import { useGuide, playInGuide } from "./guide";
 import { SHAPE_LABEL, FLOW_STATE, REQ_ORIGIN } from "../../domain/codes";
 import { flowDeltas, unreachable, covers, nextActivityCode, FlowDelta } from "../../domain/rules";
 import { loadActivities, flowsOf, Repository, ResetPlan } from "../../domain/repository";
@@ -30,6 +31,8 @@ export function FlowStudio({ model, repo, apply, process: p, onClose }: { model:
   const [problem, setProblem] = React.useState<string | null>(null);
   const [confirming, setConfirming] = React.useState<{ deltas: FlowDelta[]; rationale: Record<string, string>; links: Record<string, string> } | null>(null);
   const [resetting, setResetting] = React.useState<ResetPlan | null>(null);
+  const guide = useGuide();
+  const [guideHint, setGuideHint] = React.useState(false);
 
   React.useEffect(() => {
     let live = true;
@@ -117,6 +120,7 @@ export function FlowStudio({ model, repo, apply, process: p, onClose }: { model:
   });
   const askReset = () => run(async () => setResetting(await repo.resetPlan(model, ours!, (acts || []).map(toActivity), refActs)));
 
+  const playable = view === "reference" ? (refActs.length ? reference : undefined) : (ours && acts?.length ? ours : undefined);
   const counts = (acts || []).reduce<Record<number, number>>((a, x) => { a[x.change] = (a[x.change] || 0) + 1; return a; }, {});
   const capturedReqs = model.requirements.filter(r => r.origin === REQ_ORIGIN.captured && (r.processId === p.id || !r.processId));
 
@@ -137,6 +141,9 @@ export function FlowStudio({ model, repo, apply, process: p, onClose }: { model:
           {view === "ours" && ours?.state === FLOW_STATE.draft && <Button appearance="primary" icon={<CheckmarkCircle20Regular />} disabled={busy} onClick={askConfirm} data-emph="flow-confirm">Confirm</Button>}
           {view === "ours" && ours?.state === FLOW_STATE.confirmed && <Button icon={<Edit20Regular />} disabled={busy} onClick={() => run(() => apply(m => repo.setFlowState(m, ours, FLOW_STATE.draft)))}>Reopen</Button>}
           {view === "ours" && ours?.referenceId && <Button appearance="subtle" icon={<ArrowReset20Regular />} disabled={busy} onClick={askReset}>Back to reference</Button>}
+          {playable && (guide
+            ? <Button icon={<Play20Regular />} disabled={busy} onClick={() => playInGuide(playable.id)} data-emph="flow-play" title={"Opens a new tab and plays this flow over the live app (guide " + guide + ")"}>Play in the guide</Button>
+            : <Button appearance="subtle" icon={<Play20Regular />} onClick={() => setGuideHint(true)} data-emph="flow-play-hint">Play in the guide</Button>)}
           {view === "reference" && reference?.sourceLink && <a href={reference.sourceLink} target="_blank" rel="noreferrer">Source on Microsoft Learn</a>}
         </div>
       </DrawerHeader>
@@ -193,6 +200,25 @@ export function FlowStudio({ model, repo, apply, process: p, onClose }: { model:
                 <Button onClick={() => setConfirming(null)}>Cancel</Button>
                 <Button appearance="primary" disabled={busy || confirming.deltas.some(d => !(confirming.rationale[d.code] || "").trim() && !confirming.links[d.code])} onClick={() => finish(confirming.rationale, confirming.links)}>Confirm our process</Button>
               </DialogActions>
+            </DialogBody></DialogSurface>
+          </Dialog>
+        )}
+        {guideHint && (
+          <Dialog open onOpenChange={(_, d) => { if (!d.open) setGuideHint(false); }}>
+            <DialogSurface style={{ maxWidth: 520 }}><DialogBody>
+              <DialogTitle>Play flows with the guide</DialogTitle>
+              <DialogContent>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }} data-emph="guide-hint">
+                  <div>The guide is a browser extension that walks through a flow step by step over the live Dynamics 365 pages. It isn't installed in this browser.</div>
+                  <ol style={{ margin: 0, paddingLeft: 20 }}>
+                    <li>Get the <b>guide</b> folder of EMPH Process Map.</li>
+                    <li>Open <b>edge://extensions</b> (Edge) or <b>chrome://extensions</b> (Chrome) and switch on <b>Developer mode</b>.</li>
+                    <li>Choose <b>Load unpacked</b> and select the guide folder.</li>
+                    <li>Reload this page. <b>Play in the guide</b> then opens the flow in a new tab.</li>
+                  </ol>
+                </div>
+              </DialogContent>
+              <DialogActions><Button appearance="primary" onClick={() => setGuideHint(false)}>OK</Button></DialogActions>
             </DialogBody></DialogSurface>
           </Dialog>
         )}

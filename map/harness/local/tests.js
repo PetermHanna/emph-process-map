@@ -30,6 +30,36 @@
     const state = ours.emph_state;
     return "copied " + acts + " activities, state " + state;
   }
+  // "Play in the guide": a hint without the extension; with it (the page marked data-emph-guide), a new tab with ?emphguide=<flow id>
+  async function guide() {
+    await nav("processes");
+    const node = () => [...document.querySelectorAll('[data-emph="process-node"]')].find(d => /Invoice project milestones/.test(d.innerText));
+    if (!node()) { // processAndFlow may have left the tree open
+      const area = () => [...document.querySelectorAll('[data-emph="process-tree"] div')].find(d => /^80\.50\s*Manage project financials$/.test(d.innerText.trim()));
+      if (!area()) { [...document.querySelectorAll('[data-emph="process-tree"] > div')].find(d => /Project to profit/.test(d.innerText)).click(); await wait(200); }
+      area().click(); await wait(200);
+    }
+    (await until(node)).click();
+    await until(() => q('[data-emph="process-panel"]'));
+    q('[data-emph="open-flow"]').click();
+    const adapt = await until(() => q('[data-emph="flow-adapt"]') || q('[data-emph="flow-play-hint"]'));
+    if (adapt.dataset.emph === "flow-adapt") adapt.click();
+    (await until(() => q('[data-emph="flow-play-hint"]'))).click();
+    await until(() => q('[data-emph="guide-hint"]'));
+    button(/^OK$/).click(); await wait(200);
+    const html = document.documentElement, opened = [], open = window.open, heard = [];
+    const onStart = e => heard.push(e.detail.flowId);
+    window.addEventListener("emph-guide-start", onStart);
+    window.open = u => { opened.push(String(u)); return null; };
+    try {
+      html.setAttribute("data-emph-guide", "test");
+      (await until(() => q('[data-emph="flow-play"]'))).click(); await wait(100);
+    } finally { window.open = open; window.removeEventListener("emph-guide-start", onStart); html.removeAttribute("data-emph-guide"); html.removeAttribute("data-emph-guide-start"); }
+    const ours = rows("emph_processflow").find(f => f.emph_flowtype === 582100001 && /^80\.50/.test(f.emph_catalogcode || "") && (opened[0] || "").includes(f.emph_processflowid));
+    if (!ours || !opened[0] || !opened[0].includes("emphguide=" + ours.emph_processflowid) || heard[0] !== ours.emph_processflowid) throw new Error("launch: " + JSON.stringify({ opened, heard }));
+    q('[aria-label="Close"]')?.click(); await wait(300);
+    return "hint shown, played our process in " + opened[0].replace(location.origin, "");
+  }
   async function capture() {
     await nav("requirements");
     const box = q('[data-emph="capture"] textarea');
@@ -74,7 +104,7 @@
     return sections + " sections, " + columns + " area columns, renamed \u201c" + before + "\u201d, in scope " + id + " -> " + after;
   }
   window.__tests = {
-    pages, processAndFlow, capture, signOff, workshop, mainMap,
-    async all() { const r = {}; for (const [k, f] of Object.entries({ pages, mainMap, processAndFlow, capture, signOff, workshop })) { try { r[k] = await f(); } catch (e) { r[k] = "FAIL " + e.message; } } return r; },
+    pages, processAndFlow, guide, capture, signOff, workshop, mainMap,
+    async all() { const r = {}; for (const [k, f] of Object.entries({ pages, mainMap, processAndFlow, guide, capture, signOff, workshop })) { try { r[k] = await f(); } catch (e) { r[k] = "FAIL " + e.message; } } return r; },
   };
 })();

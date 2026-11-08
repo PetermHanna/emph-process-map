@@ -1,6 +1,6 @@
 // Background worker: makes the Dataverse calls the guide needs on Finance and Supply Chain pages, where the page itself
 // cannot call another site. Only the Process Map guide tables are allowed, with the user's own Dynamics sign-in.
-const ALLOWED = /^(emph_processflows|emph_flowactivities|RetrieveFinanceAndOperationsIntegrationDetails)\b/;
+const ALLOWED = /^(emph_processflows|emph_flowactivities|emph_endtoendprocesses|RetrieveFinanceAndOperationsIntegrationDetails)\b/;
 chrome.runtime.onMessage.addListener((msg, sender, reply) => {
   if (!msg || msg.type !== "emph-api") return false;
   (async () => {

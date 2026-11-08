@@ -35,7 +35,7 @@ node map\harness\local\serve.mjs
 
 Open http://localhost:8766/main.aspx for the real-estate demo, http://localhost:8766/main.aspx?sample=engineering for the engineering one, or ?sample=catalog for the catalog alone. The component runs against in-memory data, so nothing reaches Dataverse; reload to reset.
 
-Scripted end-to-end checks run from the console: `await __tests.all()`. They click through all pages, adapt and confirm a flow, capture a requirement, freeze a sign-off and start a workshop. `processAndFlow` uses the engineering demo.
+Scripted end-to-end checks run from the console: `await __tests.all()`. They click through all pages, adapt and confirm a flow, play it in the guide (with the extension simulated), capture a requirement, freeze a sign-off and start a workshop. `processAndFlow` uses the engineering demo.
 
 ## Reference flows
 
@@ -53,7 +53,12 @@ Run `import-catalog.py` again afterwards so `catalog-load.js` carries the new fl
 node guide\test\serve.mjs
 ```
 
-Then open http://localhost:8767/main.aspx?f=band.
+Then open http://localhost:8767/main.aspx?f=band (also `?f=busy` and `?f=list`). Dataverse is mocked in the page. In the console:
+
+- `__g.reset()`, reload, then `await __g.run()`: opening a flow, placement, dragging, minimizing, reset position, switching flows, and that none of it writes to Dataverse.
+- `await __g.launch()`: the `emph-guide-start` event leaves a launch request. Open `?f=band&emphguide=11111111-1111-4111-8111-111111111111` and run it again to check that a launched flow opens.
+
+The Process Map starts the guide from the flow studio (`src/ui/flow/guide.ts`): it sees the extension by the `data-emph-guide` attribute the guide puts on the page, raises `emph-guide-start` with the flow id (also left in `data-emph-guide-start`), and opens a new tab with `?emphguide=<flow id>`. The local Process Map page's `guide` check covers this side.
 
 ## Conventions
 
