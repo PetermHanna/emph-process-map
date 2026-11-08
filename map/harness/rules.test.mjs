@@ -161,3 +161,79 @@ test("the workbook is a zip with one part per table", () => {
   assert.equal(String.fromCharCode(z[0], z[1]), "PK");
   assert.ok(new TextDecoder().decode(z).includes("xl/worksheets/sheet2.xml"));
 });
+
+// ---------- meeting transcript (made-up content) ----------
+const VTT = `WEBVTT
+
+NOTE made-up test meeting
+
+ab12cd34-0000-4000-8000-000000000001/12-0
+00:00:01.000 --> 00:00:03.000
+<v Ana Field>Usually the foreman approves</v>
+
+ab12cd34-0000-4000-8000-000000000001/13-0
+00:00:04.500 --> 00:00:06.000
+<v Ana Field>the work order before we start.</v>
+
+ab12cd34-0000-4000-8000-000000000001/14-0
+00:00:07.000 --> 00:00:09.000
+<v Ana Field>Sometimes the PM skips it.</v>
+
+00:00:12.000 --> 00:00:15.000
+<v Ben Office>We need read-only access for the office.</v>
+
+00:00:16.000 --> 00:00:17.000
+<v Ben Office>Ben Office stopped transcription</v>
+`;
+
+test("a WebVTT transcript joins a sentence across cues and skips headers, ids and notices", () => {
+  const u = S.parseTranscript(VTT);
+  assert.deepEqual(u.map(x => [x.at, x.speaker, x.text]), [
+    [1, "Ana Field", "Usually the foreman approves the work order before we start."],
+    [7, "Ana Field", "Sometimes the PM skips it."],
+    [12, "Ben Office", "We need read-only access for the office."],
+  ]);
+});
+
+test("a Teams copy reads header lines and drops a transcription notice standing alone", () => {
+  const raw = "Ana Field   0:03\nWe always do the credit check.\nEvery time.\n\nBen Office   1:02:05\nOnly above ten thousand.\nBen Office started transcription\nCarl Site   1:03:00\nThirty technicians plus eight foremen.";
+  assert.deepEqual(S.parseTranscript(raw).map(x => [x.at, x.speaker, x.text]), [
+    [3, "Ana Field", "We always do the credit check. Every time."],
+    [3725, "Ben Office", "Only above ten thousand."],
+    [3780, "Carl Site", "Thirty technicians plus eight foremen."],
+  ]);
+});
+
+test("plain lines with and without a time, and lines without a speaker", () => {
+  const u = S.parseTranscript("[0:03] Ana Field: First point.\n0:10 Ben Office: Second point.\nCarl Site: No time here.\njust some words");
+  assert.deepEqual(u.map(x => [x.at, x.speaker, x.text]), [[3, "Ana Field", "First point."], [10, "Ben Office", "Second point."], [null, "Carl Site", "No time here."], [null, "", "just some words"]]);
+  const st = S.transcriptStats(u);
+  assert.equal(st.lines, 4); assert.equal(st.noSpeaker, 1); assert.equal(st.minutes, 0);
+  assert.deepEqual(st.speakers.map(x => [x.speaker, x.words]), [["Carl Site", 3], ["Ana Field", 2], ["Ben Office", 2]]);
+  assert.equal(S.sourceLine(u[0]), "[0:03] Ana Field: First point.");
+  assert.equal(S.sourceLine({ at: 3725, speaker: "Ben", text: "x" }), "[1:02:05] Ben: x");
+  assert.equal(S.sourceLine(u[3]), "just some words");
+});
+
+test("lines go under the business process being discussed at that moment", () => {
+  const visits = [{ key: "a", name: "A", at: "2026-11-08T10:00:00Z" }, { key: "b", name: "B", at: "2026-11-08T10:05:00Z" }, { key: "a", name: "A", at: "2026-11-08T10:20:00Z" }];
+  const u = [{ at: 30, speaker: "X", text: "before" }, { at: 200, speaker: "X", text: "in a" }, { at: 600, speaker: "X", text: "in b" }, { at: 1500, speaker: "X", text: "back in a" }, { at: null, speaker: "X", text: "no time" }];
+  const g = S.linesByVisit(u, visits, "2026-11-08T09:59:00Z");
+  assert.deepEqual(Object.fromEntries(Object.entries(g).map(([k, v]) => [k, v.map(x => x.text)])), { "": ["before"], a: ["in a", "back in a"], b: ["in b"] });
+  assert.equal(g.b[0].i, 2);
+  assert.deepEqual(Object.keys(S.linesByVisit(u, visits, null)).sort(), ["a", "b"]); // starts with the first visit
+  assert.deepEqual(S.linesByVisit(u, [], null), {});
+});
+
+test("highlights hedging, must and licence words without overlaps", () => {
+  const k = t => S.marks(t).map(m => t.slice(m.start, m.end) + ":" + m.kind);
+  assert.deepEqual(k("Usually we must check, but not always."), ["Usually:hedge", "must:must", "not always:hedge"]);
+  assert.deepEqual(k("Subcontractors shouldn't need a full licence, read-only is fine."), ["licence:licence", "read-only:licence"]);
+  assert.deepEqual(k("Eigentlich machen wir das meistens so."), ["Eigentlich:hedge", "meistens:hedge"]);
+});
+
+test("a session keeps its transcript start and captured lines", () => {
+  const s = S.readSession(JSON.stringify({ processIds: ["p"], transcriptStart: "2026-11-08T10:00:00Z", captured: { 3: "RQ-00001" } }));
+  assert.equal(s.transcriptStart, "2026-11-08T10:00:00Z"); assert.equal(s.captured["3"], "RQ-00001");
+  assert.deepEqual(S.readSession("{}").captured, {});
+});

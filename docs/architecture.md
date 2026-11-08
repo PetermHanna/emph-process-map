@@ -59,8 +59,8 @@ Choice values start at 582100000, in the order listed.
 
 | Table | Purpose | Main columns |
 |---|---|---|
-| `emph_requirement` | A need standard may not cover | ReqId (RQ-00001), Description, Moscow, Category, State, Coverage (Standard, Configuration, Extension, Gap), Size, Owner, Resolution, Origin, Review, → BusinessProcess, → Workshop, → OriginFlow, → EvidenceFlow |
-| `emph_workshop` | Discovery session | HeldOn, Facilitator, Participants, Phase, Status, SessionData (JSON), → EndToEndProcess |
+| `emph_requirement` | A need standard may not cover | ReqId (RQ-00001), Description, Moscow, Category (… Compliance, Licensing), State, Coverage (Standard, Configuration, Extension, Gap), Size, Owner, Resolution, Origin, Review, → BusinessProcess, → Workshop, → OriginFlow, → EvidenceFlow |
+| `emph_workshop` | Discovery session; screenshots are notes on it | HeldOn, Facilitator, Participants, Phase, Status, SessionData (JSON: agenda, visits, action items, transcript start, captured lines), Transcript, → EndToEndProcess |
 | `emph_signoff` | Frozen, approved version | Version, State (Draft, In review, Approved, Superseded), ApprovedOn, → Approver |
 | `emph_signoffitem` | Frozen copy of one item | ItemType, ItemKey, Snapshot (JSON), → SignOff |
 | `emph_requirementlink` | Link to a work item or guided flow | LinkType, Target, Url |

@@ -9,7 +9,7 @@ const SETS = {};
 const tableOfSet = set => SETS[set] || set.replace(/ies$/, "y").replace(/sses$/, "ss").replace(/es$/, "").replace(/s$/, "");
 function put(row, data) {
   for (const k in data) {
-    if (k.endsWith("@odata.bind")) { const v = data[k]; row["_" + k.split("@")[0].toLowerCase() + "_value"] = v ? v.match(/\(([^)]+)\)/)[1] : null; }
+    if (k.endsWith("@odata.bind")) { const v = data[k], id = v ? v.match(/\(([^)]+)\)/)[1] : null; row["_" + k.split("@")[0].toLowerCase() + "_value"] = id; if (k.startsWith("objectid_")) { row._objectid_value = id; row.createdon = new Date().toISOString(); } }
     else row[k] = data[k];
   }
 }

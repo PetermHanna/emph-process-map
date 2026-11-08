@@ -3,7 +3,7 @@ import { Gateway, Row, ref } from "../data/api";
 import { ORIGIN, REVIEW, FLOW_TYPE, FLOW_STATE, DELTA, SHAPE, DECISION_STATE, REQ_STATE, REQ_ORIGIN, SIGNOFF, ITEM, SESSION, ANSWER } from "./codes";
 import { isActive, freeze, FrozenItem, titleOf, requirementProblem, flowDeltas, coveredBy, deltaText, touchedByHand, canApprove, nextOwnCode, starterActivities } from "./rules";
 import { newSession, readSession } from "./session";
-import type { Model, EndToEnd, ProcessArea, BusinessProcess, Application, Role, ProcessFlow, Activity, ConfigDecision, Requirement, Workshop, SignOff, FlowLink } from "./types";
+import type { Model, EndToEnd, ProcessArea, BusinessProcess, Application, Role, ProcessFlow, Activity, ConfigDecision, Requirement, Workshop, SignOff, FlowLink, Screenshot } from "./types";
 
 const txt = (v: unknown) => (v == null ? "" : String(v));
 const json = <T>(v: unknown, fallback: T): T => { try { return v ? JSON.parse(String(v)) : fallback; } catch { return fallback; } };
@@ -23,7 +23,7 @@ const COLS = {
   flow: "emph_processflowid,emph_name,emph_flowtype,emph_state,emph_catalogcode,emph_sourcelink,emph_comments,_emph_businessprocess_value,_emph_referenceflow_value",
   decision: "emph_configdecisionid,emph_name,emph_code,emph_answertype,emph_choices,emph_guidance,emph_menupath,emph_steps,emph_expected,emph_sourcelink,emph_sourcelabel,emph_rank,emph_answer,emph_state,emph_comments,_emph_businessprocess_value,_emph_application_value",
   requirement: "emph_requirementid,emph_reqid,emph_name,emph_description,emph_moscow,emph_category,emph_raisedby,emph_verbatim,emph_owner,emph_state,emph_coverage,emph_size,emph_resolution,emph_resolvedby,emph_resolvedon,emph_origin,emph_originref,emph_review,_emph_businessprocess_value,_emph_originflow_value,_emph_evidenceflow_value,_emph_workshop_value,_emph_parentrequirement_value,_emph_duplicateof_value",
-  workshop: "emph_workshopid,emph_name,emph_heldon,emph_facilitator,emph_participants,emph_minutes,emph_phase,emph_status,emph_sessiondata,_emph_endtoendprocess_value",
+  workshop: "emph_workshopid,emph_name,emph_heldon,emph_facilitator,emph_participants,emph_minutes,emph_phase,emph_status,emph_sessiondata,emph_transcript,_emph_endtoendprocess_value",
   signOff: "emph_signoffid,emph_name,emph_version,emph_scopenote,emph_state,emph_approvedon,_emph_approver_value",
   activity: "emph_flowactivityid,emph_name,emph_activitycode,emph_shape,emph_lane,emph_stage,emph_links,emph_summary,emph_delta,emph_rationale,emph_rank,emph_x,emph_y,_emph_processflow_value",
 };
@@ -47,7 +47,7 @@ export async function loadModel(g: Gateway): Promise<Model> {
     flows: fl.map(r => ({ id: r.emph_processflowid, processId: r._emph_businessprocess_value, name: txt(r.emph_name), type: r.emph_flowtype ?? FLOW_TYPE.reference, state: r.emph_state ?? FLOW_STATE.draft, code: txt(r.emph_catalogcode), sourceLink: txt(r.emph_sourcelink), comments: txt(r.emph_comments), referenceId: id(r._emph_referenceflow_value) })),
     decisions: dc.map(decisionFrom).sort(byRank),
     requirements: rq.map(requirementFrom),
-    workshops: wk.map(r => ({ id: r.emph_workshopid, name: txt(r.emph_name), heldOn: r.emph_heldon || null, facilitator: txt(r.emph_facilitator), participants: txt(r.emph_participants), minutes: txt(r.emph_minutes), phase: Math.min(6, Math.max(0, r.emph_phase ?? 0)), status: r.emph_status ?? SESSION.open, endToEndId: id(r._emph_endtoendprocess_value), session: readSession(r.emph_sessiondata) }))
+    workshops: wk.map(r => ({ id: r.emph_workshopid, name: txt(r.emph_name), heldOn: r.emph_heldon || null, facilitator: txt(r.emph_facilitator), participants: txt(r.emph_participants), minutes: txt(r.emph_minutes), phase: Math.min(6, Math.max(0, r.emph_phase ?? 0)), status: r.emph_status ?? SESSION.open, endToEndId: id(r._emph_endtoendprocess_value), session: readSession(r.emph_sessiondata), transcript: txt(r.emph_transcript) }))
       .sort((a, b) => (b.heldOn || "").localeCompare(a.heldOn || "")),
     signOffs: so.map(r => ({ id: r.emph_signoffid, name: txt(r.emph_name), version: r.emph_version ?? 0, scopeNote: txt(r.emph_scopenote), state: r.emph_state ?? SIGNOFF.draft, approver: txt(r["_emph_approver_value@OData.Community.Display.V1.FormattedValue"]), approvedOn: r.emph_approvedon || null }))
       .sort((a, b) => b.version - a.version),
@@ -385,13 +385,28 @@ export class Repository {
     const session = newSession(m.processes.filter(p => p.inScope && areaIds.has(p.areaId)).map(p => p.id));
     const data: Row = { emph_name: name, emph_heldon: heldOn, emph_phase: 0, emph_status: SESSION.open, emph_sessiondata: JSON.stringify(session) };
     if (endToEndId) data["emph_EndToEndProcess@odata.bind"] = ref("emph_endtoendprocess", endToEndId);
-    const workshop: Workshop = { id: await this.g.insert("emph_workshop", data), name, heldOn, facilitator: "", participants: "", minutes: "", phase: 0, status: SESSION.open, endToEndId, session };
+    const workshop: Workshop = { id: await this.g.insert("emph_workshop", data), name, heldOn, facilitator: "", participants: "", minutes: "", phase: 0, status: SESSION.open, endToEndId, session, transcript: "" };
     return { model: { ...m, workshops: [workshop, ...m.workshops] }, workshop };
   }
   async saveWorkshop(m: Model, w: Workshop, patch: Partial<Workshop>): Promise<Model> {
     const n = { ...w, ...patch };
-    await this.g.patch("emph_workshop", w.id, { emph_heldon: n.heldOn, emph_facilitator: n.facilitator || null, emph_participants: n.participants || null, emph_minutes: n.minutes || null, emph_phase: n.phase, emph_status: n.status, emph_sessiondata: JSON.stringify(n.session) });
+    await this.g.patch("emph_workshop", w.id, { emph_heldon: n.heldOn, emph_facilitator: n.facilitator || null, emph_participants: n.participants || null, emph_minutes: n.minutes || null, emph_phase: n.phase, emph_status: n.status, emph_sessiondata: JSON.stringify(n.session), ...("transcript" in patch ? { emph_transcript: n.transcript || null } : {}) });
     return { ...m, workshops: m.workshops.map(x => (x.id === w.id ? n : x)) };
+  }
+  /** A screenshot taken during a workshop, kept as a note (annotation) on it. `jpeg` is base64 without the data: prefix. */
+  async addScreenshot(w: Workshop, subject: string, jpeg: string): Promise<Screenshot> {
+    const at = new Date().toISOString();
+    const id = await this.g.insert("annotation", { subject: subject.slice(0, 500), filename: "screenshot-" + at.slice(0, 19).replace(/[:T]/g, "-") + ".jpg", mimetype: "image/jpeg",
+      documentbody: jpeg, isdocument: true, "objectid_emph_workshop@odata.bind": ref("emph_workshop", w.id) });
+    return { id, subject, createdOn: at };
+  }
+  async screenshots(w: Workshop): Promise<Screenshot[]> {
+    const rows = await this.g.query("annotation", "?$select=annotationid,subject,createdon&$filter=_objectid_value eq " + w.id + "&$orderby=createdon desc");
+    return rows.map(r => ({ id: r.annotationid, subject: txt(r.subject), createdOn: r.createdon || "" }));
+  }
+  async screenshotImage(id: string): Promise<string> {
+    const rows = await this.g.query("annotation", "?$select=documentbody,mimetype&$filter=annotationid eq " + id);
+    return rows[0] ? "data:" + (rows[0].mimetype || "image/jpeg") + ";base64," + rows[0].documentbody : "";
   }
   async deleteWorkshop(m: Model, w: Workshop): Promise<Model> {
     await this.g.drop("emph_workshop", w.id);

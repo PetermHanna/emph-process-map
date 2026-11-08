@@ -47,11 +47,18 @@ export function Shell({ gateway, user, fullScreen }: ShellProps) {
   const reload = React.useCallback(() => { setModel(null); loadModel(gateway).then(setModel).catch(e => setProblem("Could not load: " + (e?.message || e))); }, [gateway]);
   React.useEffect(reload, [reload]);
 
-  const apply = React.useCallback(async (fn: (m: Model) => Promise<Model>) => {
-    if (!latest.current) return;
-    setProblem(null);
-    try { const next = await fn(latest.current); latest.current = next; setModel(next); }
-    catch (e: any) { setProblem(e?.message || String(e)); }
+  // One change at a time: each starts from the model the previous one left, so quick clicks can't undo each other.
+  // A change must not await another apply inside its own function, or it would wait for itself.
+  const queue = React.useRef<Promise<void>>(Promise.resolve());
+  const apply = React.useCallback((fn: (m: Model) => Promise<Model>) => {
+    const run = queue.current.then(async () => {
+      if (!latest.current) return;
+      setProblem(null);
+      try { const next = await fn(latest.current); latest.current = next; setModel(next); }
+      catch (e: any) { setProblem(e?.message || String(e)); }
+    });
+    queue.current = run;
+    return run;
   }, []);
   const nav: Nav = { go: (p, f = null) => { setPage(p); setFocus(f); }, focus };
   const current = PAGES.find(p => p.key === page)!;

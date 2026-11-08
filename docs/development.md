@@ -22,7 +22,7 @@ On the first run it installs packages. Then it:
 node --test map\harness\rules.test.mjs
 ```
 
-These cover coverage, flow changes, sign-off comparison, workshop sessions and the exports.
+These cover coverage, flow changes, sign-off comparison, workshop sessions, transcript reading and placement, and the exports.
 
 ## Local test page
 
@@ -37,7 +37,7 @@ If port 8766 is taken, start it with another port, e.g. `$env:PORT = '8776'; nod
 
 Open http://localhost:8766/main.aspx for the real-estate demo, http://localhost:8766/main.aspx?sample=engineering for the engineering one, or ?sample=catalog for the catalog alone. The component runs against in-memory data, so nothing reaches Dataverse; reload to reset.
 
-Scripted end-to-end checks run from the console: `await __tests.all()`. They click through all pages, adapt and confirm a flow, play it in the guide (with the extension simulated), capture a requirement, freeze a sign-off and start a workshop. `processAndFlow` uses the engineering demo.
+Scripted end-to-end checks run from the console: `await __tests.all()`. They click through all pages, adapt and confirm a flow, play it in the guide (with the extension simulated), capture a requirement, freeze a sign-off, start a workshop, and paste a made-up transcript to capture from it and take a screenshot (with a canvas standing in for the screen picker). `processAndFlow` uses the engineering demo.
 
 ## Demo site
 

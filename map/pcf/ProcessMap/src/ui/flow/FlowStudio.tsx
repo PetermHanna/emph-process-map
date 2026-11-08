@@ -19,7 +19,10 @@ import type { Model, BusinessProcess, Activity } from "../../domain/types";
 const DELTA_TONE: Record<number, "ok" | "warn" | "bad"> = { [CHANGE.added]: "ok", [CHANGE.changed]: "warn", [CHANGE.removed]: "bad" };
 const DELTA_TEXT: Record<number, string> = { [CHANGE.added]: "Added", [CHANGE.changed]: "Changed", [CHANGE.removed]: "Dropped" };
 
-export function FlowStudio({ model, repo, apply, process: p, onClose }: { model: Model; repo: Repository; apply: Apply; process: BusinessProcess; onClose: () => void }) {
+/** A sentence from a workshop transcript that describes a change to the flow; it becomes an activity's rationale. */
+export interface FlowNote { text: string; onUsed: (code: string) => void }
+
+export function FlowStudio({ model, repo, apply, process: p, onClose, note }: { model: Model; repo: Repository; apply: Apply; process: BusinessProcess; onClose: () => void; note?: FlowNote | null }) {
   const l = useLook();
   const { reference, ours } = flowsOf(model, p.id);
   const [view, setView] = React.useState<"ours" | "reference">("ours");
@@ -149,6 +152,12 @@ export function FlowStudio({ model, repo, apply, process: p, onClose }: { model:
       </DrawerHeader>
       <DrawerBody>
         <Problem text={problem} onClose={() => setProblem(null)} />
+        {note && (
+          <div className={l.card} data-emph="flow-note" style={{ marginBottom: 12, borderLeft: "3px solid " + C.railActive }}>
+            <div style={{ fontStyle: "italic" }}>{note.text}</div>
+            <div className={l.muted} style={{ fontSize: 12, marginTop: 4 }}>{editable ? "Select the activity this is about, change it if you like, then use the sentence as its rationale." : !ours ? "Adapt the reference first, then select the activity this is about." : "Reopen our process to use this sentence as a rationale."}</div>
+          </div>
+        )}
         {view === "ours" && !ours && (
           <div className={l.card} style={{ maxWidth: 560, margin: "24px auto", textAlign: "center" }}>
             <div style={{ fontWeight: 600, fontSize: 16 }}>No flow for our process yet</div>
@@ -172,7 +181,8 @@ export function FlowStudio({ model, repo, apply, process: p, onClose }: { model:
             <div className={l.card}>
               {!cur ? <div className={l.muted}>{editable ? "Select an activity to edit it, or drag one from the palette." : view === "reference" ? "The Microsoft reference flow. Switch to Our process to adapt it." : "Confirmed. Reopen to change it."}</div>
                 : <ActivityPanel key={cur.code + cur.id} s={cur} all={shown} lanes={lanes} roles={model.roles.map(r => r.name)} editable={editable} original={view === "ours" ? refActs.map(toStep).find(x => x.code === cur.code) : undefined}
-                    onSave={patch => save(cur, patch)} onAddAfter={() => addAfter(cur)} onRemove={() => remove(cur)} />}
+                    onSave={patch => save(cur, patch)} onAddAfter={() => addAfter(cur)} onRemove={() => remove(cur)}
+                    note={view === "ours" && note ? { text: note.text, use: () => { save(cur, { reason: note.text }); note.onUsed(cur.code); } } : null} />}
             </div>
           </div>
         ) : <Spinner label="Loading the flow" />)}
@@ -242,9 +252,9 @@ export function FlowStudio({ model, repo, apply, process: p, onClose }: { model:
   );
 }
 
-function ActivityPanel({ s, all, lanes, roles, editable, original, onSave, onAddAfter, onRemove }: {
+function ActivityPanel({ s, all, lanes, roles, editable, original, onSave, onAddAfter, onRemove, note }: {
   s: FlowStep; all: FlowStep[]; lanes: string[]; roles: string[]; editable: boolean; original?: FlowStep;
-  onSave: (p: Partial<FlowStep>) => void; onAddAfter: () => void; onRemove: () => void;
+  onSave: (p: Partial<FlowStep>) => void; onAddAfter: () => void; onRemove: () => void; note?: { text: string; use: () => void } | null;
 }) {
   const l = useLook();
   const live = all.filter(x => x.change !== CHANGE.removed);
@@ -286,6 +296,8 @@ function ActivityPanel({ s, all, lanes, roles, editable, original, onSave, onAdd
           {editable && targets.length > 0 && (decision || !s.next.length) && <Button size="small" appearance="transparent" icon={<Add16Regular />} style={{ alignSelf: "flex-start" }} onClick={() => onSave({ next: s.next.concat({ to: s.next[0]?.to || targets[0].code, label: decision && s.next.length === 1 ? "No" : "" }) })}>{decision ? "Add an outcome" : "Add a link"}</Button>}
         </div>
       </Field>
+      {s.reason && <Field label="Rationale"><div style={{ fontSize: 13 }}>{s.reason}</div></Field>}
+      {note && editable && s.type !== STEP_TYPE.start && <Button size="small" appearance="primary" data-emph="flow-note-use" onClick={note.use}>Use the transcript line as the rationale</Button>}
       {original && s.change === CHANGE.changed && <div className={l.muted} style={{ fontSize: 12 }}>{"Reference: “" + original.name + "”, " + original.func}</div>}
       {editable && s.type !== STEP_TYPE.end && (
         <div className={l.row}>

@@ -80,10 +80,10 @@ window.__emph = { log: [], done: false, error: null };
       whole('Rank', 'Rank'), note('Answer', 'Answer'), choice('State', 'State', ['Open', 'Decided']), note('Comments', 'Comments')]],
     ['emph_Workshop', 'Workshop', 'Workshops', 'A guided discovery session.', [
       date('HeldOn', 'Date'), text('Facilitator', 'Facilitator'), note('Participants', 'Participants', 20000), note('Minutes', 'Minutes', 20000), whole('Phase', 'Phase'),
-      choice('Status', 'Status', ['Open', 'Closed']), note('SessionData', 'Session (JSON)', 100000)]],
+      choice('Status', 'Status', ['Open', 'Closed']), note('SessionData', 'Session (JSON)', 100000), note('Transcript', 'Meeting transcript', 1048576)]],
     ['emph_Requirement', 'Requirement', 'Requirements', 'Something needed that standard may not cover.', [
       numbered('ReqId', 'Requirement ID', 'RQ-{SEQNUM:5}'), note('Description', 'Description', 20000), choice('Moscow', 'MoSCoW', ['Must', 'Should', 'Could', "Won't"]),
-      choice('Category', 'Category', ['Functional', 'Non-functional', 'Integration', 'Data', 'Reporting', 'Compliance']), text('RaisedBy', 'Raised by'), note('Verbatim', 'In their words', 20000),
+      choice('Category', 'Category', ['Functional', 'Non-functional', 'Integration', 'Data', 'Reporting', 'Compliance', 'Licensing']), text('RaisedBy', 'Raised by'), note('Verbatim', 'In their words', 20000),
       text('Owner', 'Owner'), choice('State', 'State', ['Draft', 'In review', 'Agreed', 'Rejected', 'Deferred', 'Duplicate']),
       choice('Coverage', 'Coverage by standard', ['Standard', 'Configuration', 'Extension', 'Gap']), choice('Size', 'Size', ['XS', 'S', 'M', 'L', 'XL']),
       note('Resolution', 'Resolution', 20000), text('ResolvedBy', 'Resolved by'), date('ResolvedOn', 'Resolved on'),
@@ -130,6 +130,7 @@ window.__emph = { log: [], done: false, error: null };
     ['reviewnote', 'SignOff', 'Sign-off', 'emph_signoff', 'RemoveLink'],
   ];
 
+  const NOTES = ['emph_Workshop']; // screenshots from a workshop are kept as notes (annotation) on it
   const tableExists = async t => !!(await first(`EntityDefinitions?$select=LogicalName&$filter=LogicalName eq '${t}'`));
   const columnsOf = async t => new Set((await read(`EntityDefinitions(LogicalName='${t}')/Attributes?$select=LogicalName`)).value.map(a => a.LogicalName));
   for (const [schema, one, many, desc, cols] of TABLES) {
@@ -137,7 +138,7 @@ window.__emph = { log: [], done: false, error: null };
     if (!(await tableExists(t))) {
       await web('POST', 'EntityDefinitions', {
         '@odata.type': NS + 'EntityMetadata', SchemaName: schema, DisplayName: label(one), DisplayCollectionName: label(many), Description: label(desc),
-        OwnershipType: 'UserOwned', IsActivity: false, HasActivities: false, HasNotes: false,
+        OwnershipType: 'UserOwned', IsActivity: false, HasActivities: false, HasNotes: NOTES.includes(schema),
         Attributes: [{ ...text('Name', 'Name', 400), IsPrimaryName: true, RequiredLevel: level('ApplicationRequired') }],
       }, IN_SOLUTION);
       say('table ' + t);
@@ -167,6 +168,17 @@ window.__emph = { log: [], done: false, error: null };
   for (const [t, a] of [['emph_requirement', 'emph_state'], ['emph_requirement', 'emph_origin'], ['emph_signoff', 'emph_state'], ['emph_reviewnote', 'emph_state'], ['emph_businessprocess', 'emph_origin'], ['emph_businessprocess', 'emph_reviewstate'], ['emph_processflow', 'emph_state'], ['emph_configdecision', 'emph_state']])
     await amend(t, a, 'PicklistAttributeMetadata', defaultFirst);
   for (const [schema] of TABLES) await amend(schema.toLowerCase(), 'emph_name', 'StringAttributeMetadata', m => (m.RequiredLevel.Value === 'ApplicationRequired' ? false : ((m.RequiredLevel.Value = 'ApplicationRequired'), true)));
+  // notes on a table that was made before they were wanted
+  for (const schema of NOTES) {
+    const path = `EntityDefinitions(LogicalName='${schema.toLowerCase()}')`;
+    const e = await read(path);
+    if (!e.HasNotes) { delete e['@odata.context']; e['@odata.type'] = NS + 'EntityMetadata'; e.HasNotes = true; await web('PUT', path, e, { ...IN_SOLUTION, 'MSCRM.MergeLabels': 'true' }); say('notes on ' + schema.toLowerCase()); }
+  }
+  // a choice added to an existing column (Licensing in Category)
+  for (const [t, a, value, text] of [['emph_requirement', 'emph_category', FIRST + 6, 'Licensing']]) {
+    const o = (await read(`EntityDefinitions(LogicalName='${t}')/Attributes(LogicalName='${a}')/${NS}PicklistAttributeMetadata?$expand=OptionSet($select=Options)`)).OptionSet.Options;
+    if (!o.some(x => x.Value === value)) { await web('POST', 'InsertOptionValue', { EntityLogicalName: t, AttributeLogicalName: a, Value: value, Label: label(text), SolutionUniqueName: SOLUTION }); say('  ' + a + ': ' + text); }
+  }
   say('tables ready');
 
   // ---------- web resources ----------

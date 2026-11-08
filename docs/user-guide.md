@@ -58,6 +58,23 @@ Start a workshop for one end-to-end process in scope (or all of them). A worksho
 6. **Fit-gap**: capture requirements as people speak.
 7. **Summary**: the read-back in fixed phrases, action items, minutes and time per process. Close the workshop to lock it.
 
+### Meeting transcript
+
+Teams doesn't give apps a live transcript, so you paste it in after the meeting (or during a break).
+
+1. In Teams, open the meeting's **Transcript** and download it (.vtt or .docx), or select all and copy. Plain lines such as `[0:03] Ana: ...` work too.
+2. In the workshop, choose **Transcript** and paste. The preview says how many lines and speakers it read. Choose **Keep this transcript**.
+3. **Recording started at** places each line on the business process you were discussing at that moment, using the times you moved through the agenda. Fix the time if the recording started earlier or later. Switch on **All lines** to see everything.
+4. Each line can become one thing, once:
+   - **Capture**: a requirement. The capture box (Fit-gap) fills with the sentence and the speaker, and the requirement keeps the quoted line as *In their words*. **Don't keep** clears it.
+   - **Licence**: the same, with category *Licensing* (who needs which licence, how many, read-only).
+   - **Flow change**: opens the flow studio for the current process. Select the activity it's about and choose **Use the transcript line as the rationale**; it becomes a draft requirement when you confirm the flow.
+   - **Open point**: an action item in the Summary, with the quoted line, for contradictions and things someone has to find out.
+
+   A used line shows what it became, for example *Captured as RQ-00012*. Words that hint at variants (*usually*, *sometimes*, *meistens*), firm needs (*must*, *always*) and licences (*licence*, *read-only*) are highlighted.
+
+**Screenshot** asks which screen, window or tab to capture and keeps one picture as a note on the workshop, named after the current business process. Recent screenshots show under the title; click one to open it.
+
 ## Sign-off
 
 **Freeze for review** copies the scope, answered configuration decisions, confirmed flows and active requirements. Open a sign-off to approve it, discard a draft, compare it with today, or export it:

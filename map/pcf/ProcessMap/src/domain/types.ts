@@ -34,7 +34,8 @@ export interface Requirement {
   coverage: number | null; size: number | null; evidenceFlowId: string | null; resolution: string; resolvedBy: string; resolvedOn: string | null;
   workshopId: string | null; parentId: string | null; duplicateOfId: string | null;
 }
-export interface Workshop { id: string; name: string; heldOn: string | null; facilitator: string; participants: string; minutes: string; phase: number; status: number; endToEndId: string | null; session: SessionState }
+export interface Workshop { id: string; name: string; heldOn: string | null; facilitator: string; participants: string; minutes: string; phase: number; status: number; endToEndId: string | null; session: SessionState; transcript: string }
+export interface Screenshot { id: string; subject: string; createdOn: string }
 export interface SignOff { id: string; name: string; version: number; scopeNote: string; state: number; approver: string; approvedOn: string | null }
 
 export interface Model {

@@ -30,7 +30,8 @@ export const ANSWER_LABEL = set("Choice", "Multiple choice", "Yes or no", "Numbe
 export const DECISION_STATE = keys("open", "decided");
 
 export const MOSCOW_LABEL = set("Must", "Should", "Could", "Won't");
-export const CATEGORY_LABEL = set("Functional", "Non-functional", "Integration", "Data", "Reporting", "Compliance");
+export const CATEGORY = keys("functional", "nonFunctional", "integration", "data", "reporting", "compliance", "licensing");
+export const CATEGORY_LABEL = set("Functional", "Non-functional", "Integration", "Data", "Reporting", "Compliance", "Licensing");
 export const REQ_STATE = keys("draft", "review", "agreed", "rejected", "deferred", "duplicate");
 export const REQ_STATE_LABEL = set("Draft", "In review", "Agreed", "Rejected", "Deferred", "Duplicate");
 export const COVERAGE = keys("standard", "configuration", "extension", "gap");

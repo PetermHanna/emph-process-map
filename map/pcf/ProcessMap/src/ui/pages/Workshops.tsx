@@ -1,17 +1,18 @@
 // Guided discovery workshops: seven phases over an agenda of business processes.
 import * as React from "react";
-import { Button, Field, Input, Switch, Checkbox, Tooltip } from "@fluentui/react-components";
-import { ChevronLeft20Regular, ChevronRight20Regular, Delete16Regular, Copy16Regular } from "@fluentui/react-icons";
+import { Button, Field, Input, Switch, Checkbox, Tooltip, ToggleButton, Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent, DialogActions, Spinner } from "@fluentui/react-components";
+import { ChevronLeft20Regular, ChevronRight20Regular, Delete16Regular, Copy16Regular, Screenshot20Regular, TextQuote20Regular } from "@fluentui/react-icons";
 import { C, useLook } from "../look";
 import { PageProps, Pill, Pick, Choice, Edit, AddBox, Empty } from "../kit";
 import type { Nav } from "../Shell";
-import { SESSION, REVIEW_LABEL, DISPOSITION_LABEL, REVIEW } from "../../domain/codes";
-import { PHASES, visit, wasVisited, minutesPerVisit, summaryLines } from "../../domain/session";
+import { SESSION, REVIEW_LABEL, DISPOSITION_LABEL, REVIEW, CATEGORY } from "../../domain/codes";
+import { PHASES, visit, wasVisited, minutesPerVisit, summaryLines, sourceLine, Utterance } from "../../domain/session";
 import { isActive } from "../../domain/rules";
 import { areasOf } from "../../domain/repository";
-import type { Workshop, BusinessProcess } from "../../domain/types";
+import type { Workshop, BusinessProcess, Screenshot } from "../../domain/types";
 import { DecisionRow } from "./Processes";
-import { Capture, RequirementList } from "./Requirements";
+import { Capture, RequirementList, CaptureFrom } from "./Requirements";
+import { TranscriptPanel, LineUse, grabScreen } from "./Transcript";
 import { FlowStudio } from "../flow/FlowStudio";
 
 export function Workshops({ model, repo, apply }: PageProps & { nav: Nav }) {
@@ -49,8 +50,18 @@ export function Workshops({ model, repo, apply }: PageProps & { nav: Nav }) {
 function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; onBack: () => void }) {
   const l = useLook();
   const [studio, setStudio] = React.useState(false);
+  const [showTranscript, setShowTranscript] = React.useState(false);
+  const [from, setFrom] = React.useState<(CaptureFrom & { i: number }) | null>(null); // a transcript line waiting in the capture box
+  const [flowNote, setFlowNote] = React.useState<{ text: string; i: number } | null>(null);
+  const [mark, setMark] = React.useState<{ i: number; as: string } | null>(null); // marks a line once the capture has landed
+  const [shots, setShots] = React.useState<Screenshot[]>([]);
+  const [shooting, setShooting] = React.useState(false);
+  const [image, setImage] = React.useState<{ subject: string; src: string } | null>(null);
+  const [problem, setProblem] = React.useState<string | null>(null);
   const closed = w.status === SESSION.closed;
   const save = (patch: Partial<Workshop>) => apply(m => repo.saveWorkshop(m, m.workshops.find(x => x.id === w.id) || w, patch));
+  /** Session changes made from the latest saved session, not the one this screen was drawn with. */
+  const saveSession = (fn: (s: Workshop["session"]) => Workshop["session"]) => apply(m => { const cur = m.workshops.find(x => x.id === w.id) || w; return repo.saveWorkshop(m, cur, { session: fn(cur.session) }); });
   const agenda = w.session.processIds.map(id => model.processes.find(p => p.id === id)).filter(Boolean) as BusinessProcess[];
   const current = agenda.find(p => p.id === w.session.current) || null;
   const idx = current ? agenda.indexOf(current) : -1;
@@ -58,6 +69,31 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
   const captured = model.requirements.filter(r => r.workshopId === w.id && isActive(r));
   // only what has been picked: business processes in scope, plus any still on the agenda
   const areas = (w.endToEndId ? areasOf(model, w.endToEndId) : model.areas).slice().sort((x, y) => x.code.localeCompare(y.code, undefined, { numeric: true })).map(a => ({ a, ps: model.processes.filter(p => p.areaId === a.id && (p.inScope || w.session.processIds.includes(p.id))) })).filter(x => x.ps.length);
+  React.useEffect(() => { repo.screenshots(w).then(setShots).catch(() => setShots([])); }, [w.id]);
+  React.useEffect(() => {
+    if (!mark) return;
+    const { i, as } = mark;
+    saveSession(s => ({ ...s, captured: { ...(s.captured || {}), [String(i)]: as } }));
+    setMark(null);
+  }, [mark]);
+  const useLine = (u: Utterance & { i: number }, use: LineUse) => {
+    if (w.session.captured?.[String(u.i)]) return; // each line is used once
+    if (use === "open") {
+      saveSession(s => ({ ...s, actions: s.actions.concat({ text: u.text, owner: "", due: "", source: sourceLine(u) }), captured: { ...(s.captured || {}), [String(u.i)]: "open point" } }));
+      return;
+    }
+    if (use === "flow") { setFlowNote({ text: u.text, i: u.i }); setStudio(true); return; }
+    setFrom({ key: u.i + ":" + Date.now(), i: u.i, text: u.text, who: u.speaker, verbatim: sourceLine(u), category: use === "licence" ? CATEGORY.licensing : null });
+    if (w.phase !== 5) save({ phase: 5 });
+  };
+  const screenshot = async () => {
+    setProblem(null); setShooting(true);
+    try {
+      const jpeg = await grabScreen();
+      if (jpeg) { const shot = await repo.addScreenshot(w, "Screenshot: " + (current ? current.name : w.name), jpeg); setShots(xs => [shot, ...xs]); }
+    } catch (e: any) { setProblem("The screenshot didn't work: " + (e?.message || e)); }
+    finally { setShooting(false); }
+  };
   const lines = summaryLines(captured.map(r => ({ reqId: r.reqId, description: r.description, owner: r.owner, resolution: r.resolution, resolvedBy: r.resolvedBy })),
     agenda.map(p => ({ name: p.name, disposition: p.disposition, visited: wasVisited(w.session.visits, p.id) })), w.session.actions);
 
@@ -66,7 +102,23 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
       <div className={l.row}>
         <Button appearance="subtle" icon={<ChevronLeft20Regular />} onClick={onBack}>All workshops</Button>
         <b style={{ fontSize: 16 }}>{w.name}</b>{closed && <Pill text="Closed" />}
+        <span style={{ flexGrow: 1 }} />
+        <ToggleButton icon={<TextQuote20Regular />} checked={showTranscript} onClick={() => setShowTranscript(x => !x)} data-emph="transcript-toggle">Transcript{w.transcript ? "" : " (none yet)"}</ToggleButton>
+        <Tooltip content="Pick a screen, window or tab; one picture is kept as a note on this workshop" relationship="description">
+          <Button icon={shooting ? <Spinner size="tiny" /> : <Screenshot20Regular />} disabled={closed || shooting || !navigator.mediaDevices?.getDisplayMedia} onClick={screenshot} data-emph="screenshot">Screenshot</Button>
+        </Tooltip>
       </div>
+      {problem && <div style={{ color: C.bad }}>{problem}</div>}
+      {shots.length > 0 && (
+        <div className={l.row} style={{ fontSize: 12 }} data-emph="screenshots">
+          <span className={l.muted}>Screenshots:</span>
+          {shots.slice(0, 6).map(x => (
+            <Button key={x.id} size="small" appearance="subtle" onClick={async () => { try { setImage({ subject: x.subject, src: await repo.screenshotImage(x.id) }); } catch (e: any) { setProblem(String(e?.message || e)); } }}>
+              {x.subject.replace(/^Screenshot: /, "")} {x.createdOn ? new Date(x.createdOn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
+            </Button>
+          ))}
+        </div>
+      )}
       <div className={l.row} data-emph="phases">
         {PHASES.map((ph, i) => (
           <button key={ph.name} onClick={() => save({ phase: i })} style={{ border: "none", cursor: "pointer", borderRadius: 999, padding: "6px 14px", fontSize: 13, fontWeight: 600,
@@ -74,11 +126,11 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
         ))}
       </div>
       <div className={l.muted} style={{ fontSize: 13 }}>{PHASES[w.phase].discuss}. Produces: {PHASES[w.phase].produces.toLowerCase()}.</div>
-      <div style={{ display: "grid", gridTemplateColumns: "260px 1fr", gap: 16, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: showTranscript ? "260px 1fr 400px" : "260px 1fr", gap: 16, alignItems: "start" }}>
         <div className={l.card} style={{ padding: 10 }}>
           <div className={l.section} style={{ marginTop: 0 }}>Agenda</div>
           {agenda.map((p, i) => (
-            <div key={p.id} className={l.node + (p.id === w.session.current ? " " + l.nodeOn : "")} onClick={() => !closed && go(p)} style={{ opacity: p.inScope ? 1 : 0.55 }}>
+            <div key={p.id} data-emph="agenda-item" className={l.node + (p.id === w.session.current ? " " + l.nodeOn : "")} onClick={() => !closed && go(p)} style={{ opacity: p.inScope ? 1 : 0.55 }}>
               <span className={l.code} style={{ minWidth: 20 }}>{i + 1}</span><span style={{ flexGrow: 1 }}>{p.name}</span>{wasVisited(w.session.visits, p.id) && <span style={{ color: C.ok }}>✓</span>}
             </div>
           ))}
@@ -132,7 +184,8 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
               {!model.decisions.some(d => d.processId === current.id) && <div className={l.muted}>No configuration decisions on this business process.</div>}
             </>}
             {w.phase === 5 && <>
-              <Capture model={model} repo={repo} apply={apply} processId={current?.id ?? null} workshopId={w.id} />
+              <Capture model={model} repo={repo} apply={apply} processId={current?.id ?? null} workshopId={w.id} from={from} onDropFrom={() => setFrom(null)}
+                onCaptured={r => { if (from) { setMark({ i: from.i, as: r.reqId || "requirement" }); setFrom(null); } }} />
               {captured.length > 0 && <RequirementList model={model} repo={repo} apply={apply} rows={captured.filter(r => !current || r.processId === current.id)} />}
             </>}
             {w.phase === 6 && <>
@@ -143,7 +196,7 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
               {w.session.actions.map((a, i) => (
                 <div key={i} className={l.row}>
                   <Checkbox checked={!!a.done} onChange={(_, d) => save({ session: { ...w.session, actions: w.session.actions.map((x, k) => (k === i ? { ...x, done: !!d.checked } : x)) } })} />
-                  <span style={{ flexGrow: 1, textDecoration: a.done ? "line-through" : undefined }}>{a.text}</span>
+                  <span style={{ flexGrow: 1, textDecoration: a.done ? "line-through" : undefined }} title={a.source || undefined}>{a.text}{a.source && <span className={l.muted} style={{ fontSize: 11, display: "block" }}>{a.source}</span>}</span>
                   <Input size="small" placeholder="Owner" defaultValue={a.owner} onBlur={e => save({ session: { ...w.session, actions: w.session.actions.map((x, k) => (k === i ? { ...x, owner: e.target.value } : x)) } })} />
                   <Input size="small" type="date" defaultValue={a.due} onBlur={e => save({ session: { ...w.session, actions: w.session.actions.map((x, k) => (k === i ? { ...x, due: e.target.value } : x)) } })} />
                 </div>
@@ -158,7 +211,18 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
           </Tooltip></div>}
         </div>
       </div>
-      {studio && current && <FlowStudio model={model} repo={repo} apply={apply} process={current} onClose={() => setStudio(false)} />}
+        {showTranscript && <TranscriptPanel w={w} agenda={agenda} current={current} closed={closed} save={save} saveSession={saveSession} onUse={useLine} />}
+      {studio && current && <FlowStudio model={model} repo={repo} apply={apply} process={current} onClose={() => { setStudio(false); setFlowNote(null); }}
+        note={flowNote ? { text: flowNote.text, onUsed: code => { setMark({ i: flowNote.i, as: "flow change " + code }); setFlowNote(null); } } : null} />}
+      {image && (
+        <Dialog open onOpenChange={(_, d) => { if (!d.open) setImage(null); }}>
+          <DialogSurface style={{ maxWidth: "90vw" }}><DialogBody>
+            <DialogTitle>{image.subject}</DialogTitle>
+            <DialogContent><img src={image.src} alt={image.subject} style={{ maxWidth: "100%", maxHeight: "70vh", display: "block" }} /></DialogContent>
+            <DialogActions><Button appearance="primary" onClick={() => setImage(null)}>Close</Button></DialogActions>
+          </DialogBody></DialogSurface>
+        </Dialog>
+      )}
     </>
   );
 }

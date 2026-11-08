@@ -106,8 +106,58 @@
     const after = rows("emph_businessprocess").filter(r => r.emph_inscope).length;
     return sections + " sections, " + columns + " area columns, renamed \u201c" + before + "\u201d, in scope " + id + " -> " + after;
   }
+
+  // Meeting transcript (made-up): paste, place on the agenda, capture a requirement, a licence need and an open point; take a screenshot.
+  const TRANSCRIPT = "Ana Field   0:01\nUsually the foreman approves the work order, sometimes the PM skips it.\n\nBen Office   0:02\nWe need read-only access for the office, maybe five licences.\n\nAna Field   0:03\nWe always do the credit check.\n\nBen Office   0:04\nOnly above ten thousand, someone from management should look into that.\nBen Office stopped transcription\nCarl Site   0:05\nThirty technicians plus eight foremen.\n\nCarl Site   0:06\nWe don't do the second check any more.";
+  async function transcript() {
+    await nav("workshops");
+    if (!q('[data-emph="workshop-new"]')) { button(/All workshops/).click(); await wait(200); }
+    q('[data-emph="workshop-new"]').click();
+    await until(() => q('[data-emph="phases"]'));
+    const items = await until(() => { const a = document.querySelectorAll('[data-emph="agenda-item"]'); return a.length >= 2 && a; });
+    items[0].click(); await wait(300); items[1].click(); await wait(300);
+    q('[data-emph="transcript-toggle"]').click();
+    const box = await until(() => q('[data-emph="transcript-paste"] textarea') || q('textarea[data-emph="transcript-paste"]'));
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(box, TRANSCRIPT); box.dispatchEvent(new Event("input", { bubbles: true })); await wait(150);
+    const preview = q('[data-emph="transcript-preview"]').innerText;
+    if (!/Read 6 lines from 3 speakers/.test(preview)) throw new Error("preview: " + preview);
+    q('[data-emph="transcript-keep"]').click();
+    const ws = () => rows("emph_workshop")[rows("emph_workshop").length - 1];
+    await until(() => (ws().emph_transcript || "").includes("foreman"));
+    const lines = await until(() => { const a = document.querySelectorAll('[data-emph="transcript-line"]'); return a.length === 6 && a; });
+    if (!document.querySelector('mark[data-mark="hedge"]') || !document.querySelector('mark[data-mark="licence"]')) throw new Error("no highlights");
+    // a requirement from line 0
+    lines[0].querySelector('[data-emph="line-capture"]').click();
+    const from = await until(() => q('[data-emph="capture-from"]'));
+    if (!/\[0:01\] Ana Field: Usually/.test(from.innerText)) throw new Error("capture-from: " + from.innerText);
+    [...q('[data-emph="capture"]').querySelectorAll("button")].find(b => b.innerText.trim() === "Capture").click();
+    const req = await until(() => rows("emph_requirement").find(r => (r.emph_verbatim || "").startsWith("[0:01] Ana Field:")));
+    if (req.emph_raisedby !== "Ana Field" || !req._emph_workshop_value) throw new Error("requirement fields");
+    await until(() => /Captured as RQ-/.test(q('[data-line="0"]').innerText));
+    if (q('[data-line="0"] [data-emph="line-capture"]')) throw new Error("line 0 can still be captured");
+    // a licence need from line 1
+    q('[data-line="1"] [data-emph="line-licence"]').click();
+    await until(() => q('[data-emph="capture-from"]'));
+    [...q('[data-emph="capture"]').querySelectorAll("button")].find(b => b.innerText.trim() === "Capture").click();
+    await until(() => rows("emph_requirement").some(r => r.emph_category === 582100006 && /read-only/.test(r.emph_description)));
+    // an open point from line 3
+    q('[data-line="3"] [data-emph="line-open"]').click();
+    await until(() => JSON.parse(ws().emph_sessiondata).actions.some(a => /ten thousand/.test(a.text) && /^\[0:04\] Ben Office:/.test(a.source)));
+    // a screenshot, with a canvas standing in for the screen picker
+    const md = navigator.mediaDevices, real = md.getDisplayMedia;
+    md.getDisplayMedia = async () => { const c = document.createElement("canvas"); c.width = 640; c.height = 360; const g = c.getContext("2d"); g.fillStyle = "#0D9488"; g.fillRect(0, 0, 640, 360); const st = c.captureStream(5); setInterval(() => g.fillRect(0, 0, 1, 1), 50); return st; };
+    try { q('[data-emph="screenshot"]').click(); await until(() => rows("annotation").length > 0, 6000); } finally { md.getDisplayMedia = real; }
+    const note = rows("annotation")[0];
+    if (note.mimetype !== "image/jpeg" || !note.documentbody || note._objectid_value !== ws().emph_workshopid) throw new Error("note fields");
+    (await until(() => q('[data-emph="screenshots"] button'))).click();
+    await until(() => document.querySelector('img[src^="data:image/jpeg;base64,"]'));
+    button(/^Close$/)?.click(); await wait(200);
+    const session = JSON.parse(ws().emph_sessiondata), done = Object.keys(session.captured).length;
+    if (done !== 3 || session.actions.length !== 1) throw new Error("captured " + JSON.stringify(session.captured) + ", actions " + session.actions.length);
+    return "6 lines, captured " + done + " (requirement, licence, open point), screenshot " + Math.round(note.documentbody.length * 0.75 / 1024) + " KB";
+  }
   window.__tests = {
-    pages, processAndFlow, guide, capture, signOff, workshop, mainMap,
-    async all() { const r = {}; for (const [k, f] of Object.entries({ pages, mainMap, processAndFlow, guide, capture, signOff, workshop })) { try { r[k] = await f(); } catch (e) { r[k] = "FAIL " + e.message; } } return r; },
+    pages, processAndFlow, guide, capture, signOff, workshop, transcript, mainMap,
+    async all() { const r = {}; for (const [k, f] of Object.entries({ pages, mainMap, processAndFlow, guide, capture, signOff, workshop, transcript })) { try { r[k] = await f(); } catch (e) { r[k] = "FAIL " + e.message; } } return r; },
   };
 })();
