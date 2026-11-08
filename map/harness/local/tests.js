@@ -80,7 +80,10 @@
     await nav("workshops");
     q('[data-emph="workshop-new"]').click();
     await until(() => q('[data-emph="phases"]'));
-    return "workshop " + rows("emph_workshop").length;
+    const listed = (await until(() => q('[data-emph="agenda-pick"]'))).querySelectorAll('input[type="checkbox"]').length;
+    const inScope = rows("emph_businessprocess").filter(r => r.emph_inscope).length;
+    if (listed !== inScope) throw new Error("agenda lists " + listed + " processes, " + inScope + " in scope");
+    return "workshop " + rows("emph_workshop").length + ", agenda lists the " + listed + " in-scope processes";
   }
   async function mainMap() {
     await nav("overview");

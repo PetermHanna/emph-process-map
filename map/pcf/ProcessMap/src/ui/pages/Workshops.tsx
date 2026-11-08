@@ -24,8 +24,9 @@ export function Workshops({ model, repo, apply }: PageProps & { nav: Nav }) {
     <>
       <div className={l.card + " " + l.row}>
         <span>New workshop for</span>
-        <Pick value={e2e} items={model.endToEnds} onChange={setE2e} placeholder="All end-to-end processes" width={260} />
-        <Button appearance="primary" data-emph="workshop-new" onClick={() => apply(async m => { const r = await repo.addWorkshop(m, e2e); setOpenId(r.workshop.id); return r.model; })}>Start</Button>
+        <Pick value={e2e} items={model.endToEnds.filter(x => x.inScope)} onChange={setE2e} placeholder="All in scope" width={260} />
+        <Button appearance="primary" data-emph="workshop-new" disabled={!model.processes.some(p => p.inScope)} onClick={() => apply(async m => { const r = await repo.addWorkshop(m, e2e); setOpenId(r.workshop.id); return r.model; })}>Start</Button>
+        {!model.processes.some(p => p.inScope) && <span className={l.muted}>Put business processes in scope on Our processes first.</span>}
       </div>
       {model.workshops.length === 0 ? <Empty title="No workshops yet" text="A workshop walks through business processes with the people who run them and records what you decide." /> : (
         <div className={l.card}>
@@ -55,7 +56,8 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
   const idx = current ? agenda.indexOf(current) : -1;
   const go = (p: BusinessProcess) => save({ session: visit(w.session, p.id, p.name, new Date().toISOString()) });
   const captured = model.requirements.filter(r => r.workshopId === w.id && isActive(r));
-  const candidates = model.processes.filter(p => !w.endToEndId || areasOf(model, w.endToEndId).some(a => a.id === p.areaId));
+  // only what has been picked: business processes in scope, plus any still on the agenda
+  const areas = (w.endToEndId ? areasOf(model, w.endToEndId) : model.areas).slice().sort((x, y) => x.code.localeCompare(y.code, undefined, { numeric: true })).map(a => ({ a, ps: model.processes.filter(p => p.areaId === a.id && (p.inScope || w.session.processIds.includes(p.id))) })).filter(x => x.ps.length);
   const lines = summaryLines(captured.map(r => ({ reqId: r.reqId, description: r.description, owner: r.owner, resolution: r.resolution, resolvedBy: r.resolvedBy })),
     agenda.map(p => ({ name: p.name, disposition: p.disposition, visited: wasVisited(w.session.visits, p.id) })), w.session.actions);
 
@@ -97,9 +99,16 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
               </div>
               <Field label="Participants"><Edit multiline value={w.participants} onSave={v => save({ participants: v })} /></Field>
               <div className={l.section}>Business processes on the agenda</div>
-              <div style={{ columns: 2 }}>{candidates.map(p => (
-                <Checkbox key={p.id} label={p.code + " " + p.name} checked={w.session.processIds.includes(p.id)}
-                  onChange={(_, d) => save({ session: { ...w.session, processIds: d.checked ? w.session.processIds.concat(p.id) : w.session.processIds.filter(x => x !== p.id) } })} />
+              <div className={l.muted} style={{ fontSize: 12 }}>The business processes in scope{w.endToEndId ? " in this end-to-end process" : ""}. To add others, put them in scope on Our processes.</div>
+              {!areas.length && <div className={l.muted}>Nothing in scope here yet.</div>}
+              <div style={{ columns: 2 }} data-emph="agenda-pick">{areas.map(({ a, ps }) => (
+                <div key={a.id} style={{ breakInside: "avoid", marginBottom: 8 }}>
+                  <div style={{ fontWeight: 600, fontSize: 12, color: C.muted }}><span className={l.code}>{a.code}</span> {a.name}</div>
+                  {ps.map(p => (
+                    <Checkbox key={p.id} label={p.code + " " + p.name + (p.inScope ? "" : " (out of scope)")} checked={w.session.processIds.includes(p.id)}
+                      onChange={(_, d) => save({ session: { ...w.session, processIds: d.checked ? w.session.processIds.concat(p.id) : w.session.processIds.filter(x => x !== p.id) } })} />
+                  ))}
+                </div>
               ))}</div>
             </>}
             {w.phase === 1 && agenda.map(p => (

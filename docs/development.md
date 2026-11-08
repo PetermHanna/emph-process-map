@@ -33,6 +33,8 @@ python map\schema\import-catalog.py "<path to the catalog .xlsx>"
 node map\harness\local\serve.mjs
 ```
 
+If port 8766 is taken, start it with another port, e.g. `$env:PORT = '8776'; node map\harness\local\serve.mjs`.
+
 Open http://localhost:8766/main.aspx for the real-estate demo, http://localhost:8766/main.aspx?sample=engineering for the engineering one, or ?sample=catalog for the catalog alone. The component runs against in-memory data, so nothing reaches Dataverse; reload to reset.
 
 Scripted end-to-end checks run from the console: `await __tests.all()`. They click through all pages, adapt and confirm a flow, play it in the guide (with the extension simulated), capture a requirement, freeze a sign-off and start a workshop. `processAndFlow` uses the engineering demo.

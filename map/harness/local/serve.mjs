@@ -27,4 +27,4 @@ http.createServer((req, res) => {
     res.writeHead(200, { "Content-Type": types[path.extname(f)] || "text/plain", "Cache-Control": "no-store" });
     res.end(d);
   });
-}).listen(8766, () => console.log("EMPH Process Map (local mock): http://localhost:8766/main.aspx"));
+}).listen(Number(process.env.PORT) || 8766, function () { console.log("EMPH Process Map (local mock): http://localhost:" + this.address().port + "/main.aspx"); });

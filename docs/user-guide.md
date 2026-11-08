@@ -48,7 +48,7 @@ Capture a requirement, then open it to set MoSCoW, category, state, coverage by 
 
 ## Workshops
 
-Start a workshop for one end-to-end process (or all). It runs in seven phases:
+Start a workshop for one end-to-end process in scope (or all of them). A workshop only covers what you've picked: the agenda starts with the business processes in scope, and Prepare lists only those, by area, to tick on or off. To discuss another process, put it in scope on **Our processes** first. It runs in seven phases:
 
 1. **Prepare**: participants and the business processes on the agenda.
 2. **Scope**: in or out.
