@@ -1,0 +1,42 @@
+# Publishes the demo (the Process Map with in-memory data) to GitHub Pages from files already in the repository.
+# The component bundle is the committed one in map/sol, so run .\map\build.ps1 and commit before pushing a change.
+name: Demo site
+
+on:
+  push:
+    branches: [main]
+    paths: ["map/harness/site/**", "map/harness/local/mock.js", "map/sol/Controls/**", "map/schema/sample-data.js", "map/schema/catalog.json", "map/schema/flows.json", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          cp map/harness/site/index.html _site/index.html
+          cp map/harness/local/mock.js _site/
+          cp map/sol/Controls/emph_EMPH.ProcessMap/bundle.js _site/
+          cp map/schema/sample-data.js map/schema/catalog.json map/schema/flows.json _site/
+          touch _site/.nojekyll
+          ls -l _site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

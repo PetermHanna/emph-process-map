@@ -37,6 +37,10 @@ Open http://localhost:8766/main.aspx for the real-estate demo, http://localhost:
 
 Scripted end-to-end checks run from the console: `await __tests.all()`. They click through all pages, adapt and confirm a flow, play it in the guide (with the extension simulated), capture a requirement, freeze a sign-off and start a workshop. `processAndFlow` uses the engineering demo.
 
+## Demo site
+
+[.github/workflows/pages.yml](../.github/workflows/pages.yml) publishes the local page to GitHub Pages on every push to `main` that touches it: [map/harness/site/index.html](../map/harness/site/index.html) (the page with a bar to switch demos), `map/harness/local/mock.js`, the committed bundle in `map/sol/Controls/emph_EMPH.ProcessMap/`, `sample-data.js`, `catalog.json` and `flows.json`. The bundle is the committed one, so build and commit before pushing. Pages must be set to **GitHub Actions** once (repository Settings > Pages > Source).
+
 ## Reference flows
 
 `map/schema/flows.json` is committed. To refresh it, download the `graphics/*process flow*.xlsx` workbooks from [microsoft/dynamics365patternspractices](https://github.com/microsoft/dynamics365patternspractices) into one folder, then:

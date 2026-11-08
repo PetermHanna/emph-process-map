@@ -37,7 +37,7 @@ By hand instead: open the Workspace main form, select **Host column**, Component
    python map/schema/import-catalog.py "<path to the catalog .xlsx>"
    ```
 
-   This writes `map/schema/catalog.json` and `map/schema/catalog-load.js` (which also carries Microsoft's reference flows from `map/schema/flows.json`): 16 end-to-end processes, about 100 process areas and about 700 business processes (scenarios, test cases and deprecated rows are left out). Both files hold Microsoft's text and stay out of git.
+   This writes `map/schema/catalog.json` and `map/schema/catalog-load.js` (which also carries Microsoft's reference flows from `map/schema/flows.json`): 16 end-to-end processes, about 100 process areas and about 700 business processes (scenarios, test cases and deprecated rows are left out). The repository already carries a `catalog.json` (October 2026) for the demo site; `catalog-load.js` stays out of git.
 3. On the same WhoAmI page and console:
    1. Paste all of `map/schema/catalog-load.js`.
    2. Choose what to load: `window.EMPH_SAMPLE_NAME = 'catalog'` (the catalog only, nothing in scope), `'realestate'` (the default) or `'engineering'`.

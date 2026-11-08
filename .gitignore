@@ -5,5 +5,4 @@ bin/
 generated/
 *.zip
 .DS_Store
-map/schema/catalog.json
 map/schema/catalog-load.js

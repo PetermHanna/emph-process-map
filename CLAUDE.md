@@ -1,6 +1,7 @@
 # EMPH Process Map: working notes
 
-Peter Hanna's own product. Repository: https://github.com/PetermHanna/emph-process-map (private), branch `main`.
+Peter Hanna's own product. Repository: https://github.com/PetermHanna/emph-process-map (public), branch `main`.
+Live demo (GitHub Pages, in-memory data): https://petermhanna.github.io/emph-process-map/ (`?sample=engineering`, `?sample=catalog`).
 
 ## What it is
 
@@ -16,7 +17,8 @@ See README.md and docs/ (install, user guide, architecture, development).
   environment for this product in this session. Test on the local page (below).
 - Peter signs in himself; never type passwords. Confirm before permanent deletes and before pushing.
 - Run builds and servers in the visible Terminal panel.
-- Microsoft's catalog text (catalog.json, catalog-load.js) stays out of git. The reference flows (flows.json) are
+- catalog.json (Microsoft's catalog, converted) is committed for the demo site, with attribution in README (Peter's decision, 8 Nov 2026).
+  catalog-load.js stays out of git. The reference flows (flows.json) are
   CC BY 4.0 from microsoft/dynamics365patternspractices and are committed with attribution.
 - Demo organisations are fictional (Harbourview Properties: real estate; Lakeside Engineering).
 
@@ -43,6 +45,8 @@ See README.md and docs/ (install, user guide, architecture, development).
   Needs map/schema/catalog.json (run import-catalog.py on the catalog workbook, e.g. "Business Process Catalog OCT 2026.xlsx"
   in Peter's Downloads). In the console: `await __tests.all()` runs 7 end-to-end checks (pages, mainMap, processAndFlow, guide, capture, signOff, workshop).
 - Guide test page: `node guide\test\serve.mjs` → http://localhost:8767/main.aspx?f=band | busy | list; `__g.reset()`, reload, `await __g.run()`; `await __g.launch()`.
+- Demo site: `.github/workflows/pages.yml` copies map/harness/site/index.html, local/mock.js, the committed bundle in
+  map/sol/Controls, sample-data.js, catalog.json and flows.json to Pages on push to main. Build and commit the bundle first.
 - Restart the local server after changing serve.mjs routes. A hard reload picks up a new bundle.
 - Shell heredocs with mixed quotes fail here: write Python edit scripts to a file and run them.
 

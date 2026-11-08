@@ -4,6 +4,8 @@ Map how your organisation works against the Microsoft Business Process Catalog, 
 
 You scope end-to-end processes, process areas and business processes, record who owns each one and in which application it runs today and tomorrow, adapt Microsoft's reference flows into your own, answer configuration decisions, and capture what standard doesn't cover. Guided workshops collect it with the business; sign-offs freeze it and export to Word, PDF and Excel.
 
+**Try it:** [live demo](https://petermhanna.github.io/emph-process-map/) in your browser, with in-memory data (nothing is saved): [Harbourview Properties](https://petermhanna.github.io/emph-process-map/?sample=realestate), [Lakeside Engineering](https://petermhanna.github.io/emph-process-map/?sample=engineering), [catalog only](https://petermhanna.github.io/emph-process-map/?sample=catalog).
+
 | Folder | What it is |
 |---|---|
 | [map/](map) | The **process map**: a PCF code component (React 18, Fluent UI 9, React Flow), its Dataverse install script, demo data and solution package |
@@ -38,7 +40,7 @@ You scope end-to-end processes, process areas and business processes, record who
 
 ## Attribution
 
-The catalog structure and IDs come from the [Microsoft Business Process Catalog](https://learn.microsoft.com/dynamics365/guidance/business-processes/overview); its text is not stored in this repository, you convert your own download. The reference flows in `map/schema/flows.json` come from [microsoft/dynamics365patternspractices](https://github.com/microsoft/dynamics365patternspractices) by Microsoft, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), converted to this app's format. The demo organisations, their adapted flow, decisions and requirements are fictional.
+The catalog structure, IDs, names and summaries come from the [Microsoft Business Process Catalog](https://learn.microsoft.com/dynamics365/guidance/business-processes/overview) by Microsoft; `map/schema/catalog.json` is converted from Microsoft's October 2026 workbook for the demo site. To use a newer catalog, convert your own download. The reference flows in `map/schema/flows.json` come from [microsoft/dynamics365patternspractices](https://github.com/microsoft/dynamics365patternspractices) by Microsoft, licensed [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/), converted to this app's format. The demo organisations, their adapted flow, decisions and requirements are fictional.
 
 ## Author
 
