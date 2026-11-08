@@ -28,16 +28,26 @@ Run `install.js` once more. With the component in the environment, it binds `emp
 
 By hand instead: open the Workspace main form, select **Host column**, Components > add **EMPH Process Map**, hide the label, save and publish.
 
-## 4. Open it, and load a demo if you like
+## 4. Load the Microsoft Business Process Catalog
+
+1. Download the catalog workbook from Microsoft ([Business process catalog](https://learn.microsoft.com/dynamics365/guidance/business-processes/about)).
+2. Convert it:
+
+   ```bash
+   python map/schema/import-catalog.py "<path to the catalog .xlsx>"
+   ```
+
+   This writes `map/schema/catalog.json` and `map/schema/catalog-load.js`: 16 end-to-end processes, about 100 process areas and about 700 business processes (scenarios, test cases and deprecated rows are left out). Both files hold Microsoft's text and stay out of git.
+3. On the same WhoAmI page and console:
+   1. Paste all of `map/schema/catalog-load.js`.
+   2. Choose what to load: `window.EMPH_SAMPLE_NAME = 'catalog'` (the catalog only, nothing in scope), `'realestate'` (the default) or `'engineering'`.
+   3. Paste all of [`map/schema/sample-data.js`](../map/schema/sample-data.js) and press Enter. It takes a few minutes; `window.__emphSample` shows progress.
+
+The demos put their own processes in scope on top of the real catalog, with owners, applications, a reference flow, configuration decisions and requirements. Everything else stays out of scope. Load once per environment: it adds records each time it runs.
+
+## 5. Open it
 
 Open the app **EMPH Process Map** and choose **Process map**. After any new import, hard reload (Ctrl+Shift+R) so the browser doesn't keep the old component.
-
-To load a demo, on the same WhoAmI page and console:
-
-1. Choose one: `window.EMPH_SAMPLE_NAME = 'realestate'` (the default) or `'engineering'`.
-2. Paste all of [`map/schema/sample-data.js`](../map/schema/sample-data.js) and press Enter.
-
-Load one demo into an environment, once: it adds records each time it runs.
 
 ## Access
 

@@ -26,11 +26,14 @@ These cover coverage, flow changes, sign-off comparison, workshop sessions and t
 
 ## Local test page
 
+The page reads the catalog from `map/schema/catalog.json`, so convert Microsoft's workbook once (see [install](install.md), step 4):
+
 ```powershell
+python map\schema\import-catalog.py "<path to the catalog .xlsx>"
 node map\harness\local\serve.mjs
 ```
 
-Open http://localhost:8766/main.aspx for the real-estate demo, or http://localhost:8766/main.aspx?sample=engineering. The component runs against an in-memory copy of the demo data, so nothing reaches Dataverse; reload to reset.
+Open http://localhost:8766/main.aspx for the real-estate demo, http://localhost:8766/main.aspx?sample=engineering for the engineering one, or ?sample=catalog for the catalog alone. The component runs against in-memory data, so nothing reaches Dataverse; reload to reset.
 
 Scripted end-to-end checks run from the console: `await __tests.all()`. They click through all pages, adapt and confirm a flow, capture a requirement, freeze a sign-off and start a workshop. `processAndFlow` uses the engineering demo.
 

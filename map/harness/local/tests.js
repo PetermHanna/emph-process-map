@@ -16,8 +16,8 @@
   async function processAndFlow() {
     await nav("processes");
     [...document.querySelectorAll('[data-emph="process-tree"] > div')].find(d => /Project to profit/.test(d.innerText)).click(); await wait(200);
-    [...document.querySelectorAll('[data-emph="process-tree"] div')].find(d => d.innerText.trim() === "Deliver and invoice projects").click(); await wait(200);
-    (await until(() => [...document.querySelectorAll('[data-emph="process-node"]')].find(d => /Invoice a project/.test(d.innerText)))).click();
+    [...document.querySelectorAll('[data-emph="process-tree"] div')].find(d => /^80\.50\s*Manage project financials$/.test(d.innerText.trim())).click(); await wait(200);
+    (await until(() => [...document.querySelectorAll('[data-emph="process-node"]')].find(d => /Invoice project milestones/.test(d.innerText)))).click();
     await until(() => q('[data-emph="process-panel"]'));
     q('[data-emph="open-flow"]').click();
     (await until(() => q('[data-emph="flow-adapt"]'))).click();

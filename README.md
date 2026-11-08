@@ -20,11 +20,11 @@ You scope end-to-end processes, process areas and business processes, record who
 - **Sign-off**: freeze, compare with today, approve, export.
 - **Applications** and **Settings** (organisation and roles).
 
-## Demos
+## Microsoft catalog and demos
 
-Two fictional organisations come with it ([map/schema/sample-data.js](map/schema/sample-data.js)):
+[map/schema/import-catalog.py](map/schema/import-catalog.py) converts Microsoft's Business Process Catalog workbook into the three levels the app uses (16 end-to-end processes, about 100 areas, about 700 business processes). [map/schema/sample-data.js](map/schema/sample-data.js) loads it, either alone or with one of two fictional organisations whose processes point at real catalog IDs:
 
-- **Harbourview Properties**: sells and rents units and maintains them with Dynamics 365 Project Operations and Field Service.
+- **Harbourview Properties**: sells and rents units (Prospect to quote, Rent to return, Order to cash) and maintains them with Dynamics 365 Field Service and Project Operations (Service to deliver, Acquire to dispose, Project to profit).
 - **Lakeside Engineering**: project-based installation work.
 
 ## Getting started
@@ -36,7 +36,7 @@ Two fictional organisations come with it ([map/schema/sample-data.js](map/schema
 
 ## Attribution
 
-End-to-end process names follow the [Microsoft Business Process Catalog](https://learn.microsoft.com/dynamics365/guidance/business-processes/overview). The demo areas, business processes and flows are illustrative.
+The catalog structure and IDs come from the [Microsoft Business Process Catalog](https://learn.microsoft.com/dynamics365/guidance/business-processes/overview); its text is not stored in this repository, you convert your own download. The demo organisations, flows, decisions and requirements are fictional.
 
 ## Author
 

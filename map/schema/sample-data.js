@@ -1,64 +1,55 @@
-// EMPH Process Map demo data: a fictional organisation with a few business processes, a reference flow,
-// configuration decisions and requirements, so you can try every page.
-// Run it after install.js, the same way (console on the /api/data/v9.2/WhoAmI page). Run it once: it adds records each time.
+// EMPH Process Map: loads the Microsoft Business Process Catalog, optionally with a demo organisation on top.
 //
-// The end-to-end process names follow the Microsoft Business Process Catalog. The process areas, business
-// processes and flows below are illustrative only; load the real catalog for actual work (see docs/install.md).
-// Two demos. Pick one before pasting: window.EMPH_SAMPLE_NAME = 'realestate' (the default) or 'engineering'.
+// 1. Convert Microsoft's catalog workbook once: python map/schema/import-catalog.py "<catalog .xlsx>"
+//    This writes map/schema/catalog.json and map/schema/catalog-load.js.
+// 2. On the /api/data/v9.2/WhoAmI page of your environment, in the console:
+//    a. paste catalog-load.js (defines window.EMPH_CATALOG);
+//    b. pick what to load: window.EMPH_SAMPLE_NAME = 'realestate' (default), 'engineering' or 'catalog' (catalog only, nothing in scope);
+//    c. paste this file.
+// Run it once per environment: it adds records each time. Progress goes to window.__emphSample.
+//
+// Demo processes point at real catalog IDs. Everything else in the catalog is loaded out of scope.
 window.EMPH_SAMPLES = {};
-window.EMPH_SAMPLES.engineering = {
-  organisation: 'Lakeside Engineering (sample)',
-  roles: [['Sales manager', 6], ['Project manager', 12], ['Buyer', 4], ['Accountant', 5], ['Field technician', 30]],
-  // [name, category (0 Finance, 1 Projects, 2 Field service, 5 Sales, 10 Other), Microsoft, target]
-  apps: [['Dynamics 365 Sales', 5, true, true], ['Dynamics 365 Project Operations', 1, true, true], ['Dynamics 365 Finance', 0, true, true], ['Dynamics 365 Field Service', 2, true, true], ['Legacy ERP', 0, false, false], ['Spreadsheets', 10, true, false]],
-  // [catalog ID, name, accent colour if in scope]
-  endToEnd: [[10, 'Acquire to dispose'], [20, 'Case to resolution'], [30, 'Concept to market'], [40, 'Design to retire'], [50, 'Forecast to plan'], [55, 'Hire to retire'], [60, 'Inventory to deliver'],
-    [65, 'Order to cash', '#2563EB'], [70, 'Plan to produce'], [75, 'Source to pay', '#EA580C'], [80, 'Project to profit', '#0D9488'], [85, 'Prospect to quote'], [90, 'Record to report'], [95, 'Service to deliver']],
-  // [end-to-end ID, area, [business process, owner, application today, target application]]
-  areas: [
-    [80, 'Plan and estimate projects', [['Create a project estimate', 'Project manager', 'Spreadsheets', 'Dynamics 365 Project Operations'], ['Plan resources for a project', 'Project manager', 'Spreadsheets', 'Dynamics 365 Project Operations']]],
-    [80, 'Deliver and invoice projects', [['Record time and expenses', 'Field technician', 'Legacy ERP', 'Dynamics 365 Project Operations'], ['Invoice a project', 'Accountant', 'Legacy ERP', 'Dynamics 365 Project Operations']]],
-    [65, 'Manage customer orders', [['Take a customer order', 'Sales manager', 'Legacy ERP', 'Dynamics 365 Sales']]],
-    [75, 'Purchase goods and services', [['Order from a supplier', 'Buyer', 'Legacy ERP', 'Dynamics 365 Finance']]],
-  ],
-  // a reference flow: [code, name, shape (0 start, 1 activity, 2 decision, 3 end), lane, [[to, label]]]
-  flow: { process: 'Invoice a project', name: 'Invoice a project: reference', activities: [
-    ['A10', 'Start', 0, 'Project manager', [['A20', '']]],
-    ['A20', 'Review unbilled time and expenses', 1, 'Project manager', [['A30', '']]],
-    ['A30', 'Ready to invoice?', 2, 'Project manager', [['A40', 'Yes'], ['A20', 'No']]],
-    ['A40', 'Create the invoice proposal', 1, 'Accountant', [['A50', '']]],
-    ['A50', 'Post the invoice', 1, 'Accountant', [['A90', '']]],
-    ['A90', 'End', 3, 'Accountant', []],
-  ] },
-  // [question, answer type (0 choice, 2 yes or no, 3 number), choices, business process]
-  decisions: [
-    ['Which invoicing method do you use for fixed-price projects?', 0, 'Milestones\nProgress billing\nOn completion', 'Invoice a project'],
-    ['Do project managers approve time before it is invoiced?', 2, '', 'Record time and expenses'],
-    ['How many approval levels does a purchase order need?', 3, '', 'Order from a supplier'],
-  ],
-  // [description, business process, MoSCoW (0 Must, 1 Should), coverage (0 standard, 1 configuration, 3 gap)]
-  requirements: [
-    ['Invoices must show the site address of each project.', 'Invoice a project', 0, 1],
-    ['Technicians need to record time offline on a phone.', 'Record time and expenses', 0, 0],
-    ['Estimates must be imported from the tender tool.', 'Create a project estimate', 1, 3],
-  ],
-};
+
 // A property company that sells and rents units, and maintains them with Project Operations and Field Service.
 window.EMPH_SAMPLES.realestate = {
   organisation: 'Harbourview Properties (sample)',
   roles: [['Sales agent', 8], ['Leasing manager', 5], ['Property manager', 10], ['Maintenance planner', 3], ['Technician', 25], ['Accountant', 6]],
+  // [name, category (0 Finance, 1 Projects, 2 Field service, 5 Sales, 10 Other), Microsoft, target]
   apps: [['Dynamics 365 Sales', 5, true, true], ['Dynamics 365 Project Operations', 1, true, true], ['Dynamics 365 Field Service', 2, true, true], ['Dynamics 365 Finance', 0, true, true],
     ['Legacy property system', 10, false, false], ['Spreadsheets', 10, true, false]],
-  endToEnd: [[10, 'Acquire to dispose'], [20, 'Case to resolution'], [30, 'Concept to market'], [40, 'Design to retire'], [50, 'Forecast to plan'], [55, 'Hire to retire'], [60, 'Inventory to deliver'],
-    [65, 'Order to cash', '#2563EB'], [70, 'Plan to produce'], [75, 'Source to pay'], [80, 'Project to profit', '#0D9488'], [85, 'Prospect to quote', '#7C3AED'], [90, 'Record to report'], [95, 'Service to deliver', '#EA580C']],
-  areas: [
-    [85, 'Market and sell units', [['Qualify a buyer or tenant lead', 'Sales agent', 'Spreadsheets', 'Dynamics 365 Sales'], ['Quote the sale of a unit', 'Sales agent', 'Legacy property system', 'Dynamics 365 Sales']]],
-    [65, 'Lease and invoice units', [['Sign a lease for a unit', 'Leasing manager', 'Legacy property system', 'Dynamics 365 Sales'], ['Invoice monthly rent', 'Accountant', 'Legacy property system', 'Dynamics 365 Finance'], ['Collect rent arrears', 'Accountant', 'Spreadsheets', 'Dynamics 365 Finance']]],
-    [80, 'Run maintenance and refurbishment projects', [['Plan a unit refurbishment project', 'Property manager', 'Spreadsheets', 'Dynamics 365 Project Operations'], ['Track maintenance cost per unit', 'Property manager', 'Spreadsheets', 'Dynamics 365 Project Operations']]],
-    [95, 'Maintain units', [['Log a tenant maintenance request', 'Property manager', 'Legacy property system', 'Dynamics 365 Field Service'], ['Schedule a technician', 'Maintenance planner', 'Spreadsheets', 'Dynamics 365 Field Service'],
-      ['Complete the work order at the unit', 'Technician', 'Spreadsheets', 'Dynamics 365 Field Service'], ['Charge maintenance cost to the project', 'Accountant', 'Legacy property system', 'Dynamics 365 Project Operations'], ['Run planned maintenance', 'Maintenance planner', 'Spreadsheets', 'Dynamics 365 Field Service']]],
+  accents: { 10: '#64748B', 65: '#2563EB', 80: '#0D9488', 85: '#7C3AED', 93: '#DB2777', 95: '#EA580C' },
+  // in scope: [catalog ID, owner, application today, target application, disposition (0 retain, 1 transition, 2 retire, 3 gap)]
+  scope: [
+    ['85.25.100', 'Sales agent', 'Spreadsheets', 'Dynamics 365 Sales', 1],
+    ['85.25.200', 'Sales agent', 'Spreadsheets', 'Dynamics 365 Sales', 1],
+    ['85.55.200', 'Sales agent', 'Legacy property system', 'Dynamics 365 Sales', 1],
+    ['10.60.030', 'Accountant', 'Legacy property system', 'Dynamics 365 Finance', 1],
+    ['93.20.010', 'Leasing manager', 'Legacy property system', 'Dynamics 365 Sales', 1],
+    ['93.20.040', 'Leasing manager', 'Legacy property system', 'Dynamics 365 Sales', 1],
+    ['93.20.050', 'Leasing manager', 'Legacy property system', 'Dynamics 365 Finance', 1],
+    ['93.30.030', 'Property manager', 'Spreadsheets', 'Dynamics 365 Field Service', 1],
+    ['93.40.050', 'Property manager', 'Legacy property system', 'Dynamics 365 Field Service', 1],
+    ['93.50.030', 'Technician', 'Spreadsheets', 'Dynamics 365 Field Service', 1],
+    ['93.50.040', 'Maintenance planner', 'Spreadsheets', 'Dynamics 365 Field Service', 1],
+    ['65.30.010', 'Accountant', 'Legacy property system', 'Dynamics 365 Finance', 1],
+    ['65.30.100', 'Accountant', 'Legacy property system', 'Dynamics 365 Finance', 1],
+    ['65.50.080', 'Accountant', 'Spreadsheets', 'Dynamics 365 Finance', 1],
+    ['10.50.040', 'Maintenance planner', 'Spreadsheets', 'Dynamics 365 Field Service', 1],
+    ['10.50.042', 'Technician', 'Spreadsheets', 'Dynamics 365 Field Service', 1],
+    ['95.25.100', 'Property manager', 'Legacy property system', 'Dynamics 365 Field Service', 1],
+    ['95.25.950', 'Maintenance planner', 'Spreadsheets', 'Dynamics 365 Field Service', 1],
+    ['95.35.100', 'Technician', 'Spreadsheets', 'Dynamics 365 Field Service', 1],
+    ['95.35.800', 'Technician', 'Spreadsheets', 'Dynamics 365 Project Operations', 1],
+    ['80.30.020', 'Property manager', 'Spreadsheets', 'Dynamics 365 Project Operations', 1],
+    ['80.40.020', 'Property manager', 'Spreadsheets', 'Dynamics 365 Project Operations', 1],
+    ['80.50.055', 'Accountant', 'Legacy property system', 'Dynamics 365 Project Operations', 1],
+    ['10.70.040', 'Property manager', 'Spreadsheets', 'Dynamics 365 Project Operations', 1],
   ],
-  flow: { process: 'Log a tenant maintenance request', name: 'Unit maintenance request: reference', activities: [
+  // our own processes, not in the catalog: [process area ID, name, owner, application today, target application, disposition]
+  own: [['93.40', 'Index rent to inflation', 'Accountant', 'Spreadsheets', null, 3]],
+  // a reference flow: [code, name, shape (0 start, 1 activity, 2 decision, 3 end), lane, [[to, label]]]
+  flow: { process: '95.25.100', name: 'Receive service requests: unit maintenance reference', activities: [
     ['A10', 'Tenant reports an issue', 0, 'Property manager', [['A20', '']]],
     ['A20', 'Create the work order for the unit', 1, 'Property manager', [['A30', '']]],
     ['A30', 'Urgent?', 2, 'Maintenance planner', [['A40', 'Yes'], ['A50', 'No']]],
@@ -68,66 +59,135 @@ window.EMPH_SAMPLES.realestate = {
     ['A70', 'Post the cost to the unit maintenance project', 1, 'Accountant', [['A90', '']]],
     ['A90', 'Work order closed', 3, 'Accountant', []],
   ] },
+  // [question, answer type (0 choice, 2 yes or no, 3 number), choices, catalog ID]
   decisions: [
-    ['Which work order types do you use for unit maintenance?', 0, 'Reactive repair\nPlanned maintenance\nInspection\nRefurbishment', 'Log a tenant maintenance request'],
-    ['Who pays for a repair: the tenant, the owner or the service charge?', 0, 'Tenant\nOwner\nService charge\nDecided per work order', 'Charge maintenance cost to the project'],
-    ['Do technicians work offline in the Field Service mobile app?', 2, '', 'Complete the work order at the unit'],
-    ['Is there one maintenance project per building or per unit?', 0, 'Per building\nPer unit', 'Track maintenance cost per unit'],
-    ['On which day of the month is rent invoiced?', 3, '', 'Invoice monthly rent'],
+    ['Which work order types do you use for unit maintenance?', 0, 'Reactive repair\nPlanned maintenance\nInspection\nRefurbishment', '95.25.100'],
+    ['Who pays for a repair: the tenant, the owner or the service charge?', 0, 'Tenant\nOwner\nService charge\nDecided per work order', '80.40.020'],
+    ['Do technicians work offline in the Field Service mobile app?', 2, '', '95.35.100'],
+    ['Is there one maintenance project per building or per unit?', 0, 'Per building\nPer unit', '10.70.040'],
+    ['On which day of the month is rent invoiced?', 3, '', '65.30.010'],
   ],
+  // [description, catalog ID or own name, MoSCoW (0 Must, 1 Should), coverage (0 standard, 1 configuration, 2 extension, 3 gap)]
   requirements: [
-    ['Tenants must report issues through a portal, with photos.', 'Log a tenant maintenance request', 0, 2],
-    ['Maintenance cost per unit must be visible over the whole life of the unit.', 'Track maintenance cost per unit', 1, 1],
-    ['Rent must be indexed to inflation once a year.', 'Invoice monthly rent', 0, 3],
-    ['Technicians need the unit access code on the work order.', 'Complete the work order at the unit', 1, 0],
-    ['A sold unit must move from the rental portfolio to the buyer with its open work orders.', 'Quote the sale of a unit', 0, 3],
+    ['Tenants must report issues through a portal, with photos.', '95.25.100', 0, 2],
+    ['Maintenance cost per unit must be visible over the whole life of the unit.', '10.70.040', 1, 1],
+    ['Rent must be indexed to inflation once a year.', 'Index rent to inflation', 0, 3],
+    ['Technicians need the unit access code on the work order.', '95.35.100', 1, 0],
+    ['A sold unit must leave the rental portfolio with its open work orders.', '10.60.030', 0, 3],
   ],
 };
+
+// Project-based installation work.
+window.EMPH_SAMPLES.engineering = {
+  organisation: 'Lakeside Engineering (sample)',
+  roles: [['Sales manager', 6], ['Project manager', 12], ['Buyer', 4], ['Accountant', 5], ['Field technician', 30]],
+  apps: [['Dynamics 365 Sales', 5, true, true], ['Dynamics 365 Project Operations', 1, true, true], ['Dynamics 365 Finance', 0, true, true], ['Dynamics 365 Field Service', 2, true, true], ['Legacy ERP', 0, false, false], ['Spreadsheets', 10, true, false]],
+  accents: { 65: '#2563EB', 75: '#EA580C', 80: '#0D9488' },
+  scope: [
+    ['80.20.010', 'Project manager', 'Spreadsheets', 'Dynamics 365 Project Operations', 1],
+    ['80.30.030', 'Project manager', 'Spreadsheets', 'Dynamics 365 Project Operations', 1],
+    ['80.40.020', 'Field technician', 'Legacy ERP', 'Dynamics 365 Project Operations', 1],
+    ['80.40.050', 'Field technician', 'Legacy ERP', 'Dynamics 365 Project Operations', 1],
+    ['80.50.050', 'Accountant', 'Legacy ERP', 'Dynamics 365 Project Operations', 1],
+    ['65.20.025', 'Sales manager', 'Legacy ERP', 'Dynamics 365 Sales', 1],
+    ['75.40.030', 'Buyer', 'Legacy ERP', 'Dynamics 365 Finance', 1],
+  ],
+  own: [],
+  flow: { process: '80.50.050', name: 'Invoice project milestones: reference', activities: [
+    ['A10', 'Start', 0, 'Project manager', [['A20', '']]],
+    ['A20', 'Review unbilled time and expenses', 1, 'Project manager', [['A30', '']]],
+    ['A30', 'Ready to invoice?', 2, 'Project manager', [['A40', 'Yes'], ['A20', 'No']]],
+    ['A40', 'Create the invoice proposal', 1, 'Accountant', [['A50', '']]],
+    ['A50', 'Post the invoice', 1, 'Accountant', [['A90', '']]],
+    ['A90', 'End', 3, 'Accountant', []],
+  ] },
+  decisions: [
+    ['Which invoicing method do you use for fixed-price projects?', 0, 'Milestones\nProgress billing\nOn completion', '80.50.050'],
+    ['Do project managers approve time before it is invoiced?', 2, '', '80.40.050'],
+    ['How many approval levels does a purchase order need?', 3, '', '75.40.030'],
+  ],
+  requirements: [
+    ['Invoices must show the site address of each project.', '80.50.050', 0, 1],
+    ['Technicians need to record time offline on a phone.', '80.40.050', 0, 0],
+    ['Estimates must be imported from the tender tool.', '80.20.010', 1, 3],
+  ],
+};
+
+// The catalog alone, everything out of scope.
+window.EMPH_SAMPLES.catalog = { organisation: '', roles: [], apps: [], accents: {}, scope: [], own: [], flow: null, decisions: [], requirements: [] };
+
+/**
+ * Loads the catalog and a demo through `add(table, setName, data) -> id`, so the same steps run against Dataverse
+ * and against the local test page's in-memory data.
+ */
+window.EMPH_LOAD = async (catalog, S, add, say = () => {}) => {
+  const V = n => 582100000 + n, to = (set, id) => `/${set}(${id})`;
+  if (!catalog || !catalog.endToEnd) throw new Error('No catalog. Paste catalog-load.js first (made by import-catalog.py).');
+  const roles = {}, apps = {}, procs = {};
+  for (const [i, [name, headcount]] of S.roles.entries()) roles[name] = await add('emph_role', 'emph_roles', { emph_name: name, emph_rank: (i + 1) * 10, emph_headcount: headcount });
+  for (const [name, cat, ms, target] of S.apps) apps[name] = await add('emph_application', 'emph_applications', { emph_name: name, emph_category: V(cat), emph_ismicrosoft: ms, emph_istarget: target, emph_status: V(target ? 1 : 0) });
+  const chosen = new Map(S.scope.map(x => [x[0], x]));
+  const ownBy = new Map();
+  S.own.forEach(o => ownBy.set(o[0], (ownBy.get(o[0]) || []).concat([o])));
+  const missing = S.scope.map(x => x[0]).filter(code => !catalog.endToEnd.some(e => e.areas.some(a => a.processes.some(p => p.code === code))));
+  if (missing.length) say('not in this catalog version, skipped: ' + missing.join(', '));
+  const process = async (areaId, data, pick) => {
+    const [, owner, now, target, disposition] = pick || [];
+    const body = { ...data, emph_reviewstate: V(0), 'emph_ProcessArea@odata.bind': to('emph_processareas', areaId) };
+    if (pick) {
+      body.emph_disposition = disposition == null ? null : V(disposition);
+      if (owner) body['emph_ProcessOwner@odata.bind'] = to('emph_roles', roles[owner]);
+      if (now) body['emph_CurrentApplication@odata.bind'] = to('emph_applications', apps[now]);
+      if (target) body['emph_TargetApplication@odata.bind'] = to('emph_applications', apps[target]);
+    }
+    const id = await add('emph_businessprocess', 'emph_businessprocesses', body);
+    if (owner) await add('emph_processrole', 'emph_processroles', { emph_name: owner, 'emph_BusinessProcess@odata.bind': to('emph_businessprocesses', id), 'emph_Role@odata.bind': to('emph_roles', roles[owner]) });
+    return id;
+  };
+  for (const e of catalog.endToEnd) {
+    const eUsed = e.areas.some(a => a.processes.some(p => chosen.has(p.code)) || ownBy.has(a.code));
+    const eid = await add('emph_endtoendprocess', 'emph_endtoendprocesses', { emph_name: e.name, emph_catalogcode: e.code, emph_rank: Number(e.code), emph_inscope: eUsed, emph_summary: e.summary || null, emph_accent: S.accents[e.code] || '#64748B' });
+    for (const [ai, a] of e.areas.entries()) {
+      const aUsed = a.processes.some(p => chosen.has(p.code)) || ownBy.has(a.code);
+      const aid = await add('emph_processarea', 'emph_processareas', { emph_name: a.name, emph_catalogcode: a.code, emph_rank: (ai + 1) * 10, emph_inscope: aUsed, emph_summary: a.summary || null, 'emph_EndToEndProcess@odata.bind': to('emph_endtoendprocesses', eid) });
+      for (const [pi, p] of a.processes.entries())
+        procs[p.code] = await process(aid, { emph_name: p.name, emph_catalogcode: p.code, emph_rank: (pi + 1) * 10, emph_inscope: chosen.has(p.code), emph_origin: V(0), emph_summary: p.summary || null }, chosen.get(p.code));
+      for (const [k, [, name, owner, now, target, disposition]] of (ownBy.get(a.code) || []).entries())
+        procs[name] = await process(aid, { emph_name: name, emph_catalogcode: 'X' + String(k + 1).padStart(3, '0'), emph_rank: 9000 + k, emph_inscope: true, emph_origin: V(1), emph_summary: 'Our own process.' }, [null, owner, now, target, disposition]);
+    }
+    say('loaded ' + e.code + ' ' + e.name);
+  }
+  if (S.flow && procs[S.flow.process]) {
+    const flow = await add('emph_processflow', 'emph_processflows', { emph_name: S.flow.name, emph_flowtype: V(0), emph_state: V(1), emph_catalogcode: S.flow.process, 'emph_BusinessProcess@odata.bind': to('emph_businessprocesses', procs[S.flow.process]) });
+    for (const [i, [code, name, shape, lane, links]] of S.flow.activities.entries())
+      await add('emph_flowactivity', 'emph_flowactivities', { emph_name: name, emph_activitycode: code, emph_shape: V(shape), emph_lane: lane, emph_links: JSON.stringify(links.map(([t, l]) => ({ to: t, label: l }))), emph_delta: V(0), emph_rank: (i + 1) * 10, 'emph_ProcessFlow@odata.bind': to('emph_processflows', flow) });
+  }
+  for (const [i, [q, type, choices, code]] of S.decisions.entries()) if (procs[code])
+    await add('emph_configdecision', 'emph_configdecisions', { emph_name: q, emph_code: 'CD-' + String(i + 1).padStart(3, '0'), emph_answertype: V(type), emph_choices: choices || null, emph_rank: (i + 1) * 10, emph_state: V(0), 'emph_BusinessProcess@odata.bind': to('emph_businessprocesses', procs[code]) });
+  for (const [text, code, moscow, coverage] of S.requirements) if (procs[code])
+    await add('emph_requirement', 'emph_requirements', { emph_name: text, emph_description: text, emph_moscow: V(moscow), emph_coverage: V(coverage), emph_state: V(0), emph_origin: V(0), 'emph_BusinessProcess@odata.bind': to('emph_businessprocesses', procs[code]) });
+  say('done');
+  return procs;
+};
+
 window.EMPH_SAMPLE = window.EMPH_SAMPLES[window.EMPH_SAMPLE_NAME || 'realestate'];
 window.__emphSample = { log: [], done: false, error: null };
 if (!window.EMPH_SAMPLE_ONLY) (async () => {
-  const API = '/api/data/v9.2/', V = n => 582100000 + n;
-  const say = s => { window.__emphSample.log.push(s); console.log('[EMPH sample]', s); };
+  const API = '/api/data/v9.2/';
+  const say = s => { window.__emphSample.log.push(s); console.log('[EMPH]', s); };
   const H = { Accept: 'application/json', 'Content-Type': 'application/json', 'OData-Version': '4.0', 'OData-MaxVersion': '4.0' };
-  const add = async (set, body) => {
+  const add = async (_, set, body) => {
     const r = await fetch(API + set, { method: 'POST', headers: H, body: JSON.stringify(body) });
     if (!r.ok) throw new Error(set + ' ' + r.status + ' ' + (await r.text()).slice(0, 300));
     return r.headers.get('OData-EntityId').match(/\(([^)]+)\)$/)[1];
   };
-  const to = (set, id) => `/${set}(${id})`;
   const S = window.EMPH_SAMPLE;
-
-  const ws = await (await fetch(API + 'emph_workspaces?$select=emph_workspaceid&$top=1', { headers: H })).json();
-  if (ws.value.length) await fetch(API + `emph_workspaces(${ws.value[0].emph_workspaceid})`, { method: 'PATCH', headers: H, body: JSON.stringify({ emph_organisation: S.organisation }) });
-  else await add('emph_workspaces', { emph_name: 'EMPH Process Map', emph_organisation: S.organisation });
-
-  const roles = {}, apps = {}, e2e = {}, procs = {};
-  for (const [i, [n, headcount]] of S.roles.entries()) roles[n] = await add('emph_roles', { emph_name: n, emph_rank: (i + 1) * 10, emph_headcount: headcount });
-  for (const [n, cat, ms, target] of S.apps) apps[n] = await add('emph_applications', { emph_name: n, emph_category: V(cat), emph_ismicrosoft: ms, emph_istarget: target, emph_status: V(target ? 1 : 0) });
-  say('roles and applications');
-  for (const [code, name, accent] of S.endToEnd) e2e[code] = await add('emph_endtoendprocesses', { emph_name: name, emph_catalogcode: String(code), emph_rank: code, emph_inscope: !!accent, emph_accent: accent || '#64748B' });
-  say('end-to-end processes');
-  for (const [i, [code, area, list]] of S.areas.entries()) {
-    const aid = await add('emph_processareas', { emph_name: area, emph_rank: (i + 1) * 10, emph_summary: 'Sample process area.', 'emph_EndToEndProcess@odata.bind': to('emph_endtoendprocesses', e2e[code]) });
-    for (const [k, [name, owner, now, target]] of list.entries()) {
-      const pid = procs[name] = await add('emph_businessprocesses', {
-        emph_name: name, emph_rank: (k + 1) * 10, emph_origin: V(0), emph_reviewstate: V(0), emph_summary: 'Sample business process.',
-        'emph_ProcessArea@odata.bind': to('emph_processareas', aid), 'emph_ProcessOwner@odata.bind': to('emph_roles', roles[owner]),
-        'emph_CurrentApplication@odata.bind': to('emph_applications', apps[now]), 'emph_TargetApplication@odata.bind': to('emph_applications', apps[target]),
-      });
-      await add('emph_processroles', { emph_name: owner, 'emph_BusinessProcess@odata.bind': to('emph_businessprocesses', pid), 'emph_Role@odata.bind': to('emph_roles', roles[owner]) });
-    }
+  if (S.organisation) {
+    const ws = await (await fetch(API + 'emph_workspaces?$select=emph_workspaceid&$top=1', { headers: H })).json();
+    if (ws.value.length) await fetch(API + `emph_workspaces(${ws.value[0].emph_workspaceid})`, { method: 'PATCH', headers: H, body: JSON.stringify({ emph_organisation: S.organisation }) });
+    else await add('emph_workspace', 'emph_workspaces', { emph_name: 'EMPH Process Map', emph_organisation: S.organisation });
   }
-  say('process areas and business processes');
-  const flow = await add('emph_processflows', { emph_name: S.flow.name, emph_flowtype: V(0), emph_state: V(1), 'emph_BusinessProcess@odata.bind': to('emph_businessprocesses', procs[S.flow.process]) });
-  for (const [i, [code, name, shape, lane, links]] of S.flow.activities.entries())
-    await add('emph_flowactivities', { emph_name: name, emph_activitycode: code, emph_shape: V(shape), emph_lane: lane, emph_links: JSON.stringify(links.map(([t, l]) => ({ to: t, label: l }))), emph_delta: V(0), emph_rank: (i + 1) * 10, 'emph_ProcessFlow@odata.bind': to('emph_processflows', flow) });
-  say('reference flow');
-  for (const [i, [q, type, choices, proc]] of S.decisions.entries())
-    await add('emph_configdecisions', { emph_name: q, emph_code: 'CD-' + String(i + 1).padStart(3, '0'), emph_answertype: V(type), emph_choices: choices || null, emph_rank: (i + 1) * 10, emph_state: V(0), 'emph_BusinessProcess@odata.bind': to('emph_businessprocesses', procs[proc]) });
-  for (const [text, proc, moscow, coverage] of S.requirements)
-    await add('emph_requirements', { emph_name: text, emph_description: text, emph_moscow: V(moscow), emph_coverage: V(coverage), emph_state: V(0), emph_origin: V(0), 'emph_BusinessProcess@odata.bind': to('emph_businessprocesses', procs[proc]) });
-  say('decisions and requirements');
+  await window.EMPH_LOAD(window.EMPH_CATALOG, S, add, say);
   window.__emphSample.done = true;
-})().catch(e => { window.__emphSample.error = String(e); console.error('[EMPH sample]', e); });
+})().catch(e => { window.__emphSample.error = String(e); console.error('[EMPH]', e); });
 'started';
