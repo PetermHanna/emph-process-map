@@ -1,0 +1,37 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Dynamics stand-in</title>
+<style>
+ body{margin:0;font:13px "Segoe UI",sans-serif;background:#f3f2f1;height:100vh;overflow:hidden}
+ .top{height:48px;background:#001a33;color:#fff;display:flex;align-items:center;padding:0 16px;font-weight:600}
+ .nav{position:absolute;left:0;top:48px;bottom:0;width:200px;background:#eee;padding:12px;box-sizing:border-box}
+ #main{position:absolute;left:200px;right:0;top:48px;bottom:0;padding:0 21px 0 8px;box-sizing:border-box}
+ .cmd{height:70px;background:#fff;border-radius:6px;margin-top:0;display:flex;align-items:center;padding:0 16px;gap:16px}
+ .cmd button{border:1px solid #bbb;background:#fff;padding:4px 10px;border-radius:4px}
+ [data-id="form-header"]{position:relative;height:65px;background:#fff;padding:14px 20px 0;box-sizing:border-box}
+ h1{margin:0;font-size:20px;display:inline-block;font-weight:600}
+ .save{margin-left:6px;color:#666}
+ .bpf{height:56px;background:#e8f1fb;display:flex;align-items:center;padding:0 20px}
+ .tabs{position:relative;height:46px;background:#fff;display:flex;align-items:flex-end;padding:0 20px;gap:18px}
+ [role=tab]{padding:12px 4px;cursor:pointer;border-bottom:2px solid #0F6CBD}
+ #fa{position:absolute;right:0;bottom:2px;height:32px;width:123px}
+ .sect{background:#fff;margin-top:8px;padding:16px;height:300px;position:relative}
+ #frame{position:absolute;left:0;top:60px;width:100%;height:220px;border:1px solid #99c}
+ #list{background:#fff;padding:16px;margin-top:8px}
+</style></head><body>
+<div class="top">Dynamics 365 (stand-in)</div><div class="nav">Sitemap</div>
+<div id="main"></div>
+<script>
+const f = new URLSearchParams(location.search).get("f") || "band";
+const m = document.getElementById("main");
+const header = (busy) => `<div class="cmd" data-id="CommandBar"><button id="save-btn" data-id="save">Save</button><button>New</button></div>
+  <div data-id="outerHeaderContainer_0"><div data-id="form-header"><div data-id="headerContainer"><h1 data-id="header_title">${busy ? "DEMO Warehouse fit-out" : "EMPH Process Map"}</h1><span class="save" data-id="header_saveStatus">- Saved</span></div>
+  ${busy ? '<button data-id="header_overflowButton" style="position:absolute;right:20px;top:14px">...</button><div style="position:absolute;left:800px;top:10px">Est. close date: 1 Dec | Revenue: 100k | Owner: PH</div>' : ""}</div>
+  ${busy ? '<div class="bpf" data-id="MscrmControls.Containers.ProcessBreadCrumb-root">Qualify > Develop > Propose > Close</div>' : ""}
+  <div class="tabs" role="tablist"><span role="tab" data-id="tablist-tab_map">${busy ? "Summary" : "Process Map"}</span>${busy ? '<span role="tab">Details</span><span role="tab">Related</span>' : ""}<button id="fa" data-id="FormFillBar_Show_Button">Form assist</button></div></div>
+  <div class="sect"><input id="field-a" data-id="name.fieldControl-text-box-text" placeholder="Topic" aria-label="Topic"><button id="go" data-id="go" style="margin-left:8px">Do it</button><span role="tablist" style="margin-left:680px"><span role="tab">A control's own tab</span></span><iframe id="frame" src="/frame"></iframe></div>`;
+m.innerHTML = f === "list" ? `<div class="cmd" data-id="CommandBar"><button>New</button></div><div id="list"><h2>Active records</h2><div style="height:300px;background:#fafafa">grid</div></div>` : header(f === "busy");
+</script>
+<script src="mock.js"></script>
+<script src="tests.js"></script>
+<script src="guide.js"></script>
+</body></html>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<manifest>
+  <control namespace="EMPH" constructor="ProcessMap" version="1.0.0" display-name-key="EMPH Process Map" description-key="EMPH Process Map: business processes, flows and requirements based on the Microsoft Business Process Catalog." control-type="standard">
+    <property name="hostData" display-name-key="Host column" description-key="Any multiline text column; the component stores nothing in it." of-type="Multiple" usage="bound" required="true" />
+    <resources>
+      <code path="index.ts" order="1" />
+    </resources>
+    <feature-usage>
+      <uses-feature name="WebAPI" required="false" />
+    </feature-usage>
+  </control>
+</manifest>
