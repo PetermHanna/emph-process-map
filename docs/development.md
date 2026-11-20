@@ -22,7 +22,7 @@ On the first run it installs packages. Then it:
 node --test map\harness\rules.test.mjs
 ```
 
-These cover Microsoft's picklists (against Business Map's `msTemplate.ts` when that project sits next to this one, and against the copies in `install.js` and `sample-data.js`), scope through the tree and per level (decision 1), products read up from scenarios (with our own scenarios' software), fit-gap from scenarios and requirements, the gap solution approach rule, RAID statuses, fields and filters, change requests, history restore, licence suggestion, problems and summary with dated prices, flow changes, sign-off comparison, workshop sessions, transcript reading and placement, and the exports including the Azure Boards import file.
+These cover Microsoft's picklists (against Business Map's `msTemplate.ts` when that project sits next to this one, and against the copies in `install.js` and `sample-data.js`), scope through the tree and per level (decision 1), products read up from scenarios (with our own scenarios' software), fit-gap from scenarios and requirements, the gap solution approach rule, RAID statuses, fields and filters, change requests, history restore, licence suggestion, problems and summary with dated prices, flow changes, sign-off comparison, workshop sessions, Microsoft's workshop templates (128, a source for every question), workshop kinds with Microsoft's type, phase and child tasks, the five steps and agenda Previous/Next, the scenario board (area matching by name, card links, catalog fallback), Close (only what was agreed, struck cards, a gap's approach), the storyline review, the quick track and the next workshop in Microsoft's order, transcript reading and placement, and the exports including the Azure Boards import file.
 
 ## Local test page
 
@@ -37,7 +37,17 @@ If port 8766 is taken, start it with another port, e.g. `$env:PORT = '8776'; nod
 
 Open http://localhost:8766/main.aspx for the real-estate demo, http://localhost:8766/main.aspx?sample=engineering for the engineering one, or ?sample=catalog for the catalog alone. The component runs against in-memory data, so nothing reaches Dataverse; reload to reset.
 
-Scripted end-to-end checks run from the console: `await __tests.all()`. They click through all pages, adapt and confirm a flow, play it in the guide (with the extension simulated), capture a requirement, set its MoSCoW and a Gap (which waits for a gap solution approach), freeze a sign-off, start a workshop, paste a made-up transcript to capture from it (an open point becomes a RAID action item) and take a screenshot (with a canvas standing in for the screen picker), take a process out (Not applicable) and back in (with its history rows) and check the scope pickers on end-to-end processes and areas, add a current system, add RAID items (a risk with its own fields, an open question, a decision that needs its maker), restore a scope change from the History page, approve the sign-off and raise a change request, apply a licence suggestion and add a price row, and write the Azure Boards import file. They are written for the default demo (Harbourview Properties) and run in order; `transcript` needs its reference flows.
+Scripted end-to-end checks run from the console: `await __tests.all()`. They click through all pages, adapt and confirm a flow, play it in the guide (with the extension simulated), capture a requirement, set its MoSCoW and a Gap (which waits for a gap solution approach), freeze a sign-off, start a workshop, paste a made-up transcript to capture from it (an open point becomes a RAID action item) and take a screenshot (with a canvas standing in for the screen picker), take a process out (Not applicable) and back in (with its history rows) and check the scope pickers on end-to-end processes and areas, add a current system, add RAID items (a risk with its own fields, an open question, a decision that needs its maker), restore a scope change from the History page, approve the sign-off and raise a change request, apply a licence suggestion and add a price row, write the Azure Boards import file, run a scenario board workshop from Microsoft's template (type, phase, child tasks, overview without cards, a struck card, an area proposed Not applicable and greyed but not written), a storyline review (a step that differs makes the process a gap, main path, a demo link), the quick track (five lines, Microsoft's agenda back, scope proposed from today), and Close (agreed items written with How Workshop and the workshop's name, history, a child task ticked, the next workshop, undo). They are written for the default demo (Harbourview Properties) and run in order; `transcript` needs its reference flows.
+
+## Microsoft's workshop templates
+
+`map/schema/workshops.json` is converted from Microsoft's Word workshop templates ([microsoft/dynamics365patternspractices](https://github.com/microsoft/dynamics365patternspractices/tree/main/workshops), CC BY 4.0 / CC BY-SA 4.0). To refresh it from a newer download (one `<end-to-end> workshops.docx` per process, optionally with a `urls.txt` of their sources):
+
+```powershell
+node map\schema\import-workshops.mjs "<folder with the .docx files>"
+```
+
+It reads the catalog's end-to-end processes and areas from `catalog.json`, then rebuild: the file is bundled with the component.
 
 ## Demo site
 

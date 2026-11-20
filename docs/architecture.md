@@ -22,7 +22,9 @@ Chrome
 | `src/domain/codes.ts` | Microsoft's picklists (verbatim) and ours; choice value = 582100000 + position |
 | `src/domain/types.ts` | One interface per table |
 | `src/domain/rules.ts` | The process item tree, scope per level, products read up from scenarios, fit-gap, RAID per type, history restore, licence suggestion and summary, change requests, flow changes, sign-off comparison, with no UI or Dataverse |
-| `src/domain/session.ts` | Workshop phases, visits and the read-back summary |
+| `src/domain/session.ts` | Workshop visits, the read-back summary, the transcript and the facilitator's agenda |
+| `src/domain/workshop.ts` | Workshops like Microsoft's: kinds, Microsoft workshop type, Success by Design phase and child tasks; the five steps; the agenda with Previous/Next; the scenario board (areas matched to the catalog by name); the storyline review (fit per step, demo links); the quick track; the next workshop in Microsoft's order; the conclusion and what Close writes. No UI or Dataverse |
+| `src/ui/guidance.ts` | Bundles `map/schema/workshops.json` (Microsoft's workshop templates) |
 | `src/domain/documents.ts` | Excel, Word and PDF export and the Azure Boards import file, with no library |
 | `src/domain/repository.ts` | Loads the model and makes every write (and the history rows) |
 | `src/ui/Shell.tsx`, `look.ts`, `kit.tsx` | Navigation rail, theme and shared controls |
@@ -66,9 +68,11 @@ Licences per role (as Business Map's C7): the role's items (`emph_itemrole`) →
 | `emph_history` | One row per changed value, insert only | Table, Row, Field, Old value, New value, How (Workshop, Direct, Migration, Proposal, Restore), By, Agreed in workshop, Created on |
 | `emph_proposal` | A suggested change waiting for a person (AI analysis, later) | Table, Row, Field, Current value, Proposed value, Quotes, Source, Status (Proposed, Accepted, Edited, Rejected), Reason, Decided by / on, → Item, → Workshop |
 | `emph_comment` | A remark on a process item or one of its flow activities | ActivityCode, Author, Text, Source (quoted transcript line), → Item, → FlowActivity, → Workshop |
-| `emph_workshop` | Workshop; screenshots are notes on it | HeldOn, Facilitator, Participants, Phase, Status, Microsoft workshop type (Storyboard, Storyline design review, Detailed design, FastTrack), Success by Design phase, Kind, Session order, Units, Child tasks (JSON), SessionData (JSON: agenda, visits, transcript start, captured lines), Transcript, → Item (end-to-end process) |
+| `emph_workshop` | Workshop; screenshots are notes on it | HeldOn, Facilitator, Participants, Phase, Status, Microsoft workshop type (Storyboard, Storyline design review, Detailed design, FastTrack), Success by Design phase, Kind, Session order, Units, Child tasks (JSON: Microsoft's task ID, title, done), SessionData (JSON: business processes, visits, transcript start, captured lines, and `run`: kind, template, unit, agenda lines with their tools, lines walked, quick track, card marks, scope and fit-gap proposals, step fits, main path, answers, verdicts, present, what Close wrote), Transcript, → Item (end-to-end process). Phase holds the step: 0 Prepare, 1 Run the agenda, 2 Analyse, 3 Conclusion, 4 Close |
 | `emph_signoff` | Frozen, approved version | Version, State (Draft, In review, Approved, Superseded), ApprovedOn, → Approver |
 | `emph_signoffitem` | Frozen copy of one item | ItemType, ItemKey, Snapshot (JSON), → SignOff |
+
+Microsoft's workshop templates are not a table: `map/schema/workshops.json` is bundled with the component (converted by `map/schema/import-workshops.mjs`). Demo links of the storyline review live in the workspace settings JSON (`demoLinks`). A workshop's proposals (scope, struck cards, fit-gap) stay in its session until Close writes the agreed ones to the process items; the values before are kept in the session for undo.
 
 A workshop's open points are RAID **Action items** (marked as a question when the line asks one). The fields in `HISTORY_FIELDS` (rules.ts) each write an `emph_history` row when they change: on process items name, scope, scope reason, fit-gap, gap solution approach, rationale, products, software solutions, owners, complexity and priority; on requirements description, fit-gap, gap solution approach, priority, approval, process item, owner, acceptance criteria and mapping. Values are stored as shown (labels for choices), so restoring maps a label back to its choice value; a restore writes a new row with How *Restore*. Scope and fit-gap changes also set Set how / by / on on the item (Workshop when made in a workshop). After a sign-off is approved, a change to what it froze can be raised as a Change request linked to that sign-off and the frozen item.
 
