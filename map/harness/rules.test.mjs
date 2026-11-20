@@ -12,7 +12,7 @@ const ts = createRequire(join(root, "pcf/package.json"))("typescript");
 const out = mkdtempSync(join(tmpdir(), "emph-"));
 const src = join(root, "pcf/ProcessMap/src/domain");
 // Transpile the domain modules side by side, pointing their relative imports at the .mjs output.
-for (const name of ["codes", "types", "session", "rules", "documents"]) {
+for (const name of ["codes", "types", "workshop", "session", "rules", "documents"]) {
   const js = ts.transpileModule(readFileSync(join(src, name + ".ts"), "utf8"), { compilerOptions: { module: "ESNext", target: "ES2020" } }).outputText
     .replace(/from "\.\/(\w+)"/g, 'from "./$1.mjs"');
   writeFileSync(join(out, name + ".mjs"), js);
@@ -29,6 +29,7 @@ const R = await load("rules");
 const S = await load("session");
 const D = await load("documents");
 const P = await load("placement");
+const W = await load("workshop");
 
 let n = 0;
 const req = p => ({ id: "r" + ++n, reqId: "", name: "n", description: "d", itemId: "p1", origin: C.REQ_ORIGIN.captured, originRef: "", originFlowId: null, review: false,
@@ -524,4 +525,175 @@ test("Azure Boards import file: the tree through Title columns, Microsoft's fiel
   assert.ok(files[0].includes('"RQ-00001 Approve ""big"" orders"'));
   const split = D.boardsFiles(rows, 8); // the first end-to-end tree has 8 rows: the rest starts a new file
   assert.equal(split.length, 2); assert.equal(split[0].split("\r\n").length - 2, 8); assert.match(split[1].split("\r\n")[1], /"Requirement","RQ-00003 Loose"/);
+});
+
+// ---------- slice 3: workshops like Microsoft ----------
+const GUIDE = JSON.parse(readFileSync(join(root, "schema/workshops.json"), "utf8"));
+test("Microsoft's workshop templates: 128 of three kinds, every question with its source, under CC BY-SA 4.0", () => {
+  assert.equal(GUIDE.templates.length, 128);
+  const kinds = k => GUIDE.templates.filter(t => t.kind === k).length;
+  assert.deepEqual([kinds("board"), kinds("storyline"), kinds("deepdive")], [14, 14, 100]);
+  assert.ok(W.questionCount(GUIDE) > 1800);
+  for (const t of GUIDE.templates) for (const q of t.questions) assert.ok(q.source.startsWith(t.source), t.id + " " + q.text);
+  assert.match(GUIDE.source.licence, /CC BY-SA 4\.0/);
+  const board = W.templatesFor(GUIDE, "board", "90")[0];
+  assert.ok(board.areas.length && board.cards.length && board.agenda.length);
+  assert.equal(W.templatesFor(GUIDE, "deepdive", "90")[0].kind, "deepdive");
+});
+
+test("workshop kinds: Microsoft's type, Success by Design phase and child tasks named after the end-to-end process", () => {
+  assert.equal(W.WORKSHOP_TYPE_OF_KIND.board, "Storyboard"); assert.equal(W.WORKSHOP_TYPE_OF_KIND.deepdive, "Detailed design");
+  for (const v of Object.values(W.WORKSHOP_TYPE_OF_KIND)) assert.ok(C.option("microsoftWorkshopType", v) != null);
+  for (const v of Object.values(W.SBD_PHASE_OF_KIND)) assert.ok(C.option("sbdPhase", v) != null);
+  assert.equal(W.kindOfValue(W.kindValue("storyline")), "storyline"); assert.equal(W.kindOfValue(null), "discovery");
+  const tasks = W.childTasksOf("board", "90.01", "Order to cash");
+  assert.deepEqual(tasks.map(t => t.id + " " + t.title), ["90.01.001 Create order to cash user stories", "90.01.002 Configure order to cash solution", "90.01.003 Design high-level solution architecture"]);
+  assert.equal(W.childTasksOf("storyline", "90.02", "Order to cash")[3].title, "Order to cash design document");
+  assert.deepEqual(W.childTasksOf("discovery", "", "x"), []);
+  assert.equal(W.readTasks(JSON.stringify(tasks)).length, 3); assert.deepEqual(W.readTasks("nonsense"), []);
+});
+
+test("one session order: five steps, the old phases as steps and tabs, agenda Previous and Next", () => {
+  assert.deepEqual(W.STEPS.map(s => s.name), ["Prepare", "Run the agenda", "Analyse", "Conclusion", "Close"]);
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6].map(W.stepOfPhase), [0, 1, 1, 1, 1, 1, 3]);
+  assert.deepEqual([1, 2, 3, 4, 5].map(W.tabOfPhase), ["scope", "walk", "flow", "config", "fitgap"]);
+  assert.equal(W.defaultTool("Overview of order to cash process (20 minutes)", "board"), "board");
+  assert.equal(W.defaultTool("Demonstration of the storyline in Dynamics 365", "storyline"), "story");
+  assert.equal(W.defaultTool("Wrap-Up and next steps", "board"), "notes");
+  assert.equal(W.defaultTool("Data migration", "deepdive"), "questions");
+  const t = W.templatesFor(GUIDE, "board", "90")[0];
+  const run = { ...W.emptyRun("board", t.id, "90"), agenda: W.newAgenda("board", t, []) };
+  assert.equal(run.agenda.length, t.agenda.length);
+  assert.equal(W.moveAgenda(run, -1).end, false);
+  let r = W.moveAgenda(run, 1);
+  assert.equal(r.run.agendaKey, run.agenda[1].key); assert.deepEqual(r.run.done, [run.agenda[0].key]);
+  for (let i = 0; i < 10 && !r.end; i++) r = W.moveAgenda(r.run, 1);
+  assert.equal(r.end, true); assert.equal(r.run.done.length, run.agenda.length);
+  const d = W.newAgenda("discovery", null, [{ id: "p1", code: "90.10.010", name: "Take orders" }]);
+  assert.deepEqual(d, [{ key: "p:p1", text: "90.10.010 Take orders", tool: "process", itemId: "p1" }]);
+  const synced = W.syncProcessLines(W.addLine({ ...W.emptyRun(), agenda: d }, "Own line"), [{ id: "p2", code: "", name: "Bill" }]);
+  assert.deepEqual(synced.agenda.map(a => a.text), ["Bill", "Own line"]);
+  // the run survives the session JSON
+  const back = W.readRun(JSON.parse(JSON.stringify(W.setMark(r.run, "c1", { state: "strike", links: ["p1"] }))));
+  assert.deepEqual(back.marks.c1, { state: "strike", links: ["p1"] }); assert.equal(W.readRun(null), undefined);
+  assert.deepEqual(S.readSession(JSON.stringify({ processIds: [], run: back })).run.marks.c1.links, ["p1"]);
+});
+
+// a small catalog for the board: e (L1) > a1, a2 (L2) > p11, p12 / p21 (L3) > s111 (L4)
+const ref = (id, level, parentId, code, name, scope = C.SCOPE.unspecified) => ({ id, level, parentId, code, name, catalogName: name, scope, scopeReason: "", fitGap: null, gapApproach: null, fitGapReason: "" });
+const CAT = [ref("e", 1, null, "90", "Order to cash", C.SCOPE.in), ref("a1", 2, "e", "90.20", "Manage sales orders", C.SCOPE.in), ref("a2", 2, "e", "90.30", "Invoice customers", C.SCOPE.out),
+  ref("p11", 3, "a1", "90.20.010", "Enter sales orders"), ref("p12", 3, "a1", "90.20.020", "Price sales orders"), ref("p21", 3, "a2", "90.30.010", "Create invoices"),
+  ref("s111", 4, "p11", "90.20.010.100", "Enter a sales order manually")];
+const AREAS = CAT.filter(x => x.level === 2);
+
+test("scenario board: areas matched to the catalog by name (the guide's codes differ), cards guess their process, catalog fallback", () => {
+  assert.equal(W.matchArea("90.55", "Invoice customers", AREAS).id, "a2"); // name wins over a different code
+  assert.equal(W.matchArea("90.20", "Something else entirely", AREAS).id, "a1"); // then the code
+  assert.equal(W.matchArea("99.99", "Nothing", AREAS), null);
+  const t = { id: "90.01", kind: "board", unit: "90", title: "Board", areas: [{ code: "90.10", name: "Manage sales orders" }, { code: "90.15", name: "Invoice customers" }],
+    cards: [{ area: "90.10", group: "Scenarios", text: "Price orders with discounts" }, { area: "90.15", group: "Compliance", text: "Credit holds" }], agenda: [], questions: [] };
+  const cols = W.boardColumns(t, AREAS, CAT);
+  assert.deepEqual(cols.map(c => c.code + ">" + (c.area && c.area.id)), ["90.10>a1", "90.15>a2"]);
+  assert.deepEqual(cols[0].groups[0].cards[0].links, ["p12"]); // "price"
+  assert.deepEqual(cols[1].groups[0].cards[0].links, []); // no word shared with Create invoices
+  const cat = W.boardColumns(null, AREAS, CAT);
+  assert.equal(cat[0].groups[0].group, "90.20.010 Enter sales orders"); assert.deepEqual(cat[0].groups[0].cards[0].links, ["s111"]);
+  assert.deepEqual(W.boardViewOf("Overview of order to cash process"), { view: "overview" });
+  assert.deepEqual(W.boardViewOf("Detailed discussion on key scenarios"), { view: "full" }); // the board stays together
+  assert.deepEqual(W.boardViewOf("20.10 Establish a knowledge base"), { view: "full", area: "20.10" });
+  // scope proposals: shown over today's, greyed when out or not applicable, a change drops the verdict
+  let run = W.setScopeMark(W.emptyRun("board"), "a1", { scope: C.SCOPE.na, reason: "We don't sell" });
+  assert.equal(W.scopeShown(run, AREAS[0]), C.SCOPE.na); assert.ok(W.scopeOff(W.scopeShown(run, AREAS[0]))); assert.ok(!W.scopeOff(C.SCOPE.in));
+  run = { ...run, verdicts: { "scope:a1": "agreed" } };
+  assert.equal(W.setScopeMark(run, "a1", { scope: C.SCOPE.out, reason: "We don't sell" }).verdicts["scope:a1"], undefined);
+  assert.equal(W.setScopeMark(run, "a1", { scope: C.SCOPE.na, reason: "We don't sell" }).verdicts["scope:a1"], "agreed");
+  run = W.setMark(run, cols[0].groups[0].cards[0].key, { state: "strike" });
+  assert.deepEqual(W.boardCounts(cols, run), { cards: 2, kept: 0, struck: 1, main: 0 });
+});
+
+test("Close writes only what was agreed: scope, a struck card's processes out, fit-gap; nothing twice; a gap needs its approach", () => {
+  const t = { id: "90.01", kind: "board", unit: "90", areas: [{ code: "90.10", name: "Manage sales orders" }], cards: [{ area: "90.10", group: "Scenarios", text: "Price orders" }], agenda: [], questions: [] };
+  const cards = W.boardColumns(t, AREAS, CAT).flatMap(c => c.groups.flatMap(g => g.cards));
+  let run = W.emptyRun("board", "90.01", "90");
+  run = W.setScopeMark(run, "a2", { scope: C.SCOPE.in, reason: "We invoice" });
+  run = W.setScopeMark(run, "e", { scope: C.SCOPE.in }); // already so: nothing to write
+  run = W.setMark(run, cards[0].key, { state: "strike" });
+  run = W.setProcessFit(run, "p11", { fitGap: C.FIT_GAP.gap, reason: "Approval step" });
+  const names = { name: id => CAT.find(x => x.id === id).name, scopeLabel: v => C.labelOf("scope", v), fitLabel: f => C.labelOf("fitGapStatus", f.fitGap) };
+  const items = W.conclusionItems(run, cards, names);
+  assert.deepEqual(items.map(i => i.key), ["scope:a2", "scope:e", "card:" + cards[0].key, "pfit:p11"]);
+  assert.match(items[2].text, /→ out: Price sales orders/);
+  assert.equal(W.closeChanges(run, cards, CAT, "W1").length, 0); // no verdicts yet
+  const all = W.agreeRest({ ...run, verdicts: { "scope:a2": "not_agreed" } }, items);
+  assert.equal(all.verdicts["scope:a2"], "not_agreed"); assert.deepEqual(W.conclusionCounts(items, all), { agreed: 3, notAgreed: 1, parked: 0, open: 0 });
+  let ch = W.closeChanges(all, cards, CAT, "W1");
+  assert.deepEqual(ch.map(c => c.itemId), ["p12", "p11"]);
+  assert.deepEqual(ch[0].patch, { scope: C.SCOPE.na, scopeReason: "Struck on the scenario board in W1: Price orders" });
+  assert.equal(ch[1].patch.gapApproach, C.GAP_UNSPECIFIED);
+  assert.equal(W.closeProblems(ch).length, 1); // a gap without its approach
+  const fixed = { ...W.setProcessFit(all, "p11", { fitGap: C.FIT_GAP.gap, approach: C.option("gapSolutionApproach", "30 - Power Platform") }), verdicts: { ...all.verdicts } };
+  ch = W.closeChanges(fixed, cards, CAT, "W1");
+  assert.equal(W.closeProblems(ch).length, 0); assert.match(ch[1].label, /30 - Power Platform/);
+  // a struck scenario card takes the scenario out of scope (30); a business process only goes Not applicable (40)
+  const cat = W.boardColumns(null, AREAS, CAT).flatMap(c => c.groups.flatMap(g => g.cards));
+  const r2 = { ...W.setMark(W.emptyRun("board"), cat[0].key, { state: "strike" }), verdicts: { ["card:" + cat[0].key]: "agreed" } };
+  assert.deepEqual(W.closeChanges(r2, cat, CAT, "W2").map(c => c.itemId + "=" + c.patch.scope), ["s111=" + C.SCOPE.out]);
+  // a card the facilitator linked to nothing changes nothing
+  const r3 = { ...W.setMark(W.emptyRun("board"), cards[0].key, { state: "strike", links: [] }), verdicts: { ["card:" + cards[0].key]: "agreed" } };
+  assert.equal(W.closeChanges(r3, cards, CAT, "W3").length, 0);
+  assert.deepEqual(W.beforeOf(CAT[3]), { scope: C.SCOPE.unspecified, scopeReason: "", fitGap: null, gapApproach: null, fitGapReason: "" });
+  assert.ok(W.closeWarnings(items, W.emptyRun(), [{ id: "1", title: "x", done: false }]).some(w => /child tasks/.test(w)));
+});
+
+test("storyline review: in-scope areas only, main path first, fit per step makes the process fit", () => {
+  let run = W.emptyRun("storyline", "90.02", "90");
+  assert.deepEqual(W.storyProcesses(run, CAT, "e").map(p => p.id), ["p11", "p12"]); // 90.30 is out of scope
+  run = W.toggleMainPath(run, "p12");
+  assert.deepEqual(W.storyProcesses(run, CAT, "e").map(p => p.id), ["p12", "p11"]);
+  assert.deepEqual(W.storyProcesses(W.setScopeMark(run, "a2", { scope: C.SCOPE.in }), CAT, "e").map(p => p.id), ["p12", "p11", "p21"]);
+  run = W.setStepFit(run, W.stepKey("p11", "A1"), { fit: "fits", name: "Enter" });
+  assert.equal(W.fitFromSteps(run, "p11", ["A1", "A2"]), null);
+  run = W.setStepFit(run, W.stepKey("p11", "A2"), { fit: "not_needed", name: "Check" });
+  assert.equal(W.fitFromSteps(run, "p11", ["A1", "A2"]), C.FIT_GAP.fit);
+  run = W.setStepFit(run, W.stepKey("p11", "A2"), { fit: "differs", name: "Check", reason: "Two approvals" });
+  assert.equal(W.fitFromSteps(run, "p11", ["A1", "A2"]), C.FIT_GAP.gap);
+  assert.deepEqual(W.gapAreas(run, CAT), ["a1"]);
+  const links = [{ code: "90.20.010", url: "https://demo.example/so" }, { code: "90.20.010", step: "A2", url: "https://demo.example/approve" }];
+  assert.equal(W.demoLinkOf(links, "90.20.010", "A2").url, "https://demo.example/approve");
+  assert.equal(W.demoLinkOf(links, "90.20.010", "A1").url, "https://demo.example/so");
+  assert.equal(W.demoLinkOf(links, "90.20.020"), null);
+});
+
+test("quick track: Microsoft's lines put aside and back, scope proposed from today, not checked is not 'no gap'", () => {
+  const t = W.templatesFor(GUIDE, "board", "90")[0];
+  const run = { ...W.emptyRun("board", t.id, "90"), agenda: W.newAgenda("board", t, []) };
+  const q = W.toQuickTrack(run);
+  assert.equal(q.track, "quick"); assert.deepEqual(q.agenda.map(a => a.tool), ["notes", "board", "board", "story", "notes"]);
+  assert.equal(W.toQuickTrack({ ...run, kind: "storyline" }).track, undefined);
+  const back = W.fromQuickTrack({ ...q, done: ["qt-1"] });
+  assert.deepEqual(back.agenda, run.agenda); assert.equal(back.track, undefined); assert.deepEqual(back.done, []);
+  const p = W.proposeScope(q, AREAS.concat(ref("x", 2, "e", "90.40", "X", C.SCOPE.unspecified)));
+  assert.equal(p.proposed, 2); assert.equal(p.run.scope.a2.scope, C.SCOPE.out);
+  assert.equal(W.proposeScope(p.run, AREAS).proposed, 0);
+  assert.equal(W.fitChecked(q), false);
+  assert.ok(W.closeWarnings([], { ...q, present: ["Ana"] }, []).some(w => /fit-checked nothing/.test(w)));
+});
+
+test("next workshop in Microsoft's order: board, storyline, deep-dives of areas in scope; quick track: only gap areas", () => {
+  const board = W.templatesFor(GUIDE, "board", "90")[0], story = W.templatesFor(GUIDE, "storyline", "90")[0], deeps = W.templatesFor(GUIDE, "deepdive", "90");
+  const area = deeps[0].unit, other = deeps.find(d => d.unit !== area).unit;
+  const areas = { "90": [{ code: area, name: "first" }, { code: other, name: "second" }] };
+  const held = p => ({ kind: "board", template: board.id, unit: "90", closed: true, ...p });
+  assert.equal(W.nextTemplate(GUIDE, { kind: "discovery", template: "", unit: "90", closed: false }, [], ["90"], areas).template.id, board.id);
+  assert.equal(W.nextTemplate(GUIDE, held(), [], ["90"], areas).template.id, story.id);
+  assert.equal(W.nextTemplate(GUIDE, { kind: "storyline", template: story.id, unit: "90", closed: false }, [held()], ["90"], areas).template.unit, area);
+  // a quick track that found a gap only in the second area: its deep-dive next, no storyline review
+  const n = W.nextTemplate(GUIDE, held({ quick: true, checked: true, gapAreas: [{ code: other, name: "second" }] }), [], ["90"], areas);
+  assert.equal(n.template.unit, other); assert.match(n.why, /Quick track/);
+  // a quick track that checked nothing: the storyline review still follows
+  assert.equal(W.nextTemplate(GUIDE, held({ quick: true, checked: false }), [], ["90"], areas).template.id, story.id);
+  // all of 90 held: the next end-to-end process in scope
+  const done = [held(), { kind: "storyline", template: story.id, unit: "90", closed: true }].concat(deeps.map(d => ({ kind: "deepdive", template: d.id, unit: d.unit, closed: true })));
+  const x = W.nextTemplate(GUIDE, done[done.length - 1], done, ["90", "10"], { "90": areas["90"] });
+  assert.equal(x.template.id, W.templatesFor(GUIDE, "board", "10")[0].id); assert.match(x.why, /Next end-to-end process in scope: 10/);
 });

@@ -2,12 +2,13 @@
 // Azure DevOps template for Dynamics 365 projects: one process item table holds levels 1 to 4
 // (end-to-end process > process area > business process > scenario). Choice fields hold the option value (codes.ts).
 import type { SessionState } from "./session";
+import type { DemoLink } from "./workshop";
 
 /** A dated list price (per user or device per month) the person enters in Settings, with where it comes from. */
 export interface LicencePrice { product: string; kind: PriceKind; price: number; currency: string; validFrom: string; source: string }
 export type PriceKind = "Base" | "Attach" | "Team Members" | "Operations - Activity" | "Device";
-/** Settings kept as JSON on the workspace row (emph_settings). */
-export interface WorkspaceSettings { prices: LicencePrice[] }
+/** Settings kept as JSON on the workspace row (emph_settings): the price table, and demo links for the storyline review. */
+export interface WorkspaceSettings { prices: LicencePrice[]; demoLinks?: DemoLink[] }
 export interface Workspace { id: string | null; organisation: string; settings: WorkspaceSettings }
 
 /** A level 1-4 item of the catalog, or our own (Author Project, Catalog status 50 - Custom). */

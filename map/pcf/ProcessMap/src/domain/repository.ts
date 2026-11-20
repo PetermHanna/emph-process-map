@@ -3,7 +3,7 @@
 import { Gateway, Row, ref } from "../data/api";
 import {
   FLOW_TYPE, FLOW_STATE, DELTA, SHAPE, DECISION_STATE, REQ_ORIGIN, SIGNOFF, ITEM, SESSION, ANSWER, SCOPE, APPROVAL, AUTHOR, CATALOG_CUSTOM,
-  HOW, RAID, RAID_STATUS, WORKSHOP_KIND, PRODUCT_OTHER, LICENCE, labelOf, option,
+  HOW, RAID, RAID_STATUS, PRODUCT_OTHER, LICENCE, labelOf, option,
 } from "./codes";
 import {
   isActive, freeze, FrozenItem, titleOf, requirementProblem, flowDeltas, coveredBy, deltaText, touchedByHand, canApprove, nextOwnCode, starterActivities,
@@ -11,6 +11,7 @@ import {
   restorePatch, raidProblem, raidStart, changeRequestFor, Difference,
 } from "./rules";
 import { newSession, readSession } from "./session";
+import { WorkshopKindName, MsTemplate, kindValue, emptyRun, newAgenda, childTasksOf, WORKSHOP_TYPE_OF_KIND, SBD_PHASE_OF_KIND, Change, Written, beforeOf, RunState, ChildTask } from "./workshop";
 import type { Model, ProcessItem, CurrentSystem, Role, ProcessFlow, Activity, ConfigDecision, Requirement, Raid, Workshop, SignOff, FlowLink, Screenshot, Comment, HistoryRow, WorkspaceSettings } from "./types";
 
 const txt = (v: unknown) => (v == null ? "" : String(v));
@@ -70,7 +71,7 @@ export async function loadModel(g: Gateway): Promise<Model> {
     requirements: rq.map(requirementFrom),
     raids: ra.map(raidFrom).sort((a, b) => (a.createdOn || "").localeCompare(b.createdOn || "")),
     workshops: wk.map(r => ({ id: r.emph_workshopid, name: txt(r.emph_name), heldOn: day(r.emph_heldon), facilitator: txt(r.emph_facilitator), participants: txt(r.emph_participants), minutes: txt(r.emph_minutes),
-      phase: Math.min(6, Math.max(0, r.emph_phase ?? 0)), status: r.emph_status ?? SESSION.open, itemId: id(r._emph_item_value), msType: num(r.emph_microsoftworkshoptype), sbdPhase: num(r.emph_sbdphase),
+      phase: Math.min(4, Math.max(0, r.emph_phase ?? 0)), status: r.emph_status ?? SESSION.open, itemId: id(r._emph_item_value), msType: num(r.emph_microsoftworkshoptype), sbdPhase: num(r.emph_sbdphase),
       kind: num(r.emph_kind), order: num(r.emph_sessionorder), units: txt(r.emph_units), childTasks: txt(r.emph_childtasks), session: readSession(r.emph_sessiondata), transcript: txt(r.emph_transcript) }))
       .sort((a, b) => (b.heldOn || "").localeCompare(a.heldOn || "")),
     signOffs: so.map(r => ({ id: r.emph_signoffid, name: txt(r.emph_name), version: r.emph_version ?? 0, scopeNote: txt(r.emph_scopenote), state: r.emph_state ?? SIGNOFF.draft, approver: txt(r["_emph_approver_value@OData.Community.Display.V1.FormattedValue"]), approvedOn: r.emph_approvedon || null }))
@@ -146,7 +147,8 @@ const historyFrom = (r: Row): HistoryRow => ({ id: r.emph_historyid, table: txt(
   how: num(r.emph_how), by: txt(r.emph_by), workshopName: txt(r.emph_workshopname), createdOn: r.createdon || "" });
 const settingsFrom = (v: unknown): WorkspaceSettings => {
   const s = json<Partial<WorkspaceSettings>>(v, {});
-  return { prices: Array.isArray(s.prices) ? s.prices.filter(p => p && typeof p.price === "number") : [] };
+  return { prices: Array.isArray(s.prices) ? s.prices.filter(p => p && typeof p.price === "number") : [],
+    demoLinks: Array.isArray(s.demoLinks) ? s.demoLinks.filter(d => d && typeof d.code === "string" && typeof d.url === "string") : [] };
 };
 const activityColumns = (a: Activity) => ({
   emph_name: (a.name || "Activity").slice(0, 300), emph_activitycode: a.code, emph_shape: a.shape, emph_lane: a.lane || null, emph_stage: a.stage || null,
@@ -199,7 +201,8 @@ export async function loadSignOffItems(g: Gateway, signOffId: string): Promise<F
 export interface ResetPlan { generated: Requirement[]; touched: number; linked: Requirement[] }
 
 /** How a change was made, for Set how / by / on and the history. */
-export interface How { how: number; workshop?: string; present?: string }
+/** `on`: the date it was set (a workshop's date); today when not given. */
+export interface How { how: number; workshop?: string; present?: string; on?: string | null }
 const DIRECT: How = { how: HOW.direct };
 const RESTORE: How = { how: HOW.restore };
 
@@ -265,7 +268,7 @@ export class Repository {
     if (!fitGapLevel(n.level) && ((patch.fitGap ?? null) !== null || (patch.gapApproach ?? null) !== null)) throw new Error("Fit gap status is set on business processes (level 3) and scenarios (level 4) only.");
     const problem = fitGapProblem(n);
     if (problem && (patch.fitGap !== undefined || patch.gapApproach !== undefined)) throw new Error(problem);
-    if (n.scope !== it.scope || n.fitGap !== it.fitGap || n.gapApproach !== it.gapApproach) Object.assign(n, { setHow: how.how, setBy: this.user, setOn: today(), workshopName: how.workshop || "", present: how.present || "" });
+    if (n.scope !== it.scope || n.fitGap !== it.fitGap || n.gapApproach !== it.gapApproach) Object.assign(n, { setHow: how.how, setBy: this.user, setOn: how.on || today(), workshopName: how.workshop || "", present: how.present || "" });
     const data = itemColumns(n);
     if (!it.id) {
       if (n.parentId) data["emph_Parent@odata.bind"] = ref("emph_processitem", n.parentId);
@@ -562,18 +565,62 @@ export class Repository {
   }
 
   // ---------- workshops ----------
-  /** A discovery workshop over the business processes (level 3) in scope, under one end-to-end process or all of them. */
-  async addWorkshop(m: Model, endToEndId: string | null): Promise<{ model: Model; workshop: Workshop }> {
+  /**
+   * A workshop under one end-to-end process (or all of them). Discovery (EMPH's own): the business processes (level 3) in
+   * scope on the agenda. Made from Microsoft's template: its agenda lines, Microsoft workshop type and Success by Design
+   * phase, its unit and Microsoft's child tasks. The session order runs Prepare, Run the agenda, Analyse, Conclusion, Close.
+   */
+  async addWorkshop(m: Model, endToEndId: string | null, opts: { kind?: WorkshopKindName; template?: MsTemplate | null; name?: string } = {}): Promise<{ model: Model; workshop: Workshop }> {
+    const kind: WorkshopKindName = opts.template ? opts.template.kind : opts.kind || "discovery";
+    const t = kind === "discovery" ? null : opts.template || null;
     const heldOn = today();
-    const e2e = m.items.find(e => e.id === endToEndId);
-    const name = ((e2e ? e2e.name + " " : "") + "workshop " + heldOn).slice(0, 200);
-    const session = newSession(m.items.filter(p => p.level === 3 && inScope(m.items, p) && (!endToEndId || levelUp(m.items, p, 1)?.id === endToEndId)).map(p => p.id));
+    const e2e = m.items.find(e => e.id === endToEndId) || (t ? m.items.find(e => e.level === 1 && e.code === t.unit.slice(0, 2)) : undefined);
+    const e2eId = e2e?.id ?? endToEndId;
+    const name = (opts.name || (t ? t.title.replace(/\s+workshop$/i, "") + " " + heldOn : (e2e ? e2e.name + " " : "") + "workshop " + heldOn)).slice(0, 200);
+    const processes = kind === "discovery" ? m.items.filter(p => p.level === 3 && inScope(m.items, p) && (!e2eId || levelUp(m.items, p, 1)?.id === e2eId)) : [];
+    const session = newSession(processes.map(p => p.id));
+    session.run = { ...emptyRun(kind, t?.id || "", t?.unit || e2e?.code || ""), agenda: newAgenda(kind, t, processes) };
     const order = Math.max(0, ...m.workshops.map(w => w.order ?? 0)) + 1;
-    const data: Row = { emph_name: name, emph_heldon: heldOn, emph_phase: 0, emph_status: SESSION.open, emph_sessiondata: JSON.stringify(session), emph_kind: WORKSHOP_KIND.discovery, emph_sessionorder: order };
-    if (endToEndId) data["emph_Item@odata.bind"] = ref("emph_processitem", endToEndId);
-    const workshop: Workshop = { id: await this.g.insert("emph_workshop", data), name, heldOn, facilitator: "", participants: "", minutes: "", phase: 0, status: SESSION.open, itemId: endToEndId,
-      msType: null, sbdPhase: null, kind: WORKSHOP_KIND.discovery, order, units: "", childTasks: "", session, transcript: "" };
+    const tasks = childTasksOf(kind, t?.id || "", e2e ? e2e.catalogName || e2e.name : "");
+    const msType = t ? option("microsoftWorkshopType", WORKSHOP_TYPE_OF_KIND[t.kind]) : null, sbdPhase = t ? option("sbdPhase", SBD_PHASE_OF_KIND[t.kind]) : null;
+    const units = t?.unit || e2e?.code || "", childTasks = tasks.length ? JSON.stringify(tasks) : "";
+    const data: Row = { emph_name: name, emph_heldon: heldOn, emph_phase: 0, emph_status: SESSION.open, emph_sessiondata: JSON.stringify(session), emph_kind: kindValue(kind), emph_sessionorder: order,
+      emph_microsoftworkshoptype: msType, emph_sbdphase: sbdPhase, emph_units: units || null, emph_childtasks: childTasks || null };
+    if (e2eId) data["emph_Item@odata.bind"] = ref("emph_processitem", e2eId);
+    const workshop: Workshop = { id: await this.g.insert("emph_workshop", data), name, heldOn, facilitator: "", participants: "", minutes: "", phase: 0, status: SESSION.open, itemId: e2eId || null,
+      msType, sbdPhase, kind: kindValue(kind), order, units, childTasks, session, transcript: "" };
     return { model: { ...m, workshops: [workshop, ...m.workshops] }, workshop };
+  }
+  /**
+   * Close: writes what the room agreed to the process items, each change as set in this workshop (How Workshop, the
+   * workshop's name and date, who was present) with history, keeps what each item was before (for undo), ticks the child
+   * tasks, and closes the workshop.
+   */
+  async closeWorkshop(m: Model, w: Workshop, changes: Change[], how: How, tasks: ChildTask[]): Promise<Model> {
+    let model = m;
+    const written: Written[] = [];
+    for (const c of changes) {
+      const it = model.items.find(x => x.id === c.itemId);
+      if (!it) continue;
+      const before = beforeOf(it);
+      model = await this.saveItem(model, it, c.patch, how);
+      written.push({ itemId: it.id, label: c.label, before });
+    }
+    const cur = model.workshops.find(x => x.id === w.id) || w;
+    const run = { ...(cur.session.run as RunState), written, closedOn: new Date().toISOString() };
+    return this.saveWorkshop(model, cur, { status: SESSION.closed, session: { ...cur.session, run }, childTasks: tasks.length ? JSON.stringify(tasks) : cur.childTasks });
+  }
+  /** Undo Close: every item Close wrote gets its values back (How Restore, with history); the workshop opens again in the Conclusion. */
+  async undoClose(m: Model, w: Workshop): Promise<Model> {
+    let model = m;
+    const run = w.session.run as RunState | undefined;
+    for (const x of (run?.written || []).slice().reverse()) {
+      const it = model.items.find(i => i.id === x.itemId);
+      if (it) model = await this.saveItem(model, it, x.before, RESTORE);
+    }
+    const cur = model.workshops.find(i => i.id === w.id) || w;
+    const { written, closedOn, ...rest } = (cur.session.run || {}) as RunState;
+    return this.saveWorkshop(model, cur, { status: SESSION.open, phase: 3, session: { ...cur.session, run: rest as RunState } });
   }
   async saveWorkshop(m: Model, w: Workshop, patch: Partial<Workshop>): Promise<Model> {
     const n = { ...w, ...patch };

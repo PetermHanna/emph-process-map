@@ -1,5 +1,8 @@
-// Discovery workshop: the session's rules with no Dataverse or UI, so they can be tested alone.
+// Workshop sessions: the rules with no Dataverse or UI, so they can be tested alone. The session order, board, storyline
+// review and Close are in workshop.ts; this file keeps visits, the read-back, the transcript and the facilitator's agenda.
+import { RunState, readRun } from "./workshop";
 
+/** EMPH's seven phases before slice 3: Prepare and Summary became steps, the five between them the tabs of a business process line (workshop.ts). */
 export const PHASES: { name: string; discuss: string; produces: string }[] = [
   { name: "Prepare", discuss: "Participants and the end-to-end process for this session", produces: "The workshop record" },
   { name: "Scope", discuss: "Which business processes are in scope", produces: "Scope decisions" },
@@ -15,7 +18,7 @@ export interface Visit { key: string; name: string; at: string }
 export interface OpenPoint { text: string; owner: string; due: string; done?: boolean; source?: string }
 /** transcriptStart: when the recording began (ISO); captured: transcript line number -> what it became ("RQ-00012", "Open point", "Flow: P300"). */
 /** processIds: the process items on the agenda. Open points are RAID rows (emph_raid), not part of the session. */
-export interface SessionState { processIds: string[]; current: string | null; visits: Visit[]; transcriptStart?: string | null; captured?: Record<string, string> }
+export interface SessionState { processIds: string[]; current: string | null; visits: Visit[]; transcriptStart?: string | null; captured?: Record<string, string>; run?: RunState }
 
 export const newSession = (processIds: string[] = []): SessionState => ({ processIds, current: null, visits: [] });
 
@@ -24,7 +27,8 @@ export function readSession(raw: string | null | undefined): SessionState {
     const j = JSON.parse(raw || "{}");
     const arr = (v: any) => (Array.isArray(v) ? v : []);
     const obj = (v: any) => (v && typeof v === "object" && !Array.isArray(v) ? v : {});
-    return { processIds: arr(j.processIds), current: j.current || null, visits: arr(j.visits), transcriptStart: j.transcriptStart || null, captured: obj(j.captured) };
+    const run = readRun(j.run);
+    return { processIds: arr(j.processIds), current: j.current || null, visits: arr(j.visits), transcriptStart: j.transcriptStart || null, captured: obj(j.captured), ...(run ? { run } : {}) };
   } catch { return newSession(); }
 }
 
