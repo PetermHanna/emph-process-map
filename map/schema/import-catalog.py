@@ -1,6 +1,6 @@
 # Converts Microsoft's Business Process Catalog download (.xlsx) into catalog.json for EMPH Process Map:
-# end-to-end processes > process areas > business processes. Scenarios, system processes and test cases are left out,
-# and so are deprecated rows.
+# end-to-end processes (level 1) > process areas (2) > business processes (3) > scenarios (4). System processes and test
+# cases are left out, and so are deprecated and deleted rows (Catalog status 60, 65, 70).
 #
 # Get the workbook from Microsoft (https://learn.microsoft.com/dynamics365/guidance/business-processes/about), then:
 #   python map/schema/import-catalog.py "<path to the .xlsx>"
@@ -34,27 +34,36 @@ def clip(text, n):
     text = re.sub(r"\s+", " ", (text or "")).strip()
     return text if len(text) <= n else text[: n - 1].rstrip() + "…"
 
+def products(text):
+    # Microsoft's product names, comma separated (the workbook separates them with ";" or line breaks)
+    return clip(", ".join(x.strip() for x in re.split(r"[;\n]", text or "") if x.strip()), 300)
+
 def main(src, out):
     it = read_rows(src)
     head = next(it)
     ix = {h: i for i, h in enumerate(head)}
     get = lambda r, h: (r[ix[h]] if ix.get(h) is not None and ix[h] < len(r) else "") or ""
-    tree, e2e, area = [], None, None
-    counts = {"End to end": 0, "Process area": 0, "Process": 0}
+    tree, e2e, area, proc = [], None, None, None
+    counts = {"End to end": 0, "Process area": 0, "Process": 0, "Scenario": 0}
     for r in it:
         kind = get(r, "Work item type")
-        if kind not in counts or get(r, "Catalog status MS BPC").startswith("60"):
+        if kind not in counts or get(r, "Catalog status MS BPC")[:2] in ("60", "65", "70"):
             continue
         code = get(r, "Process sequence ID MS BPC").strip()
         name = next((get(r, "Title %d" % k).strip() for k in range(1, 9) if get(r, "Title %d" % k).strip()), "")
         summary = clip(get(r, "Description"), 700)
         if kind == "End to end":
-            e2e = {"code": code.split(".")[0], "name": name, "summary": summary, "areas": []}; tree.append(e2e); area = None
+            e2e = {"code": code.split(".")[0], "name": name, "summary": summary, "areas": []}; tree.append(e2e); area = proc = None
         elif kind == "Process area" and e2e:
-            area = {"code": ".".join(code.split(".")[:2]), "name": name, "summary": summary, "processes": []}; e2e["areas"].append(area)
+            area = {"code": ".".join(code.split(".")[:2]), "name": name, "summary": summary, "processes": []}; e2e["areas"].append(area); proc = None
         elif kind == "Process" and area:
-            area["processes"].append({"code": ".".join(code.split(".")[:3]), "name": name, "summary": summary, "type": get(r, "Process type MS BPC"),
-                                      "products": clip(get(r, "Products MS BPC").replace("\n", ", "), 300)})
+            proc = {"code": ".".join(code.split(".")[:3]), "name": name, "summary": summary, "type": get(r, "Process type MS BPC"),
+                    "products": products(get(r, "Products MS BPC")), "scenarios": []}
+            area["processes"].append(proc)
+        elif kind == "Scenario" and proc and code.startswith(proc["code"] + "."):
+            # level 4: Microsoft's scenario, usually one per product (the software that runs it)
+            proc["scenarios"].append({"code": code, "name": name, "summary": clip(get(r, "Description"), 300), "type": get(r, "Process type MS BPC"),
+                                      "products": products(get(r, "Products MS BPC"))})
         else:
             continue
         counts[kind] += 1
