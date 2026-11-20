@@ -12,6 +12,7 @@ import { workbook, saveFile } from "../../domain/documents";
 import { effectiveScope, itemLabel } from "../../domain/repository";
 import type { Model, Requirement } from "../../domain/types";
 import type { Repository } from "../../domain/repository";
+import { ItemHistory } from "./History";
 
 const fitTone = (f: number | null) => (f === FIT_GAP.gap ? "bad" : f === FIT_GAP.fit ? "ok" : "neutral") as "bad" | "ok" | "neutral";
 const CLOSED: Record<number, string> = { 1: "Deferred", 2: "Duplicate", 3: "Withdrawn" };
@@ -59,9 +60,9 @@ export function Capture({ model, repo, apply, itemId, workshopId, onCaptured, fr
   );
 }
 
-export function RequirementList({ model, repo, apply, rows, hideItem }: { model: Model; repo: Repository; apply: Apply; rows: Requirement[]; hideItem?: boolean }) {
+export function RequirementList({ model, repo, apply, rows, hideItem, openId }: { model: Model; repo: Repository; apply: Apply; rows: Requirement[]; hideItem?: boolean; openId?: string | null }) {
   const l = useLook();
-  const [open, setOpen] = React.useState<string | null>(null);
+  const [open, setOpen] = React.useState<string | null>(openId || null);
   const cur = model.requirements.find(r => r.id === open) || null;
   const iname = (id: string | null) => itemLabel(model.items.find(x => x.id === id));
   return (
@@ -115,6 +116,7 @@ function RequirementEditor({ r, model, repo, apply, onClose }: { r: Requirement;
           <Field label="Requirement mapping" hint="How the solution meets it"><Edit multiline value={r.mapping} onSave={v => save({ mapping: v })} /></Field>
           <Field label="Scope approach"><Edit multiline value={r.scopeApproach} onSave={v => save({ scopeApproach: v })} /></Field>
           <Field label="Needs review"><Switch checked={r.review} onChange={(_, d) => save({ review: d.checked })} /></Field>
+          <ItemHistory model={model} repo={repo} apply={apply} table="emph_requirement" rowId={r.id} />
           <div><Button appearance="subtle" icon={<Delete16Regular />} onClick={() => { if (window.confirm("Delete " + (r.reqId || "this requirement") + "? This can't be undone.")) { onClose(); apply(m => repo.deleteRequirement(m, r)); } }}>Delete requirement</Button></div>
         </div>
       </DrawerBody>
@@ -122,7 +124,7 @@ function RequirementEditor({ r, model, repo, apply, onClose }: { r: Requirement;
   );
 }
 
-export function Requirements({ model, repo, apply }: PageProps & { nav: Nav }) {
+export function Requirements({ model, repo, apply, nav }: PageProps & { nav: Nav }) {
   const l = useLook();
   const [approval, setApproval] = React.useState<number | null>(null);
   const [fit, setFit] = React.useState<number | null>(null);
@@ -149,7 +151,7 @@ export function Requirements({ model, repo, apply }: PageProps & { nav: Nav }) {
         <span style={{ flexGrow: 1 }} />
         <Button icon={<ArrowDownload16Regular />} onClick={exportAll}>Excel</Button>
       </div>
-      {rows.length ? <div className={l.card}><RequirementList model={model} repo={repo} apply={apply} rows={rows} /></div>
+      {rows.length ? <div className={l.card}><RequirementList model={model} repo={repo} apply={apply} rows={rows} openId={model.requirements.some(r => r.id === nav.focus) ? nav.focus : null} /></div>
         : <Empty title="No requirements" text={model.requirements.length ? "Nothing matches the filters." : "Capture the first one above, or in a workshop."} />}
     </>
   );

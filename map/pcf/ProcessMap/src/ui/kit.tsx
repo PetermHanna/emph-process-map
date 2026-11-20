@@ -5,7 +5,9 @@ import { Add16Regular, Edit12Regular } from "@fluentui/react-icons";
 import { C, useLook } from "./look";
 import type { Model } from "../domain/types";
 import type { Repository } from "../domain/repository";
-import { labels, ListName, FIT_GAP, GAP_UNSPECIFIED } from "../domain/codes";
+import { labels, ListName, FIT_GAP, GAP_UNSPECIFIED, SCOPE, labelOf } from "../domain/codes";
+import { scopeChoices, isOff } from "../domain/rules";
+import type { ProcessItem } from "../domain/types";
 
 export type Apply = (fn: (m: Model) => Promise<Model>) => Promise<void>;
 export interface PageProps { model: Model; repo: Repository; apply: Apply }
@@ -49,6 +51,26 @@ export function FitGapPick({ fitGap, gapApproach, onSave, disabled }: { fitGap: 
       }} />
       {gap && <Choice value={fitGap === FIT_GAP.gap ? gapApproach : null} labels={approaches} placeholder="Gap solution approach" disabled={disabled} width={190} onChange={v => { if (v != null) onSave(FIT_GAP.gap, v); }} />}
       {pending && <span style={{ color: C.bad, fontSize: 11 }} data-emph="needs-approach">A gap needs a solution approach</span>}
+    </span>
+  );
+}
+
+/**
+ * Microsoft's Scope for an item, with the values its level takes (level 3: only 40 - Not applicable). Picking 20 - In scope
+ * also brings the items above in (Repository.setScope); Out of scope and Not applicable ask for a reason next to it.
+ */
+export function ScopePick({ it, repo, apply, width = 160, reason = true }: { it: ProcessItem; repo: Repository; apply: Apply; width?: number; reason?: boolean }) {
+  const opts = Object.fromEntries(scopeChoices(it.level).map(v => [v, labelOf("scope", v)])) as Record<number, string>;
+  const fresh = (m: Model) => m.items.find(x => x.id === it.id) || it;
+  const pick = (v: number | null) => apply(m => {
+    const x = fresh(m);
+    if (v === SCOPE.in || (x.level === 3 && v === SCOPE.unspecified && isOff(x.scope))) return repo.setScope(m, x, true);
+    return repo.saveItem(m, x, { scope: v ?? SCOPE.unspecified });
+  });
+  return (
+    <span data-emph="scope-pick" data-level={it.level} style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", alignItems: "center" }} onClick={e => e.stopPropagation()}>
+      <Choice value={it.scope ?? SCOPE.unspecified} labels={opts} onChange={pick} width={width} placeholder={labelOf("scope", SCOPE.unspecified)} />
+      {reason && isOff(it.scope) && <span style={{ minWidth: 160, flexGrow: 1 }} data-emph="scope-reason"><Edit value={it.scopeReason} placeholder="Reason" onSave={v => apply(m => repo.saveItem(m, fresh(m), { scopeReason: v }))} /></span>}
     </span>
   );
 }

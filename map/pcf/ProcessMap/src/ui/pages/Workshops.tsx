@@ -5,9 +5,9 @@ import { ChevronLeft20Regular, ChevronRight20Regular, Delete16Regular, Copy16Reg
 import { C, useLook } from "../look";
 import { PageProps, Pill, Pick, ListChoice, FitGapPick, Edit, AddBox, Empty } from "../kit";
 import type { Nav } from "../Shell";
-import { SESSION, LICENCE_LABEL, HOW, RAID, RAID_STATUS, SCOPE, SYSTEM, labelOf } from "../../domain/codes";
+import { SESSION, LICENCE_LABEL, HOW, RAID, RAID_STATUS, SYSTEM, labelOf } from "../../domain/codes";
 import { PHASES, visit, minutesPerVisit, summaryLines, sourceLine, parseTranscript, usedLines, processKeyOf, activityCodeOf } from "../../domain/session";
-import { isActive, levelUp } from "../../domain/rules";
+import { isActive, levelUp, isOff } from "../../domain/rules";
 import { childItems, effectiveScope, flowsOf, itemsAt, loadActivities, How } from "../../domain/repository";
 import type { Workshop, ProcessItem, Screenshot, Activity, Model, CurrentSystem } from "../../domain/types";
 import { DecisionRow } from "./Processes";
@@ -193,7 +193,7 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
             {w.phase === 1 && agenda.map(p => (
               <div key={p.id} className={l.row} style={{ justifyContent: "space-between", borderBottom: "1px solid " + C.line, paddingBottom: 6 }}>
                 <span><span className={l.code}>{p.code}</span> {p.name}</span>
-                <Switch label={p.scope === SCOPE.in ? "In scope" : labelOf("scope", p.scope) || "Not set"} checked={p.scope === SCOPE.in} onChange={(_, d) => apply(m => repo.setScope(m, m.items.find(x => x.id === p.id) || p, d.checked, how))} />
+                <Switch label={!isOff(p.scope) ? "We run it" : labelOf("scope", p.scope)} checked={!isOff(p.scope)} onChange={(_, d) => apply(m => repo.setScope(m, m.items.find(x => x.id === p.id) || p, d.checked, how))} />
               </div>
             ))}
             {w.phase >= 2 && w.phase <= 5 && !current && <div className={l.muted}>Pick a business process from the agenda.</div>}

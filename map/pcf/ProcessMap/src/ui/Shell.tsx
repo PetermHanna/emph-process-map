@@ -3,7 +3,7 @@ import * as React from "react";
 import { FluentProvider, Spinner, Button, Tooltip } from "@fluentui/react-components";
 import {
   Board20Regular, BranchFork20Regular, TaskListLtr20Regular, PeopleTeam20Regular, Signature20Regular, Apps20Regular, Settings20Regular,
-  FullScreenMaximize20Regular, FullScreenMinimize20Regular, ArrowSync20Regular,
+  FullScreenMaximize20Regular, FullScreenMinimize20Regular, ArrowSync20Regular, Warning20Regular, History20Regular,
 } from "@fluentui/react-icons";
 import { theme, useLook } from "./look";
 import { Problem } from "./kit";
@@ -17,18 +17,22 @@ import { Workshops } from "./pages/Workshops";
 import { SignOffs } from "./pages/SignOffs";
 import { Systems } from "./pages/Systems";
 import { Settings } from "./pages/Settings";
+import { Raid } from "./pages/Raid";
+import { History } from "./pages/History";
 
-export type PageKey = "overview" | "processes" | "requirements" | "workshops" | "signoff" | "systems" | "settings";
+export type PageKey = "overview" | "processes" | "requirements" | "raid" | "workshops" | "signoff" | "history" | "systems" | "settings";
 export interface Nav { go: (page: PageKey, focus?: string | null) => void; focus: string | null }
 
 const PAGES: { key: PageKey; label: string; icon: React.ReactElement; hint: string }[] = [
   { key: "overview", label: "Our processes", icon: <Board20Regular />, hint: "The business processes we run, by end-to-end process and process area" },
   { key: "processes", label: "Processes", icon: <BranchFork20Regular />, hint: "End-to-end processes, process areas, business processes and scenarios" },
   { key: "requirements", label: "Requirements", icon: <TaskListLtr20Regular />, hint: "What standard doesn't cover, with priority, fit or gap" },
+  { key: "raid", label: "RAID", icon: <Warning20Regular />, hint: "Risks, assumptions, issues, decisions, action items and change requests" },
   { key: "workshops", label: "Workshops", icon: <PeopleTeam20Regular />, hint: "Guided discovery sessions" },
   { key: "signoff", label: "Sign-off", icon: <Signature20Regular />, hint: "Frozen, approved versions of the scope and requirements" },
+  { key: "history", label: "History", icon: <History20Regular />, hint: "Every change to scope, fit-gap, owners and requirements: old to new, how, by whom, when" },
   { key: "systems", label: "Systems", icon: <Apps20Regular />, hint: "Systems used today per process area: keep, migrate or retire" },
-  { key: "settings", label: "Settings", icon: <Settings20Regular />, hint: "Organisation, roles and licences" },
+  { key: "settings", label: "Settings", icon: <Settings20Regular />, hint: "Organisation, roles, licences and the licence price table" },
 ];
 
 export interface ShellProps { gateway: Gateway; user: { id: string | null; name: string }; fullScreen?: { supported: boolean; set: (on: boolean) => void } }
@@ -90,6 +94,8 @@ export function Shell({ gateway, user, fullScreen }: ShellProps) {
                 {page === "overview" && <Overview model={model} repo={repo} apply={apply} nav={nav} />}
                 {page === "processes" && <Processes model={model} repo={repo} apply={apply} nav={nav} />}
                 {page === "requirements" && <Requirements model={model} repo={repo} apply={apply} nav={nav} />}
+                {page === "raid" && <Raid key={focus || ""} model={model} repo={repo} apply={apply} nav={nav} />}
+                {page === "history" && <History model={model} repo={repo} apply={apply} nav={nav} />}
                 {page === "workshops" && <Workshops model={model} repo={repo} apply={apply} nav={nav} />}
                 {page === "signoff" && <SignOffs model={model} repo={repo} apply={apply} user={user} />}
                 {page === "systems" && <Systems model={model} repo={repo} apply={apply} />}

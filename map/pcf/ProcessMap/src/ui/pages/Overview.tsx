@@ -1,6 +1,7 @@
 // The main page: our processes the way Microsoft's catalog documentation draws them. Each end-to-end process (level 1) shows its
 // process areas (level 2) left to right with arrows; inside each area its business processes (level 3) run top to bottom.
-// Names can be changed to our own; Microsoft's name stays visible underneath. Scope is Microsoft's Scope field.
+// Names can be changed to our own; Microsoft's name stays visible underneath. Scope is Microsoft's Scope field: 10/20/30/40
+// with a reason on end-to-end processes and areas; a business process's tick is 40 - Not applicable when cleared.
 import * as React from "react";
 import { Button, Tooltip, Switch } from "@fluentui/react-components";
 import {
@@ -8,17 +9,17 @@ import {
   CheckboxChecked16Filled, CheckboxUnchecked16Regular,
 } from "@fluentui/react-icons";
 import { C, useLook } from "../look";
-import { PageProps, Stat, Meter, Empty, Pill, Rename } from "../kit";
+import { PageProps, Stat, Meter, Empty, Pill, Rename, ScopePick } from "../kit";
 import type { Nav } from "../Shell";
-import { FIT_GAP, FLOW_TYPE, FLOW_STATE, SCOPE, labelOf } from "../../domain/codes";
-import { isActive, itemFitGap, productsOf } from "../../domain/rules";
+import { FIT_GAP, FLOW_TYPE, FLOW_STATE, labelOf } from "../../domain/codes";
+import { isActive, itemFitGap, productsOf, fitFromScenarios, isOff } from "../../domain/rules";
 import { childItems, effectiveScope, flowsOf, itemsAt } from "../../domain/repository";
 import type { Model, ProcessItem } from "../../domain/types";
 import { areaIcon, endToEndIcon, Tile } from "../icons";
 
 const GREY = "#64748B";
-/** The item's own fit-gap, else what its requirements say. */
-export const fitGapOf = (m: Model, p: ProcessItem) => p.fitGap ?? itemFitGap(m.requirements, p.id).fitGap;
+/** The item's own fit-gap, else what its scenarios in scope say, else its requirements. */
+export const fitGapOf = (m: Model, p: ProcessItem) => p.fitGap ?? fitFromScenarios(m.items, p) ?? itemFitGap(m.requirements, p.id).fitGap;
 const decided = (m: Model, p: ProcessItem) => { const f = fitGapOf(m, p); return f === FIT_GAP.fit || f === FIT_GAP.gap; };
 
 export function Overview({ model, repo, apply, nav }: PageProps & { nav: Nav }) {
@@ -79,6 +80,7 @@ export function Overview({ model, repo, apply, nav }: PageProps & { nav: Nav }) 
                   <Rename name={e.name} catalogName={e.catalogName} size={17} onSave={name => apply(m => repo.saveItem(m, e, { name }))} /></span>
                 <span className={l.muted} style={{ fontSize: 12 }}>{areas.length} process areas · {procs.length} business processes in scope{products.length ? " · " + products.join(", ") : ""}</span>
               </div>
+              <span data-emph="e2e-scope"><ScopePick it={e} repo={repo} apply={apply} width={150} /></span>
               <Pill text={ok + " of " + procs.length + " fit or gap decided"} tone={ok === procs.length && procs.length ? "ok" : "neutral"} />
               <div style={{ width: 110 }}><Meter part={ok} whole={procs.length} colour={colour} /></div>
               {!used(e) && <Button size="small" appearance="subtle" onClick={() => setOpened(s => toggle(s, e.id))}>Hide</Button>}
@@ -120,6 +122,7 @@ function AreaColumn({ a, e, colour, onlyInScope, model, repo, apply, nav }: Page
   const live = all.some(p => effectiveScope(model, p));
   const Icon = areaIcon(a.catalogName || a.name, e.code);
   const c = live ? colour : GREY;
+  const products = productsOf(model.items, a);
   return (
     <div data-emph="area-column" style={{ width: 228, flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "stretch" }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", borderRadius: 10, background: live ? c : "#F1F5F9", color: live ? "#fff" : C.muted,
@@ -129,6 +132,10 @@ function AreaColumn({ a, e, colour, onlyInScope, model, repo, apply, nav }: Page
           <Rename name={a.name} catalogName={a.catalogName} size={13} onSave={name => apply(m => repo.saveItem(m, a, { name }))} />
           <span style={{ fontSize: 10, opacity: 0.8, fontFamily: "Consolas, monospace" }}>{a.code} · {all.filter(p => effectiveScope(model, p)).length} of {all.length} in scope</span>
         </div>
+      </div>
+      <div style={{ padding: "6px 6px 0", display: "flex", flexDirection: "column", gap: 4 }} data-emph="area-scope">
+        <ScopePick it={a} repo={repo} apply={apply} width={150} />
+        {products.length > 0 && <span style={{ fontSize: 10, color: C.muted }} data-emph="area-products">→ {products.join(", ")}</span>}
       </div>
       <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", padding: "8px 6px 0" }}>
         {list.map((p, i) => (
@@ -151,14 +158,16 @@ function ProcessBox({ p, n, colour, model, repo, apply, nav }: PageProps & { p: 
   const reqs = model.requirements.filter(r => r.itemId === p.id && isActive(r)).length;
   const ok = fit === FIT_GAP.fit;
   const products = productsOf(model.items, p);
-  const ticked = p.scope === SCOPE.in;
+  // a business process takes no In scope of its own (decision 1): ticked = it runs (not Not applicable) and its area and
+  // end-to-end process are in; clearing the tick sets 40 - Not applicable, ticking brings the items above in
+  const ticked = on;
   return (
     <div data-emph="process-card" onClick={() => nav.go("processes", p.id)} className={l.cardClick}
       style={{ display: "flex", flexDirection: "column", gap: 4, padding: "7px 9px", borderRadius: 8, cursor: "pointer", fontSize: 12,
         background: !on ? "#F8FAFC" : ok ? "#F0FDF4" : "#fff", opacity: on ? 1 : 0.7,
         border: (on ? "1px solid " : "1px dashed ") + (ok ? "#86EFAC" : on ? colour + "88" : "#CBD5E1"), borderLeft: "4px solid " + (on ? (ok ? C.ok : colour) : "#CBD5E1") }}>
       <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
-        <Tooltip content={(ticked ? "In scope: click to take it out" : "Not in scope (" + (labelOf("scope", p.scope) || "not set") + "): click to put it in") + (ticked && !on ? ". Its area or end-to-end process is not in scope." : "")} relationship="label">
+        <Tooltip content={(ticked ? "We run it: click to set it 40 - Not applicable" : labelOf("scope", p.scope) + (p.scopeReason ? " (" + p.scopeReason + ")" : "") + ": click to put it in") + (!ticked && !isOff(p.scope) ? ". Its area or end-to-end process is not in scope yet." : "")} relationship="label">
           <button data-emph="scope-toggle" onClick={ev => { ev.stopPropagation(); apply(m => repo.setScope(m, m.items.find(x => x.id === p.id) || p, !ticked)); }}
             style={{ border: 0, background: "transparent", padding: 0, cursor: "pointer", lineHeight: 0, color: on ? colour : "#94A3B8", flexShrink: 0, marginTop: 1 }}>
             {ticked ? <CheckboxChecked16Filled /> : <CheckboxUnchecked16Regular />}

@@ -1,12 +1,13 @@
-// Sign-off: freeze scope, decisions, flows and requirements; compare with today; approve; export.
+// Sign-off: freeze scope, decisions, flows and requirements; compare with today; approve; export. After approval a change to
+// what was frozen is raised as a Change request (RAID). The Azure Boards import file carries today's work items.
 import * as React from "react";
-import { Button, Field, Input, Spinner } from "@fluentui/react-components";
+import { Button, Field, Input, Spinner, Tooltip } from "@fluentui/react-components";
 import { ArrowDownload16Regular, DocumentText16Regular, Print16Regular } from "@fluentui/react-icons";
 import { useLook } from "../look";
 import { PageProps, Pill, Empty, Problem } from "../kit";
-import { SIGNOFF, SIGNOFF_LABEL, ITEM_LABEL } from "../../domain/codes";
-import { canApprove, differences, Difference, FrozenItem } from "../../domain/rules";
-import { signOffTables, workbook, signOffDocument, saveFile, printHtml } from "../../domain/documents";
+import { SIGNOFF, SIGNOFF_LABEL, ITEM_LABEL, RAID } from "../../domain/codes";
+import { canApprove, differences, Difference, FrozenItem, changeRequestFor } from "../../domain/rules";
+import { signOffTables, workbook, signOffDocument, saveFile, printHtml, boardsRows, boardsFiles } from "../../domain/documents";
 import { loadSignOffItems, signOffContents } from "../../domain/repository";
 import type { SignOff } from "../../domain/types";
 
@@ -22,6 +23,13 @@ export function SignOffs({ model, repo, apply, user }: PageProps & { user: { id:
         <Field label="Scope note" style={{ flexGrow: 1 }}><Input value={note} placeholder="What this sign-off covers" onChange={(_, d) => setNote(d.value)} /></Field>
         <Button appearance="primary" disabled={busy} data-emph="signoff-freeze" onClick={async () => { setBusy(true); await apply(m => repo.freeze(m, note)); setNote(""); setBusy(false); }}>Freeze for review</Button>
         {busy && <Spinner size="tiny" />}
+        <Tooltip relationship="description" content="Process items in scope, their requirements and RAID items as a CSV for Azure Boards (Queries, Import work items), with the work item types and fields of Microsoft's ADO template. Up to 1,000 rows per file.">
+          <Button icon={<ArrowDownload16Regular />} data-emph="boards-export" onClick={() => {
+            const files = boardsFiles(boardsRows(model));
+            const name = (model.workspace.organisation || "process-map").replace(/[^\w.-]+/g, "_") + "-azure-boards";
+            files.forEach((f, i) => saveFile(name + (files.length > 1 ? "-" + (i + 1) : "") + ".csv", f, "text/csv;charset=utf-8"));
+          }}>Azure Boards import file</Button>
+        </Tooltip>
       </div>
       {!model.signOffs.length ? <Empty title="Nothing signed off yet" text="Freezing takes a copy of the scope, configuration decisions, confirmed flows and active requirements, so later changes show against it." /> : (
         <div className={l.card}>
@@ -68,10 +76,17 @@ function Detail({ s, model, repo, apply, user, onGone }: PageProps & { s: SignOf
       </div>
       {diff && (diff.length === 0 ? <div className={l.muted}>No changes since this sign-off.</div> : (
         <table className={l.table}>
-          <thead><tr><th>Change</th><th>Type</th><th>Item</th><th>Fields</th></tr></thead>
-          <tbody>{diff.map((d, i) => (
-            <tr key={i}><td><Pill text={d.kind} tone={d.kind === "added" ? "ok" : d.kind === "removed" ? "bad" : "warn"} /></td><td>{ITEM_LABEL[d.item.type]}</td><td>{d.item.name}</td><td className={l.muted}>{d.kind === "changed" ? d.fields.join(", ") : ""}</td></tr>
-          ))}</tbody>
+          <thead><tr><th>Change</th><th>Type</th><th>Item</th><th>Fields</th>{s.state === SIGNOFF.approved && <th>Change request</th>}</tr></thead>
+          <tbody>{diff.map((d, i) => {
+            const key = changeRequestFor(d, s).frozenKey;
+            const raised = model.raids.find(x => x.type === RAID.change && x.signOffId === s.id && x.frozenKey === key);
+            return (
+              <tr key={i} data-emph="signoff-diff"><td><Pill text={d.kind} tone={d.kind === "added" ? "ok" : d.kind === "removed" ? "bad" : "warn"} /></td><td>{ITEM_LABEL[d.item.type]}</td><td>{d.item.name}</td><td className={l.muted}>{d.kind === "changed" ? d.fields.join(", ") : ""}</td>
+                {s.state === SIGNOFF.approved && <td>{raised ? <Pill text={"Raised: " + raised.name.slice(0, 40)} tone="info" />
+                  : <Button size="small" data-emph="raise-cr" onClick={() => apply(m => repo.raiseChangeRequest(m, s, d))}>Raise a change request</Button>}</td>}
+              </tr>
+            );
+          })}</tbody>
         </table>
       ))}
     </div>

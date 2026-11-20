@@ -10,7 +10,7 @@
 
   async function pages() {
     const out = [];
-    for (const k of ["overview", "processes", "requirements", "workshops", "signoff", "systems", "settings"]) { await nav(k); out.push(k + ":" + (q("h1")?.innerText || "")); }
+    for (const k of ["overview", "processes", "requirements", "raid", "workshops", "signoff", "history", "systems", "settings"]) { await nav(k); out.push(k + ":" + (q("h1")?.innerText || "")); }
     return out.join(" | ");
   }
   async function processAndFlow() {
@@ -81,9 +81,10 @@
     q('[data-emph="workshop-new"]').click();
     await until(() => q('[data-emph="phases"]'));
     const listed = (await until(() => q('[data-emph="agenda-pick"]'))).querySelectorAll('input[type="checkbox"]').length;
-    // business processes (level 3) in scope, with their area and end-to-end process in scope too
+    // business processes (level 3) in scope: not Not applicable themselves (decision 1), with their area and end-to-end process in scope
     const items = rows("emph_processitem"), byId = new Map(items.map(r => [r.emph_processitemid, r]));
-    const on = r => r.emph_scope === 582100001 && (!r._emph_parent_value || on(byId.get(r._emph_parent_value)));
+    const own = r => (r.emph_level === 3 ? r.emph_scope !== 582100002 && r.emph_scope !== 582100003 : r.emph_scope === 582100001);
+    const on = r => own(r) && (!r._emph_parent_value || on(byId.get(r._emph_parent_value)));
     const inScope = items.filter(r => r.emph_level === 3 && on(r)).length;
     if (listed !== inScope) throw new Error("agenda lists " + listed + " processes, " + inScope + " in scope");
     return "workshop " + rows("emph_workshop").length + ", agenda lists the " + listed + " in-scope processes";
@@ -102,20 +103,23 @@
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); await wait(400);
     const row = rows("emph_processitem").find(r => r.emph_name === "Our own name for it");
     if (!row || row.emph_catalogname !== before) throw new Error("rename did not keep Microsoft's name");
-    // take a process out of scope and back in; history records both
-    const IN = 582100001, OUT = 582100002;
-    const l3 = () => rows("emph_processitem").filter(r => r.emph_level === 3 && r.emph_scope === IN).length;
+    // take a process out (40 - Not applicable: a business process takes no In scope of its own) and back in; history records both
+    const UNSPECIFIED = 582100000, NA = 582100003;
+    const l3 = () => rows("emph_processitem").filter(r => r.emph_level === 3 && r.emph_scope !== NA && r.emph_scope !== 582100002).length;
     const before3 = l3(), hist = rows("emph_history").length;
     const toggle = () => [...document.querySelectorAll('[data-emph="process-card"]')].find(c => c.innerText.includes("Our own name for it"))?.querySelector('[data-emph="scope-toggle"]');
     const e2eCode = toggle().closest('[data-emph="e2e-section"]').querySelector("header").innerText.trim().split(/\s/)[0];
     toggle().click(); await wait(300);
     // the last process in scope takes its end-to-end section with it: open it again from the list below
     if (!toggle()) { [...document.querySelectorAll('[data-emph="open-e2e"]')].find(b => b.innerText.trim().startsWith(e2eCode + " ")).click(); await wait(300); }
-    if (row.emph_scope !== OUT || l3() !== before3 - 1) throw new Error("not out of scope: " + row.emph_scope);
+    if (row.emph_scope !== NA || l3() !== before3 - 1) throw new Error("not Not applicable: " + row.emph_scope);
     toggle().click(); await wait(400);
-    if (row.emph_scope !== IN || row.emph_sethow !== 582100001 || !row.emph_seton) throw new Error("not back in scope with Set how Direct");
+    if (row.emph_scope !== UNSPECIFIED || row.emph_sethow !== 582100001 || !row.emph_seton) throw new Error("not back in with Set how Direct");
     const logged = rows("emph_history").slice(hist).filter(h => h.emph_rowid === row.emph_processitemid && h.emph_field === "emph_scope").map(h => h.emph_newvalue);
-    if (logged.join("|") !== "30 - Out of scope|20 - In scope") throw new Error("history: " + logged.join("|"));
+    if (logged.join("|") !== "40 - Not applicable|10 - Unspecified") throw new Error("history: " + logged.join("|"));
+    // scope with a reason on each end-to-end process and area (levels 1 and 2)
+    const picks = document.querySelectorAll('[data-emph="e2e-scope"] [data-emph="scope-pick"][data-level="1"]').length, areaPicks = document.querySelectorAll('[data-emph="area-scope"] [data-emph="scope-pick"][data-level="2"]').length;
+    if (picks !== sections || areaPicks !== columns) throw new Error("scope picks " + picks + "/" + sections + ", " + areaPicks + "/" + columns);
     // products read up from the scenarios in scope
     const products = q('[data-emph="target-products"]')?.innerText || "";
     if (!/Field Service/.test(products)) throw new Error("target products: " + products);
@@ -230,8 +234,127 @@
     if (made.emph_decision !== 582100000) throw new Error("new system not Keep");
     return areas + " areas, " + n + " systems, added one (Keep); " + target.replace(/\n/g, " ");
   }
+  const setInput = (el, v) => { const input = el.tagName === "INPUT" ? el : el.querySelector("input"); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(input, v); input.dispatchEvent(new Event("input", { bubbles: true })); return input; };
+  const optionsOf = async combo => {
+    combo.click(); await until(() => document.querySelector('[role="option"]'));
+    const list = [...document.querySelectorAll('[role="option"]')].map(o => o.innerText.trim());
+    combo.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await until(() => !document.querySelector('[role="option"]')); await wait(100);
+    return list;
+  };
+  const raidRow = text => [...document.querySelectorAll('[data-emph="raid-item"]')].find(x => x.innerText.includes(text));
+  // RAID page: each type's own fields, filters, open questions, a decision needs its maker; no change request before an approved sign-off
+  async function raid() {
+    raid.step = 1; await nav("raid");
+    raid.step = 2; const addBox = () => q('[data-emph="raid-add"]');
+    raid.step = 3; const typeCombo = () => addBox().querySelector('[role="combobox"]');
+    raid.step = 4; const offered = await optionsOf(typeCombo());
+    raid.step = 5; const approved = rows("emph_signoff").some(s => s.emph_state === 582100002);
+    raid.step = 6; if (!approved && offered.includes("Change request")) throw new Error("change request offered before approval");
+    raid.step = 7; const add = async (type, text, question) => {
+      await pickOption(typeCombo(), type);
+      if (question) { addBox().querySelector('input[type="checkbox"]').click(); await wait(100); }
+      const input = setInput(q('[data-emph="raid-add-text"]'), text); await wait(50);
+      input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      return until(() => rows("emph_raid").find(r => r.emph_description === text));
+    };
+    raid.step = 8; const risk = await add("Risk", "Test risk: supplier data arrives late");
+    raid.step = 9; if (risk.emph_raidtype !== 582100000 || risk.emph_status !== 582100000) throw new Error("risk type/status");
+    raid.step = 10; (await until(() => raidRow("supplier data arrives late"))).querySelector('[data-emph="raid-open"]').click();
+    raid.step = 11; const ed = await until(() => raidRow("supplier data arrives late").querySelector('[data-emph="raid-editor"]'));
+    raid.step = 12; const field = label => [...ed.querySelectorAll("label")].find(x => x.innerText.trim().startsWith(label))?.closest(".fui-Field");
+    raid.step = 13; if (!field("Risk response") || !field("Contingency plan") || field("Change request type")) throw new Error("risk fields");
+    raid.step = 14; await pickOption(field("Risk response").querySelector('[role="combobox"]'), "Mitigate");
+    raid.step = 15; await until(() => risk.emph_riskresponse === 582100002);
+    raid.step = 16; const qn = await add("Action item", "Test question: who signs off the credit limit?", true);
+    raid.step = 17; if (qn.emph_raidtype !== 582100004 || qn.emph_isquestion !== true) throw new Error("open question");
+    raid.step = 18; const sw = [...q('[data-emph="raid-filter"]').querySelectorAll('input[role="switch"]')][0]; sw.click(); await wait(300);
+    raid.step = 19; const shown = [...document.querySelectorAll('[data-emph="raid-item"]')];
+    raid.step = 20; if (!shown.length || shown.some(x => x.dataset.type !== "Action item") || !raidRow("who signs off")) throw new Error("questions filter");
+    raid.step = 21; sw.click(); await wait(200);
+    raid.step = 22; const dec = await add("Decision", "Test decision: one price list for all regions");
+    raid.step = 23; if (dec.emph_status !== 582100003) throw new Error("decision not Proposed");
+    raid.step = 24; const statusOf = () => [...raidRow("one price list").firstElementChild.querySelectorAll('[role="combobox"]')].pop(); // the row header, not the editor
+    raid.step = 25; await pickOption(statusOf(), "Decided");
+    raid.step = 26; await until(() => /needs a decision maker/.test(document.body.innerText));
+    raid.step = 27; if (dec.emph_status !== 582100003) throw new Error("decided without a maker");
+    raid.step = 28; raidRow("one price list").querySelector('[data-emph="raid-open"]').click();
+    raid.step = 29; const ded = await until(() => raidRow("one price list").querySelector('[data-emph="raid-editor"]'));
+    raid.step = 30; const maker = [...ded.querySelectorAll("label")].find(x => x.innerText.trim().startsWith("Decision maker")).closest(".fui-Field").querySelector("input");
+    raid.step = 31; setInput(maker, "Steering group"); maker.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    raid.step = 32; await until(() => dec.emph_decisionmaker === "Steering group");
+    raid.step = 33; await pickOption(statusOf(), "Decided");
+    raid.step = 34; await until(() => dec.emph_status === 582100004);
+    raid.step = 35; return "risk with Risk response Mitigate, an open question (filter shows action items only), a decision Decided once it had a maker; change request " + (approved ? "offered" : "not offered before approval");
+  }
+  // History page: restore the last scope change of the renamed process; the restore is a new history row (how Restore)
+  async function history() {
+    await nav("history");
+    const row = rows("emph_processitem").find(r => r.emph_name === "Our own name for it");
+    if (!row) throw new Error("run mainMap first");
+    const before = rows("emph_history").length, was = row.emph_scope;
+    const line = await until(() => [...document.querySelectorAll('[data-emph="history-row"]')].find(t => t.innerText.includes("Our own name for it") && /\bScope\b/.test(t.innerText)));
+    const target = /40 - Not applicable/.test(line.innerText.split("→")[0]) ? 582100003 : null;
+    line.querySelector('[data-emph="history-restore"]').click();
+    await until(() => rows("emph_history").length === before + 1);
+    const h = rows("emph_history")[before];
+    if (h.emph_how !== 582100004 || h.emph_field !== "emph_scope" || h.emph_rowid !== row.emph_processitemid) throw new Error("history row " + JSON.stringify(h));
+    if (target != null && row.emph_scope !== target) throw new Error("not restored: " + row.emph_scope);
+    await until(() => document.querySelectorAll('[data-emph="history-row"]')[0]?.innerText.includes("Restore"));
+    return "restored scope " + h.emph_oldvalue + " → " + h.emph_newvalue + " (was " + was + "), written as a new row with how Restore";
+  }
+  // After approval, a change to what the sign-off froze is raised as a change request
+  async function changeRequest() {
+    await nav("signoff");
+    const tr = await until(() => [...document.querySelectorAll("tbody tr")].find(t => /v1/.test(t.innerText)));
+    tr.click();
+    (await until(() => button(/^Approve$/))).click();
+    await until(() => rows("emph_signoff")[0].emph_state === 582100002);
+    (await until(() => button(/^Compare with today$/))).click();
+    const raise = await until(() => q('[data-emph="raise-cr"]'), 8000);
+    const n = rows("emph_raid").length;
+    raise.click();
+    const cr = await until(() => rows("emph_raid").length === n + 1 && rows("emph_raid")[n]);
+    if (cr.emph_raidtype !== 582100005 || cr.emph_status !== 582100003 || cr._emph_signoff_value !== rows("emph_signoff")[0].emph_signoffid || !cr.emph_frozenkey || !cr.emph_justification) throw new Error("change request " + JSON.stringify(cr));
+    await nav("raid");
+    const offered = await optionsOf(q('[data-emph="raid-add"] [role="combobox"]'));
+    if (!offered.includes("Change request")) throw new Error("change request not offered after approval");
+    return "approved v1; raised “" + cr.emph_name + "” (" + cr.emph_justification.split("\n")[0] + "); offered on the RAID page";
+  }
+  // Licences per role: a suggestion from the scenarios, applied; the summary per type; a dated price row
+  async function licences() {
+    await nav("settings");
+    const apply = await until(() => q('[data-emph="role-licence-apply"]'));
+    const name = apply.closest('[data-emph="role-row"]').querySelector("input").value;
+    const role = rows("emph_role").find(r => r.emph_name === name);
+    const text = apply.closest('[data-emph="role-licence-suggest"]').innerText;
+    apply.click();
+    await until(() => /Suggested from the scenarios/.test(role.emph_licencenote || ""));
+    const summary = q('[data-emph="licence-summary"]').innerText;
+    if (!/Full: \d+/.test(summary)) throw new Error("summary: " + summary);
+    q('[data-emph="price-add"]').click();
+    const ws = rows("emph_workspace")[0];
+    await until(() => JSON.parse(ws.emph_settings || "{}").prices?.length === 1);
+    return name + ": " + text.replace(/\s*Use it$/, "").slice(0, 120) + "; summary " + summary.replace(/\s+/g, " ").slice(0, 100) + "; price row added";
+  }
+  // Azure Boards import file: Microsoft's work item types and fields, at most 1,000 rows per file
+  async function boards() {
+    await nav("signoff");
+    const files = [], real = URL.createObjectURL, click = HTMLAnchorElement.prototype.click;
+    URL.createObjectURL = b => { files.push(b); return "blob:test"; };
+    HTMLAnchorElement.prototype.click = function () {};
+    try { q('[data-emph="boards-export"]').click(); await wait(200); } finally { URL.createObjectURL = real; HTMLAnchorElement.prototype.click = click; }
+    if (!files.length) throw new Error("no file");
+    const texts = await Promise.all(files.map(b => b.text())); // text() drops the byte order mark, so read it from the bytes
+    const bom = [...new Uint8Array(await files[0].slice(0, 3).arrayBuffer())].join(",") === "239,187,191";
+    const lines = texts.map(t => t.split("\r\n").filter(Boolean));
+    if (!bom || !texts[0].startsWith("\"ID\",\"Work Item Type\",\"Title 1\",\"Title 2\"") || lines.some(l => l.length - 1 > 1000)) throw new Error("format");
+    const all = texts.join("\n");
+    for (const t of ['"End to end"', '"Process area"', '"Process"', '"Scenario"', '"Requirement"', '"Risk"', '"Action item"', '"Change request"', '"20 - In scope"']) if (!all.includes(t)) throw new Error("missing " + t);
+    return files.length + " file(s), " + lines.reduce((s, l) => s + l.length - 1, 0) + " work items";
+  }
+  const ALL = { pages, mainMap, processAndFlow, guide, capture, fitGap, signOff, workshop, transcript, systems, raid, history, changeRequest, licences, boards };
   window.__tests = {
-    pages, processAndFlow, guide, capture, fitGap, signOff, workshop, transcript, mainMap, systems,
-    async all() { const r = {}; for (const [k, f] of Object.entries({ pages, mainMap, processAndFlow, guide, capture, fitGap, signOff, workshop, transcript, systems })) { try { r[k] = await f(); } catch (e) { r[k] = "FAIL " + e.message; } } return r; },
+    ...ALL,
+    async all() { const r = {}; for (const [k, f] of Object.entries(ALL)) { try { r[k] = await f(); } catch (e) { r[k] = "FAIL " + (f.step ? "at step " + f.step + ": " : "") + e.message; } } return r; },
   };
 })();
