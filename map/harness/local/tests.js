@@ -136,6 +136,7 @@
     await until(() => q('[data-emph="phases"]'));
     const total = (await until(() => q('[data-emph="agenda-total"]'))).innerText;
     if (!/\d+ business processes, \d+ min/i.test(total)) throw new Error("agenda: " + total);
+    q('[data-emph="prepare-start"]').click(); await wait(300);
     const items = await until(() => { const a = document.querySelectorAll('[data-emph="agenda-item"]'); return a.length >= 2 && a; });
     items[0].click(); await wait(300); items[1].click(); await wait(300);
     q('[data-emph="transcript-toggle"]').click();
@@ -175,7 +176,7 @@
     await until(() => rows("emph_raid").some(a => /ten thousand/.test(a.emph_description) && /^\[0:04\] Ben Office:/.test(a.emph_sourcetext || "") && a.emph_raidtype === 582100004 && a._emph_workshop_value === ws().emph_workshopid));
     await until(() => /Open point/.test(q('[data-line="3"]').innerText));
     // walk the flow: the step visit collects line 5, and its requirement is linked to the step
-    [...document.querySelectorAll('[data-emph="phases"] button')][3].click();
+    q('[data-emph="tool-tab"][data-tab="flow"]').click(); // the old phase "Process flow" is a tab of the business process line
     const adapt = await until(() => q('[data-emph="walk-adapt"]') || q('[data-emph="walk-step"]'));
     if (adapt.dataset.emph === "walk-adapt") adapt.click();
     const step = await until(() => q('[data-emph="walk-step"]'));
@@ -352,7 +353,134 @@
     for (const t of ['"End to end"', '"Process area"', '"Process"', '"Scenario"', '"Requirement"', '"Risk"', '"Action item"', '"Change request"', '"20 - In scope"']) if (!all.includes(t)) throw new Error("missing " + t);
     return files.length + " file(s), " + lines.reduce((s, l) => s + l.length - 1, 0) + " work items";
   }
-  const ALL = { pages, mainMap, processAndFlow, guide, capture, fitGap, signOff, workshop, transcript, systems, raid, history, changeRequest, licences, boards };
+  // ---------- slice 3: workshops like Microsoft (made-up content; the default demo has 80 Project to profit in scope) ----------
+  const session = w => JSON.parse(w.emph_sessiondata || "{}");
+  const lastWorkshop = () => rows("emph_workshop")[rows("emph_workshop").length - 1];
+  async function newWorkshop(kind, e2eCode = "80") {
+    await nav("workshops");
+    if (!q('[data-emph="workshop-new"]')) { button(/All workshops/).click(); await wait(250); }
+    await pickOption(q('[data-emph="workshop-kind"] [role="combobox"]'), kind);
+    const e2e = q('[data-emph="workshop-kind"]').parentElement.querySelectorAll('[role="combobox"]')[1];
+    e2e.click();
+    (await until(() => [...document.querySelectorAll('[role="option"]')].find(x => x.innerText.trim().startsWith(e2eCode + " ")))).click(); await wait(200);
+    const before = rows("emph_workshop").length;
+    q('[data-emph="workshop-new"]').click();
+    await until(() => rows("emph_workshop").length === before + 1 && q('[data-emph="phases"]'));
+    return lastWorkshop();
+  }
+  const toStep = async i => { [...document.querySelectorAll('[data-emph="phases"] button')][i].click(); await wait(250); };
+  const lineWith = async tool => { // walks the agenda with Next until the line opens the tool
+    for (let i = 0; i < 12; i++) { if (q('[data-emph="' + tool + '"]')) return; q('[data-emph="agenda-nav-top"] [data-emph="agenda-next"]').click(); await wait(250); }
+    throw new Error("no line opens " + tool);
+  };
+
+  // A scenario board workshop from Microsoft's template: type and phase set, child tasks, overview without cards, key scenarios with cards, scope proposals grey an area
+  async function board() {
+    const ws = await newWorkshop("Scenario board discovery");
+    if (ws.emph_microsoftworkshoptype !== 582100000 || ws.emph_sbdphase !== 582100000 || !/^80\./.test(ws.emph_units ? ws.emph_units + "." : "")) throw new Error("type/phase/unit " + ws.emph_microsoftworkshoptype + "/" + ws.emph_sbdphase + "/" + ws.emph_units);
+    const tasks = JSON.parse(ws.emph_childtasks);
+    if (tasks.length !== 3 || !/^80\.01\.001 /.test(tasks[0].id + " ") || !/project to profit/.test(tasks[0].title)) throw new Error("child tasks " + ws.emph_childtasks);
+    if (!q('[data-emph="template-roles"]')) throw new Error("no roles to invite");
+    q('[data-emph="prepare-start"]').click(); await wait(300);
+    const lines = document.querySelectorAll('[data-emph="agenda-item"]').length;
+    if (lines !== session(ws).run.agenda.length || !q('[data-emph="agenda-nav-top"] [data-emph="agenda-next"]') || !q('[data-emph="agenda-nav-bottom"] [data-emph="agenda-prev"]')) throw new Error("agenda and its buttons");
+    await lineWith("board");
+    if (q('[data-emph="board"]').dataset.view !== "overview" || q('[data-emph="board-card"]')) throw new Error("the overview line shows cards");
+    q('[data-emph="agenda-nav-bottom"] [data-emph="agenda-next"]').click(); await wait(300);
+    if (session(lastWorkshop()).run.done.length < 2) throw new Error("Next did not tick the lines walked");
+    const areas = document.querySelectorAll('[data-emph="board-area"]').length, cards = document.querySelectorAll('[data-emph="board-card"]').length;
+    if (!cards) throw new Error("the key-scenarios line shows no cards");
+    const card = q('[data-emph="board-card"] [data-emph="card-mark"]');
+    card.click(); await wait(250); q('[data-emph="board-card"] [data-emph="card-mark"]').click(); await wait(250);
+    const key = q('[data-emph="board-card"]').dataset.key;
+    if (session(lastWorkshop()).run.marks[key]?.state !== "strike") throw new Error("card not struck");
+    // an area Not applicable is a proposal: greyed and folded, the item itself unchanged until Close
+    const col = [...document.querySelectorAll('[data-emph="board-area"]')].find(a => a.querySelector('[data-emph="board-scope"]') && a.dataset.off === "0");
+    const id = col.querySelector('[data-emph="board-scope"]').dataset.item, before = rows("emph_processitem").find(r => r.emph_processitemid === id).emph_scope;
+    await pickOption(col.querySelector('[data-emph="board-scope"] [role="combobox"]'), "40 - Not applicable");
+    const after = [...document.querySelectorAll('[data-emph="board-area"]')].find(a => a.querySelector('[data-emph="board-scope"]')?.dataset.item === id);
+    if (after.dataset.off !== "1" || !after.querySelector('[data-emph="board-unfold"]')) throw new Error("area not greyed and folded");
+    if (rows("emph_processitem").find(r => r.emph_processitemid === id).emph_scope !== before) throw new Error("the board wrote scope before Close");
+    return areas + " areas, " + cards + " cards, " + lines + " agenda lines, card struck, an area proposed Not applicable (greyed, not written)";
+  }
+
+  // The storyline review: in-scope processes only, fit per step makes the process a gap, main path, a demo link in the settings
+  async function storyline() {
+    await newWorkshop("Storyline design review");
+    q('[data-emph="prepare-start"]').click(); await wait(300);
+    await lineWith("story");
+    const procs = [...document.querySelectorAll('[data-emph="story-process"]')];
+    if (!procs.length) throw new Error("no processes");
+    const withFlow = procs.find(p => !/no flow/.test(p.innerText)) || procs[0];
+    const pid = withFlow.dataset.id;
+    withFlow.querySelector('[data-emph="story-open"]').click();
+    const step = await until(() => q('[data-emph="story-process"][data-id="' + pid + '"] [data-emph="story-step"]'));
+    await pickOption(step.querySelector('[data-emph="step-fit"] [role="combobox"]'), "Differs");
+    (await until(() => q('[data-emph="story-process"][data-id="' + pid + '"] [data-emph="story-use-steps"]'))).click(); await wait(300);
+    const run = session(lastWorkshop()).run;
+    if (run.processFit[pid]?.fitGap !== 582100001 || !Object.keys(run.stepFit).length) throw new Error("fit: " + JSON.stringify(run.processFit));
+    q('[data-emph="story-process"][data-id="' + pid + '"] input[data-emph="story-main"], [data-emph="story-process"][data-id="' + pid + '"] [data-emph="story-main"] input').click(); await wait(300);
+    if (!session(lastWorkshop()).run.mainPath.includes(pid)) throw new Error("main path");
+    q('[data-emph="story-process"][data-id="' + pid + '"] [data-emph="demo-link-add"]').click();
+    const box = await until(() => q('[data-emph="demo-link-form"] input'));
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(box, "https://demo.example.test/project"); box.dispatchEvent(new Event("input", { bubbles: true })); await wait(50);
+    q('[data-emph="demo-link-save"]').click();
+    await until(() => (JSON.parse(rows("emph_workspace")[0].emph_settings || "{}").demoLinks || []).some(d => d.url === "https://demo.example.test/project"));
+    await until(() => q('[data-emph="story-process"][data-id="' + pid + '"] [data-emph="demo-open"]'));
+    return procs.length + " processes in areas in scope, a step that differs made " + pid.slice(-4) + " a gap, main path, demo link saved";
+  }
+
+  // The quick track: five lines, Microsoft's lines back when switched off, scope proposed from today with feedback
+  async function quickTrack() {
+    const ws = await newWorkshop("Scenario board discovery");
+    const ms = session(ws).run.agenda.map(a => a.text).join("|");
+    q('input[data-emph="quick-track"], [data-emph="quick-track"] input').click(); await wait(300);
+    let run = session(lastWorkshop()).run;
+    if (run.track !== "quick" || run.agenda.length !== 5 || run.agenda[3].tool !== "story") throw new Error("quick agenda " + JSON.stringify(run.agenda.map(a => a.tool)));
+    q('[data-emph="quick-propose"]').click();
+    const note = (await until(() => q('[data-emph="quick-note"]'))).innerText;
+    run = session(lastWorkshop()).run;
+    q('input[data-emph="quick-track"], [data-emph="quick-track"] input').click(); await wait(300);
+    if (session(lastWorkshop()).run.agenda.map(a => a.text).join("|") !== ms) throw new Error("Microsoft's agenda did not come back");
+    q('input[data-emph="quick-track"], [data-emph="quick-track"] input').click(); await wait(300);
+    return "5 quick lines (fit-to-standard on the storyline tool), " + Object.keys(run.scope).length + " scope proposals: " + note;
+  }
+
+  // Close: agreed items only, How Workshop with the workshop's name, history, child tasks ticked, next workshop, undo
+  async function close() {
+    const ws = await newWorkshop("Scenario board discovery");
+    const name = ws.emph_name;
+    q('[data-emph="prepare-start"]').click(); await wait(300);
+    await lineWith("board"); q('[data-emph="agenda-nav-top"] [data-emph="agenda-next"]').click(); await wait(300);
+    const linked = [...document.querySelectorAll('[data-emph="board-card"]')].find(c => c.querySelector('[data-emph="card-links"]') && !/Stands for no process/.test(c.querySelector('[data-emph="card-links"]').innerText));
+    if (!linked) throw new Error("no card stands for a process");
+    const key = linked.dataset.key;
+    linked.querySelector('[data-emph="card-mark"]').click(); await wait(250);
+    q('[data-emph="board-card"][data-key="' + key + '"] [data-emph="card-mark"]').click(); await wait(300);
+    await toStep(3);
+    const items = document.querySelectorAll('[data-emph="conclusion-item"]').length;
+    q('[data-emph="agree-rest"]').click();
+    await until(() => / 0 open/i.test(q('[data-emph="conclusion-counts"]').innerText));
+    await toStep(4);
+    if (!document.querySelectorAll('[data-emph="close-changes"] li').length) throw new Error("nothing to write");
+    q('input[data-emph="child-task"], [data-emph="child-task"] input').click(); await wait(300);
+    const hist = rows("emph_history").length;
+    q('[data-emph="workshop-close"]').click();
+    await until(() => lastWorkshop().emph_status === 582100001);
+    const written = session(lastWorkshop()).run.written || [];
+    if (!written.length) throw new Error("Close wrote nothing");
+    const row = rows("emph_processitem").find(r => r.emph_processitemid === written[0].itemId);
+    if (row.emph_sethow !== 582100000 || row.emph_workshopname !== name || !row.emph_seton) throw new Error("set how " + row.emph_sethow + " " + row.emph_workshopname);
+    if (rows("emph_history").length <= hist || !rows("emph_history").slice(hist).every(h => h.emph_workshopname === name)) throw new Error("history");
+    if (!JSON.parse(lastWorkshop().emph_childtasks)[0].done) throw new Error("child task not ticked");
+    const next = (await until(() => q('[data-emph="next-workshop"]'))).innerText.split("\n")[0];
+    const realConfirm = window.confirm; window.confirm = () => true;
+    try { q('[data-emph="close-undo"]').click(); await until(() => lastWorkshop().emph_status === 582100000); } finally { window.confirm = realConfirm; }
+    const back = rows("emph_processitem").find(r => r.emph_processitemid === written[0].itemId);
+    if (back.emph_scope !== written[0].before.scope || back.emph_sethow !== 582100004) throw new Error("undo: " + back.emph_scope + " how " + back.emph_sethow);
+    return items + " conclusion items agreed, Close wrote " + written.length + " (" + written.map(x => x.label).join("; ").slice(0, 120) + "), How Workshop, history, child task ticked; next: " + next + "; undo restored";
+  }
+  const ALL = { pages, mainMap, processAndFlow, guide, capture, fitGap, signOff, workshop, transcript, systems, raid, history, changeRequest, licences, boards, board, storyline, quickTrack, close };
   window.__tests = {
     ...ALL,
     async all() { const r = {}; for (const [k, f] of Object.entries(ALL)) { try { r[k] = await f(); } catch (e) { r[k] = "FAIL " + (f.step ? "at step " + f.step + ": " : "") + e.message; } } return r; },

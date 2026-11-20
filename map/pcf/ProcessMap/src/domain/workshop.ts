@@ -155,7 +155,14 @@ export function readRun(j: any): RunState | undefined {
 let seq = 0;
 export const lineKey = (prefix = "o") => prefix + Date.now().toString(36) + (seq++).toString(36) + Math.random().toString(36).slice(2, 5);
 /** The agenda of a new workshop: Microsoft's lines with their tools, or one line per business process (discovery). */
+/** The agenda of a kind when Microsoft has no template for the end-to-end process (Microsoft's usual lines). */
+export const OWN_AGENDA: Record<TemplateKind, string[]> = {
+  board: ["Introduction and objectives", "Overview of the end-to-end process", "Detailed discussion on key scenarios", "Wrap-up and next steps"],
+  storyline: ["Introduction and objectives", "Demonstration of the storyline and fit-to-standard review", "Wrap-up and next steps"],
+  deepdive: ["Introduction and objectives", "Key questions", "Wrap-up and next steps"],
+};
 export function newAgenda(kind: WorkshopKindName, t: MsTemplate | null, processes: { id: string; code: string; name: string }[]): AgendaLine[] {
+  if (kind !== "discovery" && !t) return OWN_AGENDA[kind].map((text, i) => ({ key: "own:" + (i + 1), text, tool: defaultTool(text, kind) }));
   if (kind === "discovery" || !t) return processes.map(p => ({ key: "p:" + p.id, text: (p.code ? p.code + " " : "") + p.name, tool: "process" as const, itemId: p.id }));
   return t.agenda.map((text, i) => ({ key: t.id + ":agenda:" + (i + 1), text, tool: defaultTool(text, kind) }));
 }

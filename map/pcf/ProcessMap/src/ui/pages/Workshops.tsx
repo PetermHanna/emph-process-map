@@ -1,46 +1,79 @@
-// Guided discovery workshops: seven phases over an agenda of business processes.
+// Workshops like Microsoft's: EMPH's discovery workshop or one made from Microsoft's templates (scenario board, storyline
+// design review, deep-dive), all in one session order: Prepare, Run the agenda, Analyse, Conclusion, Close.
 import * as React from "react";
 import { Button, Field, Input, Switch, Checkbox, Tooltip, ToggleButton, Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent, DialogActions, Spinner } from "@fluentui/react-components";
-import { ChevronLeft20Regular, ChevronRight20Regular, Delete16Regular, Copy16Regular, Screenshot20Regular, TextQuote20Regular } from "@fluentui/react-icons";
+import { ChevronLeft20Regular, ChevronRight20Regular, Delete16Regular, Screenshot20Regular, TextQuote20Regular, ArrowUp16Regular, ArrowDown16Regular } from "@fluentui/react-icons";
 import { C, useLook } from "../look";
-import { PageProps, Pill, Pick, ListChoice, FitGapPick, Edit, AddBox, Empty } from "../kit";
+import { PageProps, Pill, Pick, Choice, ListChoice, FitGapPick, Edit, AddBox, Empty } from "../kit";
 import type { Nav } from "../Shell";
-import { SESSION, LICENCE_LABEL, HOW, RAID, RAID_STATUS, SYSTEM, labelOf } from "../../domain/codes";
-import { PHASES, visit, minutesPerVisit, summaryLines, sourceLine, parseTranscript, usedLines, processKeyOf, activityCodeOf } from "../../domain/session";
+import { SESSION, LICENCE_LABEL, HOW, RAID, RAID_STATUS, SYSTEM, FIT_GAP, labelOf } from "../../domain/codes";
+import { visit, summaryLines, sourceLine, parseTranscript, usedLines, processKeyOf, activityCodeOf } from "../../domain/session";
 import { isActive, levelUp, isOff } from "../../domain/rules";
 import { childItems, effectiveScope, flowsOf, itemsAt, loadActivities, How } from "../../domain/repository";
+import {
+  STEPS, TOOLS, PROCESS_TABS, KINDS, RunState, AgendaLine, ToolName, ProcessTab, WorkshopKindName, emptyRun, newAgenda, syncProcessLines, addLine, removeLine, setTool, moveLine,
+  currentLine, moveAgenda, goLine, agendaNeighbour, templateById, templatesFor, questionsOf, boardColumns, conclusionItems, toQuickTrack, fromQuickTrack, proposeScope, kindOfValue, MsTemplate,
+} from "../../domain/workshop";
 import type { Workshop, ProcessItem, Screenshot, Activity, Model, CurrentSystem } from "../../domain/types";
 import { DecisionRow } from "./Processes";
 import { Capture, RequirementList, CaptureFrom } from "./Requirements";
 import { TranscriptPanel, LineUse, Line, grabScreen } from "./Transcript";
 import { FacilitatorAgenda, FlowWalk, LicenceDialog } from "./WorkshopParts";
+import { BoardTool } from "./WorkshopBoard";
+import { StoryTool } from "./WorkshopStory";
+import { Conclusion, Close, kindLabel, peopleOf } from "./WorkshopClose";
 import { FlowStudio } from "../flow/FlowStudio";
+import { GUIDANCE } from "../guidance";
 
 const anyInScope = (m: Model) => itemsAt(m, 3).some(p => effectiveScope(m, p));
 /** Systems used today for a business process: on the process itself or on its area. */
 const systemsFor = (m: Model, p: ProcessItem): CurrentSystem[] => { const a = levelUp(m.items, p, 2); return m.systems.filter(s => s.itemId === p.id || (a && s.itemId === a.id)); };
+const KIND_LABELS = Object.fromEntries(KINDS.map((k, i) => [i, k.label])) as Record<number, string>;
+const TOOL_LABELS = Object.fromEntries(TOOLS.map((t, i) => [i, t.name])) as Record<number, string>;
+/** The run of a workshop; a discovery workshop saved before slice 3 gets one from its business processes. */
+const runOf = (w: Workshop, m: Model): RunState => w.session.run
+  || { ...emptyRun("discovery"), agenda: newAgenda("discovery", null, w.session.processIds.map(id => m.items.find(x => x.id === id)).filter(Boolean) as ProcessItem[]) };
 
 export function Workshops({ model, repo, apply }: PageProps & { nav: Nav }) {
   const l = useLook();
   const [openId, setOpenId] = React.useState<string | null>(null);
   const [e2e, setE2e] = React.useState<string | null>(null);
+  const [kindIx, setKindIx] = React.useState<number>(KINDS.findIndex(k => k.kind === "discovery"));
+  const [tplId, setTplId] = React.useState<string | null>(null);
+  const [problem, setProblem] = React.useState<string | null>(null);
+  const kind = KINDS[kindIx].kind;
+  const e2eItem = model.items.find(x => x.id === e2e) || null;
+  const tpls = kind !== "discovery" && e2eItem ? templatesFor(GUIDANCE, kind, e2eItem.code) : [];
+  const tpl = tpls.find(t => t.id === tplId) || tpls[0] || null;
+  React.useEffect(() => setTplId(null), [kindIx, e2e]);
   const w = model.workshops.find(x => x.id === openId);
-  if (w) return <Runner w={w} model={model} repo={repo} apply={apply} onBack={() => setOpenId(null)} />;
+  if (w) return <Runner w={w} model={model} repo={repo} apply={apply} onBack={() => setOpenId(null)} onOpen={setOpenId} />;
+  const canStart = kind === "discovery" ? anyInScope(model) : !!e2eItem;
+  const start = () => { setProblem(null); apply(async m => { const r = await repo.addWorkshop(m, e2e, { kind, template: tpl }); setOpenId(r.workshop.id); return r.model; }).catch(e => setProblem(String(e?.message || e))); };
   return (
     <>
-      <div className={l.card + " " + l.row}>
-        <span>New workshop for</span>
-        <Pick value={e2e} items={itemsAt(model, 1).filter(x => effectiveScope(model, x))} onChange={setE2e} placeholder="All in scope" width={260} />
-        <Button appearance="primary" data-emph="workshop-new" disabled={!anyInScope(model)} onClick={() => apply(async m => { const r = await repo.addWorkshop(m, e2e); setOpenId(r.workshop.id); return r.model; })}>Start</Button>
-        {!anyInScope(model) && <span className={l.muted}>Put business processes in scope on Our processes first.</span>}
+      <div className={l.card} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <div className={l.row}>
+          <span>New</span>
+          <span data-emph="workshop-kind"><Choice value={kindIx} labels={KIND_LABELS} onChange={v => setKindIx(v ?? 0)} width={220} /></span>
+          <span>for</span>
+          <Pick value={e2e} items={itemsAt(model, 1).filter(x => effectiveScope(model, x)).map(x => ({ ...x, name: x.code + " " + x.name }))} onChange={setE2e} placeholder={kind === "discovery" ? "All in scope" : "Pick an end-to-end process"} width={260} />
+          {tpls.length > 1 && <span data-emph="workshop-template"><Pick value={tpl?.id || null} items={tpls.map(t => ({ id: t.id, name: t.id + " " + t.title }))} onChange={setTplId} width={320} /></span>}
+          <Button appearance="primary" data-emph="workshop-new" disabled={!canStart} onClick={start}>Start</Button>
+        </div>
+        <div className={l.muted} style={{ fontSize: 12 }}>
+          {KINDS[kindIx].what}{kind !== "discovery" && e2eItem && (tpl ? " Microsoft's template: " + tpl.id + " " + tpl.title + "." : " Microsoft has no template of this kind for " + e2eItem.name + ": Microsoft's usual agenda instead.")}
+          {kind === "discovery" && !anyInScope(model) && " Put business processes in scope on Our processes first."}
+        </div>
+        {problem && <div style={{ color: C.bad }}>{problem}</div>}
       </div>
-      {model.workshops.length === 0 ? <Empty title="No workshops yet" text="A workshop walks through business processes with the people who run them and records what you decide." /> : (
+      {model.workshops.length === 0 ? <Empty title="No workshops yet" text="A workshop walks through the processes with the people who run them and records what you decide, in Microsoft's order: scenario board, storyline review, deep-dives." /> : (
         <div className={l.card}>
           <table className={l.table}>
-            <thead><tr><th>Workshop</th><th>Date</th><th>Facilitator</th><th>Phase</th><th>Status</th><th /></tr></thead>
+            <thead><tr><th>Workshop</th><th>Kind</th><th>Date</th><th>Facilitator</th><th>Step</th><th>Status</th><th /></tr></thead>
             <tbody>{model.workshops.map(x => (
               <tr key={x.id} className={l.tr} onClick={() => setOpenId(x.id)}>
-                <td>{x.name}</td><td>{x.heldOn || ""}</td><td>{x.facilitator}</td><td>{x.phase + 1}. {PHASES[x.phase].name}</td>
+                <td>{x.name}</td><td style={{ fontSize: 12 }}>{kindLabel(x)}</td><td>{x.heldOn || ""}</td><td>{x.facilitator}</td><td>{x.phase + 1}. {STEPS[x.phase].name}</td>
                 <td><Pill text={x.status === SESSION.closed ? "Closed" : "Open"} tone={x.status === SESSION.closed ? "neutral" : "brand"} /></td>
                 <td onClick={e => e.stopPropagation()}><Button size="small" appearance="subtle" icon={<Delete16Regular />} onClick={() => { if (window.confirm("Delete " + x.name + "? Requirements captured in it stay.")) apply(m => repo.deleteWorkshop(m, x)); }} /></td>
               </tr>
@@ -48,37 +81,52 @@ export function Workshops({ model, repo, apply }: PageProps & { nav: Nav }) {
           </table>
         </div>
       )}
+      <div className={l.muted} style={{ fontSize: 11 }}>Microsoft's workshop templates: {GUIDANCE.templates.length} templates from <a href={GUIDANCE.source.repository} target="_blank" rel="noreferrer">microsoft/dynamics365patternspractices</a> ({GUIDANCE.source.importedOn}), CC BY 4.0 / CC BY-SA 4.0.</div>
     </>
   );
 }
 
-function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; onBack: () => void }) {
+function Runner({ w, model, repo, apply, onBack, onOpen }: PageProps & { w: Workshop; onBack: () => void; onOpen: (id: string) => void }) {
   const l = useLook();
   const [studio, setStudio] = React.useState(false);
   const [showTranscript, setShowTranscript] = React.useState(false);
-  const [from, setFrom] = React.useState<(CaptureFrom & { i: number }) | null>(null); // a transcript line waiting in the capture box
+  const [from, setFrom] = React.useState<(CaptureFrom & { i: number }) | null>(null);
   const [flowNote, setFlowNote] = React.useState<{ text: string; i: number } | null>(null);
-  const [mark, setMark] = React.useState<{ i: number; as: string } | null>(null); // marks a line once the capture has landed
+  const [mark, setMark] = React.useState<{ i: number; as: string } | null>(null);
   const [shots, setShots] = React.useState<Screenshot[]>([]);
   const [shooting, setShooting] = React.useState(false);
   const [image, setImage] = React.useState<{ subject: string; src: string } | null>(null);
   const [problem, setProblem] = React.useState<string | null>(null);
-  const [walkActs, setWalkActs] = React.useState<Activity[] | null>(null); // our process of the current business process
+  const [walkActs, setWalkActs] = React.useState<Activity[] | null>(null);
   const [licenceFor, setLicenceFor] = React.useState<Line | null>(null);
+  const [note, setNote] = React.useState<string | null>(null);
   const closed = w.status === SESSION.closed;
-  const save = (patch: Partial<Workshop>) => apply(m => repo.saveWorkshop(m, m.workshops.find(x => x.id === w.id) || w, patch));
+  const fresh = (m: Model) => m.workshops.find(x => x.id === w.id) || w;
+  const save = (patch: Partial<Workshop>) => apply(m => repo.saveWorkshop(m, fresh(m), patch));
   /** Session changes made from the latest saved session, not the one this screen was drawn with. */
-  const saveSession = (fn: (s: Workshop["session"]) => Workshop["session"]) => apply(m => { const cur = m.workshops.find(x => x.id === w.id) || w; return repo.saveWorkshop(m, cur, { session: fn(cur.session) }); });
-  const agenda = w.session.processIds.map(id => model.items.find(p => p.id === id)).filter(Boolean) as ProcessItem[];
-  const how: How = { how: HOW.workshop, workshop: w.name, present: w.participants.split(/\n|,/).map(x => x.trim()).filter(Boolean).join(", ") };
+  const saveSession = (fn: (s: Workshop["session"]) => Workshop["session"]) => apply(m => { const cur = fresh(m); return repo.saveWorkshop(m, cur, { session: fn(cur.session) }); });
+  const saveRun = (fn: (r: RunState) => RunState) => apply(m => { const cur = fresh(m); return repo.saveWorkshop(m, cur, { session: { ...cur.session, run: fn(runOf(cur, m)) } }); });
+  const run = runOf(w, model);
+  const kind: WorkshopKindName = run.kind || kindOfValue(w.kind);
+  const tpl = templateById(GUIDANCE, run.template);
+  const e2e = model.items.find(x => x.id === w.itemId && x.level === 1) || null;
+  const step = w.phase;
+  const people = (run.present.length ? run.present : peopleOf(w)).join(", ");
+  const how: How = { how: HOW.workshop, workshop: w.name, present: people, on: w.heldOn };
+  const processes = w.session.processIds.map(id => model.items.find(p => p.id === id)).filter(Boolean) as ProcessItem[];
   const openPoints = model.raids.filter(r => r.workshopId === w.id && r.type === RAID.action);
-  // the current visit is a business process, or "process#activity" while walking its flow: the process is the part before "#"
-  const current = agenda.find(p => p.id === processKeyOf(w.session.current)) || null;
-  const idx = current ? agenda.indexOf(current) : -1;
+  const current = model.items.find(p => p.id === processKeyOf(w.session.current)) || null;
+  const line = currentLine(run);
+  const lineItem = line?.itemId ? model.items.find(x => x.id === line.itemId) || null : null;
+  /** The business process in focus: the process line's, else the one last visited (board, storyline). */
+  const proc = lineItem || (current && current.level === 3 ? current : null);
   const onVisit = (key: string, name: string) => saveSession(s => visit(s, key, name, new Date().toISOString()));
-  const go = (p: ProcessItem) => onVisit(p.id, p.name);
-  const visited = (p: ProcessItem) => w.session.visits.some(v => processKeyOf(v.key) === p.id);
-  const ours = current ? flowsOf(model, current.id).ours : undefined;
+  // the board: Microsoft's for this end-to-end process (also in a storyline review or the quick track), else the catalog's
+  const boardTpl = tpl?.kind === "board" ? tpl : e2e ? templatesFor(GUIDANCE, "board", e2e.code)[0] || null : null;
+  const areas = e2e ? childItems(model, e2e.id) : [];
+  const cols = React.useMemo(() => (e2e ? boardColumns(boardTpl, areas, model.items) : []), [boardTpl?.id, e2e?.id, model.items]);
+  const cards = cols.flatMap(c => c.groups.flatMap(g => g.cards));
+  const ours = proc ? flowsOf(model, proc.id).ours : undefined;
   const [walkTick, setWalkTick] = React.useState(0);
   React.useEffect(() => {
     let live = true;
@@ -89,8 +137,6 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
   const transcript = React.useMemo(() => parseTranscript(w.transcript), [w.transcript]);
   const used = usedLines(transcript, model.requirements, openPoints, w.session.captured || {}, model.comments.filter(c => c.workshopId === w.id));
   const captured = model.requirements.filter(r => r.workshopId === w.id && isActive(r));
-  // only what has been picked: business processes in scope, plus any still on the agenda
-  const areas = (w.itemId ? childItems(model, w.itemId) : itemsAt(model, 2)).slice().sort((x, y) => x.code.localeCompare(y.code, undefined, { numeric: true })).map(a => ({ a, ps: childItems(model, a.id).filter(p => effectiveScope(model, p) || w.session.processIds.includes(p.id)) })).filter(x => x.ps.length);
   React.useEffect(() => { repo.screenshots(w).then(setShots).catch(() => setShots([])); }, [w.id]);
   React.useEffect(() => {
     if (!mark) return;
@@ -99,35 +145,61 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
     setMark(null);
   }, [mark]);
   const useLine = (u: Line, use: LineUse) => {
-    if (used.has(u.i)) return; // each line is used once
-    // the business process the line was said on (else the current one), and the flow step when it fell in a step's visit
-    const processId = processKeyOf(u.key) || current?.id || null, code = activityCodeOf(u.key);
-    const act = code && processId === current?.id ? (walkActs || []).find(a => a.code === code) || null : null;
+    if (used.has(u.i)) return;
+    const processId = processKeyOf(u.key) || proc?.id || current?.id || null, code = activityCodeOf(u.key);
+    const act = code && processId === proc?.id ? (walkActs || []).find(a => a.code === code) || null : null;
     if (use === "open") { apply(m => repo.addRaid(m, { type: RAID.action, description: u.text, source: sourceLine(u), workshopId: w.id, itemId: processId, isQuestion: /\?\s*$/.test(u.text) })); return; }
     if (use === "comment") { apply(m => repo.addComment(m, { itemId: processId, activityId: act?.id ?? null, activityCode: act ? code : "", workshopId: w.id, author: u.speaker, text: u.text, source: sourceLine(u) })); return; }
     if (use === "flow") { setFlowNote({ text: sourceLine(u), i: u.i }); setStudio(true); return; }
     if (use === "licence") { setLicenceFor(u); return; }
     setFrom({ key: u.i + ":" + Date.now(), i: u.i, text: u.text, who: u.speaker, sourceText: sourceLine(u), itemId: processId, activityId: act?.id ?? null, activityName: act?.name || "" });
-    if (w.phase !== 5) save({ phase: 5 });
+    if (step !== 1) save({ phase: 1 });
   };
   const screenshot = async () => {
     setProblem(null); setShooting(true);
     try {
       const jpeg = await grabScreen();
-      if (jpeg) { const shot = await repo.addScreenshot(w, "Screenshot: " + (current ? current.name : w.name), jpeg); setShots(xs => [shot, ...xs]); }
+      const about = proc ? proc.name : line ? line.text : w.name;
+      if (jpeg) { const shot = await repo.addScreenshot(w, "Screenshot: " + w.name + " · " + about, jpeg); setShots(xs => [shot, ...xs]); }
     } catch (e: any) { setProblem("The screenshot didn't work: " + (e?.message || e)); }
     finally { setShooting(false); }
   };
+  const visitedItems = Array.from(new Set(w.session.visits.map(v => processKeyOf(v.key)))).map(id => model.items.find(x => x.id === id)).filter(Boolean) as ProcessItem[];
   const lines = summaryLines(captured.map(r => ({ reqId: r.reqId, description: r.description, owner: r.owner, mapping: r.mapping, approvedBy: r.approvedBy })),
-    agenda.map(p => ({ name: p.name, visited: visited(p), decisions: [p.fitGap != null ? labelOf("fitGapStatus", p.fitGap) + (p.gapApproach != null ? " (" + labelOf("gapSolutionApproach", p.gapApproach) + ")" : "") : "",
+    visitedItems.filter(p => p.level === 3).map(p => ({ name: p.name, visited: true, decisions: [p.fitGap != null ? labelOf("fitGapStatus", p.fitGap) + (p.gapApproach != null ? " (" + labelOf("gapSolutionApproach", p.gapApproach) + ")" : "") : "",
       ...systemsFor(model, p).filter(s => s.decision != null).map(s => s.name + ": " + labelOf("systemDecision", s.decision))].filter(Boolean) })),
     openPoints.map(r => ({ text: r.description, owner: r.owner, due: r.targetDate || "", done: r.status === RAID_STATUS.closed, source: r.source })));
+  const name = (id: string) => { const x = model.items.find(i => i.id === id); return x ? (x.code ? x.code + " " : "") + x.name : id; };
+  const conclusion = conclusionItems(run, cards, { name, scopeLabel: v => labelOf("scope", v), fitLabel: f => labelOf("fitGapStatus", f.fitGap) + (f.approach != null && f.fitGap === FIT_GAP.gap ? " (" + labelOf("gapSolutionApproach", f.approach) + ")" : "") });
+  /** Next / Previous: Next ticks the line it leaves; Next on the last line goes on to Analyse. A process line is a visit (the transcript lands there). */
+  const move = (delta: 1 | -1) => apply(m => {
+    const cur = fresh(m), r0 = runOf(cur, m), r = moveAgenda(r0, delta);
+    let session: Workshop["session"] = { ...cur.session, run: r.run };
+    const to = currentLine(r.run);
+    if (!r.end && to?.itemId && to.key !== r0.agendaKey) session = visit(session, to.itemId, to.text, new Date().toISOString());
+    return repo.saveWorkshop(m, cur, { session, ...(r.end ? { phase: 2 } : {}) });
+  });
+  const go = (a: AgendaLine) => apply(m => {
+    const cur = fresh(m);
+    let session: Workshop["session"] = { ...cur.session, run: goLine(runOf(cur, m), a.key) };
+    if (a.itemId) session = visit(session, a.itemId, a.text, new Date().toISOString());
+    return repo.saveWorkshop(m, cur, { session });
+  });
+  const navButtons = (where: string) => {
+    const prev = agendaNeighbour(run, -1), next = agendaNeighbour(run, 1);
+    return (
+      <div className={l.row} data-emph={"agenda-nav-" + where} style={{ justifyContent: "space-between" }}>
+        <Button size="small" disabled={closed || !prev} icon={<ChevronLeft20Regular />} data-emph="agenda-prev" onClick={() => move(-1)}>Previous</Button>
+        <Button size="small" appearance="primary" disabled={closed || !line} icon={<ChevronRight20Regular />} iconPosition="after" data-emph="agenda-next" onClick={() => move(1)}>{next ? "Next" : "Next: Analyse"}</Button>
+      </div>
+    );
+  };
 
   return (
     <>
       <div className={l.row}>
         <Button appearance="subtle" icon={<ChevronLeft20Regular />} onClick={onBack}>All workshops</Button>
-        <b style={{ fontSize: 16 }}>{w.name}</b>{closed && <Pill text="Closed" />}
+        <b style={{ fontSize: 16 }}>{w.name}</b>{closed && <Pill text="Closed" />}<Pill text={kindLabel(w)} tone="info" />
         <span style={{ flexGrow: 1 }} />
         <ToggleButton icon={<TextQuote20Regular />} checked={showTranscript} onClick={() => setShowTranscript(x => !x)} data-emph="transcript-toggle">Transcript{w.transcript ? "" : " (none yet)"}</ToggleButton>
         <Tooltip content="Pick a screen, window or tab; one picture is kept as a note on this workshop" relationship="description">
@@ -140,103 +212,67 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
           <span className={l.muted}>Screenshots:</span>
           {shots.slice(0, 6).map(x => (
             <Button key={x.id} size="small" appearance="subtle" onClick={async () => { try { setImage({ subject: x.subject, src: await repo.screenshotImage(x.id) }); } catch (e: any) { setProblem(String(e?.message || e)); } }}>
-              {x.subject.replace(/^Screenshot: /, "")} {x.createdOn ? new Date(x.createdOn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
+              {x.subject.replace(/^Screenshot: /, "").replace(w.name + " · ", "")} {x.createdOn ? new Date(x.createdOn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
             </Button>
           ))}
         </div>
       )}
       <div className={l.row} data-emph="phases">
-        {PHASES.map((ph, i) => (
+        {STEPS.map((ph, i) => (
           <button key={ph.name} onClick={() => save({ phase: i })} style={{ border: "none", cursor: "pointer", borderRadius: 999, padding: "6px 14px", fontSize: 13, fontWeight: 600,
-            background: i === w.phase ? C.railActive : i < w.phase ? "#CCF3EF" : "#F1F5F9", color: i === w.phase ? "#fff" : i < w.phase ? "#0F766E" : C.muted }}>{i + 1}. {ph.name}</button>
+            background: i === step ? C.railActive : i < step ? "#CCF3EF" : "#F1F5F9", color: i === step ? "#fff" : i < step ? "#0F766E" : C.muted }}>{i + 1}. {ph.name}</button>
         ))}
       </div>
-      <div className={l.muted} style={{ fontSize: 13 }}>{PHASES[w.phase].discuss}. Produces: {PHASES[w.phase].produces.toLowerCase()}.</div>
-      <div style={{ display: "grid", gridTemplateColumns: showTranscript ? "260px 1fr 400px" : "260px 1fr", gap: 16, alignItems: "start" }}>
-        <div className={l.card} style={{ padding: 10 }}>
-          <div className={l.section} style={{ marginTop: 0 }}>Agenda</div>
-          {agenda.map((p, i) => (
-            <div key={p.id} data-emph="agenda-item" className={l.node + (p.id === w.session.current ? " " + l.nodeOn : "")} onClick={() => !closed && go(p)} style={{ opacity: effectiveScope(model, p) ? 1 : 0.55 }}>
-              <span className={l.code} style={{ minWidth: 20 }}>{i + 1}</span><span style={{ flexGrow: 1 }}>{p.name}</span>{visited(p) && <span style={{ color: C.ok }}>✓</span>}
-            </div>
-          ))}
-          {!agenda.length && <div className={l.muted}>Add processes in phase 1.</div>}
-          <div className={l.row} style={{ marginTop: 8 }}>
-            <Button size="small" disabled={closed || idx <= 0} icon={<ChevronLeft20Regular />} onClick={() => go(agenda[idx - 1])}>Back</Button>
-            <Button size="small" disabled={closed || idx >= agenda.length - 1} icon={<ChevronRight20Regular />} iconPosition="after" onClick={() => go(agenda[idx + 1])}>Next</Button>
-          </div>
-        </div>
-        <div className={l.card} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {closed && <div style={{ color: C.warn }}>This workshop is closed. Reopen it in phase 7 to change anything.</div>}
-          <fieldset disabled={closed} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
-            {w.phase === 0 && <>
-              <div className={l.fields}>
-                <Field label="Name"><Edit value={w.name} onSave={v => v.trim() && save({ name: v.trim() })} /></Field>
-                <Field label="Date"><Input type="date" defaultValue={w.heldOn || ""} onBlur={e => save({ heldOn: e.target.value || null })} /></Field>
-                <Field label="Facilitator"><Edit value={w.facilitator} onSave={v => save({ facilitator: v })} /></Field>
-              </div>
-              <Field label="Participants"><Edit multiline value={w.participants} onSave={v => save({ participants: v })} /></Field>
-              <div className={l.section}>Business processes on the agenda</div>
-              <div className={l.muted} style={{ fontSize: 12 }}>The business processes in scope{w.itemId ? " in this end-to-end process" : ""}. To add others, put them in scope on Our processes.</div>
-              {!areas.length && <div className={l.muted}>Nothing in scope here yet.</div>}
-              <div style={{ columns: 2 }} data-emph="agenda-pick">{areas.map(({ a, ps }) => (
-                <div key={a.id} style={{ breakInside: "avoid", marginBottom: 8 }}>
-                  <div style={{ fontWeight: 600, fontSize: 12, color: C.muted }}><span className={l.code}>{a.code}</span> {a.name}</div>
-                  {ps.map(p => (
-                    <Checkbox key={p.id} label={p.code + " " + p.name + (effectiveScope(model, p) ? "" : " (out of scope)")} checked={w.session.processIds.includes(p.id)}
-                      onChange={(_, d) => save({ session: { ...w.session, processIds: d.checked ? w.session.processIds.concat(p.id) : w.session.processIds.filter(x => x !== p.id) } })} />
-                  ))}
-                </div>
-              ))}</div>
-              {agenda.length > 0 && <FacilitatorAgenda w={w} model={model} repo={repo} agenda={agenda} />}
-            </>}
-            {w.phase === 1 && agenda.map(p => (
-              <div key={p.id} className={l.row} style={{ justifyContent: "space-between", borderBottom: "1px solid " + C.line, paddingBottom: 6 }}>
-                <span><span className={l.code}>{p.code}</span> {p.name}</span>
-                <Switch label={!isOff(p.scope) ? "We run it" : labelOf("scope", p.scope)} checked={!isOff(p.scope)} onChange={(_, d) => apply(m => repo.setScope(m, m.items.find(x => x.id === p.id) || p, d.checked, how))} />
+      <div className={l.muted} style={{ fontSize: 13 }}>{STEPS[step].discuss}. Produces: {STEPS[step].produces}.</div>
+      <div style={{ display: "grid", gridTemplateColumns: (step === 1 ? "260px 1fr" : "1fr") + (showTranscript ? " 400px" : ""), gap: 16, alignItems: "start" }}>
+        {step === 1 && (
+          <div className={l.card} style={{ padding: 10, display: "flex", flexDirection: "column", gap: 6 }} data-emph="agenda">
+            {navButtons("top")}
+            <div className={l.section} style={{ margin: 0 }}>Agenda{run.track === "quick" ? " (quick track)" : ""}</div>
+            {run.agenda.map((a, i) => (
+              <div key={a.key} data-emph="agenda-item" data-key={a.key} className={l.node + (a.key === line?.key ? " " + l.nodeOn : "")} onClick={() => !closed && go(a)}
+                style={{ opacity: a.itemId && !effectiveScope(model, model.items.find(x => x.id === a.itemId) || ({} as ProcessItem)) ? 0.55 : 1 }}>
+                <span className={l.code} style={{ minWidth: 20 }}>{i + 1}</span><span style={{ flexGrow: 1 }}>{a.text}</span>{run.done.includes(a.key) && <span style={{ color: C.ok }}>✓</span>}
               </div>
             ))}
-            {w.phase >= 2 && w.phase <= 5 && !current && <div className={l.muted}>Pick a business process from the agenda.</div>}
-            {w.phase === 2 && current && <WalkThrough p={current} model={model} repo={repo} apply={apply} how={how} />}
-            {w.phase === 3 && current && <FlowWalk w={w} model={model} repo={repo} apply={apply} p={current} acts={walkActs} closed={closed} onVisit={onVisit} onAdapted={() => setWalkTick(t => t + 1)} onOpenStudio={() => setStudio(true)} />}
-            {w.phase === 4 && current && <>
-              {model.decisions.filter(d => d.itemId === current.id).map(d => <DecisionRow key={d.id} d={d} model={model} repo={repo} apply={apply} />)}
-              {!model.decisions.some(d => d.itemId === current.id) && <div className={l.muted}>No configuration decisions on this business process.</div>}
+            {!run.agenda.length && <div className={l.muted}>Add agenda lines in Prepare.</div>}
+            {navButtons("bottom")}
+          </div>
+        )}
+        <div className={l.card} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {closed && step !== 4 && <div style={{ color: C.warn }}>This workshop is closed. Reopen it in Close to change anything.</div>}
+          <fieldset disabled={closed && step !== 4} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+            {step === 0 && <Prepare model={model} repo={repo} apply={apply} w={w} run={run} tpl={tpl} e2e={e2e} processes={processes} save={save} saveRun={saveRun} note={note} setNote={setNote} />}
+            {step === 1 && line && <>
+              <div className={l.row} style={{ justifyContent: "space-between" }}>
+                <b data-emph="line-title">{line.text}</b>
+                {!line.itemId && <span data-emph="line-tool"><Choice value={TOOLS.findIndex(t => t.tool === line.tool)} labels={TOOL_LABELS} width={190} onChange={v => v != null && saveRun(r => setTool(r, line.key, TOOLS[v].tool))} /></span>}
+              </div>
+              {line.tool === "process" && lineItem && <ProcessTool p={lineItem} model={model} repo={repo} apply={apply} how={how} w={w} tab={run.tab || "walk"} setTab={t => saveRun(r => ({ ...r, tab: t }))}
+                walkActs={walkActs} closed={closed} onVisit={onVisit} onAdapted={() => setWalkTick(t => t + 1)} onOpenStudio={() => setStudio(true)} captured={captured} />}
+              {line.tool === "board" && <BoardTool model={model} e2e={e2e} cols={cols} tpl={boardTpl} run={run} onRun={saveRun} line={line.text} closed={closed} />}
+              {line.tool === "story" && <StoryTool model={model} repo={repo} apply={apply} e2e={e2e} run={run} onRun={saveRun} closed={closed} onVisit={onVisit} current={w.session.current} />}
+              {line.tool === "questions" && <Questions tpl={tpl} run={run} onRun={saveRun} closed={closed} onOpen={(text, source) => apply(m => repo.addRaid(m, { type: RAID.action, description: text, source, workshopId: w.id, itemId: proc?.id ?? w.itemId, isQuestion: true }))} />}
+              {line.tool === "notes" && <Notes tpl={tpl} w={w} save={save} />}
             </>}
-            {w.phase === 5 && <>
-              <Capture model={model} repo={repo} apply={apply} itemId={current?.id ?? null} workshopId={w.id} from={from} onDropFrom={() => setFrom(null)}
-                onCaptured={r => { if (from) { setMark({ i: from.i, as: r.reqId || "requirement" }); setFrom(null); } }} />
-              {captured.length > 0 && <RequirementList model={model} repo={repo} apply={apply} rows={captured.filter(r => !current || r.itemId === current.id)} />}
-            </>}
-            {w.phase === 6 && <>
-              <div className={l.section} style={{ marginTop: 0 }}>Read back</div>
-              <ol style={{ margin: 0, paddingLeft: 20 }}>{lines.map((x, i) => <li key={i}>{x}</li>)}</ol>
-              <div><Button size="small" icon={<Copy16Regular />} onClick={() => navigator.clipboard?.writeText(lines.join("\n"))}>Copy</Button></div>
-              <div className={l.section}>Action items <span className={l.muted} style={{ fontWeight: 400, fontSize: 12 }}>(RAID)</span></div>
-              {openPoints.map(a => (
-                <div key={a.id} className={l.row} data-emph="action-item">
-                  <Checkbox checked={a.status === RAID_STATUS.closed} onChange={(_, d) => apply(m => repo.saveRaid(m, m.raids.find(x => x.id === a.id) || a, { status: d.checked ? RAID_STATUS.closed : RAID_STATUS.open }))} />
-                  <span style={{ flexGrow: 1, textDecoration: a.status === RAID_STATUS.closed ? "line-through" : undefined }} title={a.source || undefined}>{a.isQuestion && <Pill text="question" tone="info" />} {a.description}{a.source && <span className={l.muted} style={{ fontSize: 11, display: "block" }}>{a.source}</span>}</span>
-                  <Input size="small" placeholder="Owner" defaultValue={a.owner} onBlur={e => { if (e.target.value !== a.owner) apply(m => repo.saveRaid(m, m.raids.find(x => x.id === a.id) || a, { owner: e.target.value })); }} />
-                  <Input size="small" type="date" defaultValue={a.targetDate || ""} onBlur={e => { if ((e.target.value || null) !== a.targetDate) apply(m => repo.saveRaid(m, m.raids.find(x => x.id === a.id) || a, { targetDate: e.target.value || null })); }} />
-                </div>
-              ))}
-              <AddBox placeholder="New action item" onAdd={text => apply(m => repo.addRaid(m, { type: RAID.action, description: text, workshopId: w.id, itemId: current?.id ?? null }))} />
-              <Field label="Minutes"><Edit multiline value={w.minutes} onSave={v => save({ minutes: v })} /></Field>
-              <div className={l.muted} style={{ fontSize: 12 }}>Time spent: {minutesPerVisit(w.session.visits, new Date().toISOString()).map(x => x.name + " " + x.minutes + " min").join(", ") || "none recorded"}</div>
-            </>}
+            {step === 1 && (
+              <div data-emph="capture-area">
+                <Capture model={model} repo={repo} apply={apply} itemId={proc?.id ?? null} workshopId={w.id} from={from} onDropFrom={() => setFrom(null)}
+                  onCaptured={r => { if (from) { setMark({ i: from.i, as: r.reqId || "requirement" }); setFrom(null); } }} />
+              </div>
+            )}
+            {step === 2 && <Analyse w={w} run={run} model={model} shots={shots} transcriptLines={transcript.length} used={used.size} captured={captured.length} openPoints={openPoints.length} />}
+            {step === 3 && <Conclusion model={model} repo={repo} apply={apply} w={w} run={run} onRun={saveRun} items={conclusion} lines={lines} closed={closed} />}
+            {step === 4 && <Close model={model} repo={repo} apply={apply} w={w} run={run} items={conclusion} cards={cards} closed={closed} how={how} onPlanned={onOpen} />}
           </fieldset>
-          {w.phase === 6 && <div><Tooltip content={closed ? "Allow changes again" : "Lock the workshop"} relationship="description">
-            <Button appearance={closed ? "secondary" : "primary"} data-emph="workshop-close" onClick={() => save({ status: closed ? SESSION.open : SESSION.closed })}>{closed ? "Reopen the workshop" : "Close the workshop"}</Button>
-          </Tooltip></div>}
         </div>
+        {showTranscript && <TranscriptPanel w={w} agenda={visitedItems} current={current} closed={closed} save={save} saveSession={saveSession} used={used} onUse={useLine} />}
       </div>
-        {showTranscript && <TranscriptPanel w={w} agenda={agenda} current={current} closed={closed} save={save} saveSession={saveSession} used={used} onUse={useLine} />}
-      {studio && current && <FlowStudio model={model} repo={repo} apply={apply} process={current} onClose={() => { setStudio(false); setFlowNote(null); }}
-        note={flowNote ? { text: flowNote.text, onUsed: (_code, name) => { setMark({ i: flowNote.i, as: "Flow change: " + name }); setFlowNote(null); } } : null} />}
-      {licenceFor && <LicenceDialog model={model} quote={sourceLine(licenceFor)} onClose={() => setLicenceFor(null)} onSave={(role, type, people) => {
+      {studio && proc && <FlowStudio model={model} repo={repo} apply={apply} process={proc} onClose={() => { setStudio(false); setFlowNote(null); }}
+        note={flowNote ? { text: flowNote.text, onUsed: (_code, nm) => { setMark({ i: flowNote.i, as: "Flow change: " + nm }); setFlowNote(null); } } : null} />}
+      {licenceFor && <LicenceDialog model={model} quote={sourceLine(licenceFor)} onClose={() => setLicenceFor(null)} onSave={(role, type, ppl) => {
         const u = licenceFor; setLicenceFor(null);
-        apply(m => { const r = m.roles.find(x => x.id === role.id) || role; return repo.saveRole(m, r, { licenceType: type, headcount: people ?? r.headcount, licenceNote: (r.licenceNote ? r.licenceNote + "\n" : "") + sourceLine(u) }); });
+        apply(m => { const r = m.roles.find(x => x.id === role.id) || role; return repo.saveRole(m, r, { licenceType: type, headcount: ppl ?? r.headcount, licenceNote: (r.licenceNote ? r.licenceNote + "\n" : "") + sourceLine(u) }); });
         setMark({ i: u.i, as: "Licence: " + role.name + ", " + LICENCE_LABEL[type] });
       }} />}
       {image && (
@@ -249,6 +285,175 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
         </Dialog>
       )}
     </>
+  );
+}
+
+/** Prepare: who and when, Microsoft's template (type, phase, assumptions, roles, objectives), the quick track, the agenda. */
+function Prepare({ model, repo, apply, w, run, tpl, e2e, processes, save, saveRun, note, setNote }: PageProps & {
+  w: Workshop; run: RunState; tpl: MsTemplate | null; e2e: ProcessItem | null; processes: ProcessItem[]; save: (p: Partial<Workshop>) => Promise<void>; saveRun: (fn: (r: RunState) => RunState) => Promise<void>;
+  note: string | null; setNote: (s: string | null) => void;
+}) {
+  const l = useLook();
+  const kind = run.kind;
+  const areas = (w.itemId ? childItems(model, w.itemId) : itemsAt(model, 2)).slice().sort((x, y) => x.code.localeCompare(y.code, undefined, { numeric: true }))
+    .map(a => ({ a, ps: childItems(model, a.id).filter(p => effectiveScope(model, p) || w.session.processIds.includes(p.id)) })).filter(x => x.ps.length);
+  const pickProcess = (p: ProcessItem, on: boolean) => apply(m => {
+    const cur = m.workshops.find(x => x.id === w.id) || w;
+    const ids = on ? cur.session.processIds.concat(p.id) : cur.session.processIds.filter(x => x !== p.id);
+    const r = syncProcessLines(runOf(cur, m), ids.map(id => m.items.find(x => x.id === id)).filter(Boolean) as ProcessItem[]);
+    return repo.saveWorkshop(m, cur, { session: { ...cur.session, processIds: ids, run: r } });
+  });
+  const quick = run.track === "quick";
+  const propose = () => {
+    if (!e2e) return;
+    const today = [e2e, ...childItems(model, e2e.id)];
+    const p = proposeScope(run, today);
+    setNote(p.proposed ? p.proposed + " scope decision" + (p.proposed === 1 ? "" : "s") + " of today proposed for the room to confirm." : "Nothing to propose: today's scope is not decided for any area, or already proposed. The room decides.");
+    if (p.proposed) saveRun(() => p.run);
+  };
+  return (
+    <>
+      <div className={l.fields}>
+        <Field label="Name"><Edit value={w.name} onSave={v => v.trim() && save({ name: v.trim() })} /></Field>
+        <Field label="Date"><Input type="date" defaultValue={w.heldOn || ""} onBlur={e => save({ heldOn: e.target.value || null })} /></Field>
+        <Field label="Facilitator"><Edit value={w.facilitator} onSave={v => save({ facilitator: v })} /></Field>
+      </div>
+      <Field label="Participants (one per line or comma separated)"><Edit multiline value={w.participants} onSave={v => save({ participants: v })} /></Field>
+      <div className={l.fields} data-emph="workshop-ms">
+        <Field label="Microsoft workshop type"><ListChoice list="microsoftWorkshopType" value={w.msType} onChange={v => save({ msType: v })} width={220} /></Field>
+        <Field label="Success by Design phase"><ListChoice list="sbdPhase" value={w.sbdPhase} onChange={v => save({ sbdPhase: v })} width={220} /></Field>
+        <Field label="Unit"><span>{w.units || (e2e ? e2e.code : "All in scope")}</span></Field>
+      </div>
+      {tpl && (
+        <div data-emph="template" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div className={l.section} style={{ margin: 0 }}>Microsoft's template <span className={l.code}>{tpl.id}</span> {tpl.title}</div>
+          <div style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>{tpl.description}</div>
+          <div className={l.muted} style={{ fontSize: 11 }}>Source: {tpl.source} ({GUIDANCE.source.repository}, CC BY 4.0 / CC BY-SA 4.0). {questionsOf(tpl).length} key questions.</div>
+          {tpl.assumptions.length > 0 && <><b style={{ fontSize: 13 }}>Assumptions</b><ul style={{ margin: 0, paddingLeft: 20, fontSize: 13 }}>{tpl.assumptions.map((a, i) => <li key={i}>{a}</li>)}</ul></>}
+          {tpl.stakeholders.length > 0 && <><b style={{ fontSize: 13 }}>Roles to invite</b><ul style={{ margin: 0, paddingLeft: 20, fontSize: 13 }} data-emph="template-roles">{tpl.stakeholders.map((s, i) => <li key={i}>{s.role}{s.why ? <span className={l.muted}>: {s.why}</span> : null}</li>)}</ul></>}
+          {tpl.objectives.length > 0 && <><b style={{ fontSize: 13 }}>Objectives</b><ul style={{ margin: 0, paddingLeft: 20, fontSize: 13 }}>{tpl.objectives.map((a, i) => <li key={i}>{a}</li>)}</ul></>}
+        </div>
+      )}
+      {kind === "board" && (
+        <div data-emph="quick" style={{ display: "flex", flexDirection: "column", gap: 4, borderLeft: "3px solid " + C.railActive, paddingLeft: 10 }}>
+          <Switch label="Quick track: board, storyline review and fit-to-standard in one session" checked={quick} data-emph="quick-track" onChange={(_, d) => saveRun(r => (d.checked ? toQuickTrack(r) : fromQuickTrack(r)))} />
+          <div className={l.muted} style={{ fontSize: 12 }}>Ours, not a Microsoft workshop: every step follows Microsoft's guidance (implementation guide, "About workshops" and "Fit-to-standard and fit-gap analysis"). A smaller group prepares the scope as a proposal; the room confirms it, starts with the core scenarios, sees the main path in Dynamics 365 and marks fit or gap; only the areas with gaps get a deep-dive. Switching it off brings Microsoft's agenda back.</div>
+          {quick && <div className={l.row}><Button size="small" data-emph="quick-propose" onClick={propose}>Propose the scope from today</Button>{note && <span style={{ fontSize: 12 }} data-emph="quick-note">{note}</span>}</div>}
+        </div>
+      )}
+      {kind === "discovery" && <>
+        <div className={l.section}>Business processes on the agenda</div>
+        <div className={l.muted} style={{ fontSize: 12 }}>The business processes in scope{w.itemId ? " in this end-to-end process" : ""}. To add others, put them in scope on Our processes.</div>
+        {!areas.length && <div className={l.muted}>Nothing in scope here yet.</div>}
+        <div style={{ columns: 2 }} data-emph="agenda-pick">{areas.map(({ a, ps }) => (
+          <div key={a.id} style={{ breakInside: "avoid", marginBottom: 8 }}>
+            <div style={{ fontWeight: 600, fontSize: 12, color: C.muted }}><span className={l.code}>{a.code}</span> {a.name}</div>
+            {ps.map(p => <Checkbox key={p.id} label={p.code + " " + p.name + (effectiveScope(model, p) ? "" : " (out of scope)")} checked={w.session.processIds.includes(p.id)} onChange={(_, d) => pickProcess(p, !!d.checked)} />)}
+          </div>
+        ))}</div>
+      </>}
+      <div className={l.section}>Agenda</div>
+      <div data-emph="agenda-edit" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {run.agenda.map((a, i) => (
+          <div key={a.key} className={l.row} style={{ borderBottom: "1px solid " + C.line, paddingBottom: 3 }}>
+            <span className={l.code} style={{ minWidth: 20 }}>{i + 1}</span><span style={{ flexGrow: 1 }}>{a.text}</span>
+            {a.itemId ? <span className={l.muted} style={{ fontSize: 12 }}>Business process</span>
+              : <Choice value={TOOLS.findIndex(t => t.tool === a.tool)} labels={TOOL_LABELS} width={180} onChange={v => v != null && saveRun(r => setTool(r, a.key, TOOLS[v].tool))} />}
+            <Button size="small" appearance="subtle" icon={<ArrowUp16Regular />} aria-label="Up" disabled={i === 0} onClick={() => saveRun(r => moveLine(r, a.key, -1))} />
+            <Button size="small" appearance="subtle" icon={<ArrowDown16Regular />} aria-label="Down" disabled={i === run.agenda.length - 1} onClick={() => saveRun(r => moveLine(r, a.key, 1))} />
+            {!a.itemId && <Button size="small" appearance="subtle" icon={<Delete16Regular />} aria-label="Remove" onClick={() => saveRun(r => removeLine(r, a.key))} />}
+          </div>
+        ))}
+        <AddBox placeholder="An agenda line of our own" onAdd={text => saveRun(r => addLine(r, text))} />
+      </div>
+      {kind === "discovery" && processes.length > 0 && <FacilitatorAgenda w={w} model={model} repo={repo} agenda={processes} />}
+      <div><Button appearance="primary" data-emph="prepare-start" disabled={!run.agenda.length} onClick={() => save({ phase: 1 })}>Run the agenda</Button></div>
+    </>
+  );
+}
+
+/** A business process line: the five phases of EMPH's discovery workshop as tabs. */
+function ProcessTool({ p, model, repo, apply, how, w, tab, setTab, walkActs, closed, onVisit, onAdapted, onOpenStudio, captured }: PageProps & {
+  p: ProcessItem; how: How; w: Workshop; tab: ProcessTab; setTab: (t: ProcessTab) => void; walkActs: Activity[] | null; closed: boolean;
+  onVisit: (key: string, name: string) => void; onAdapted: () => void; onOpenStudio: () => void; captured: { itemId: string | null }[];
+}) {
+  const l = useLook();
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className={l.row} data-emph="tool-tabs">
+        {PROCESS_TABS.map(t => <ToggleButton key={t.tab} size="small" checked={tab === t.tab} data-emph="tool-tab" data-tab={t.tab} onClick={() => setTab(t.tab)}>{t.name}</ToggleButton>)}
+      </div>
+      {tab === "scope" && (
+        <div className={l.row} style={{ justifyContent: "space-between" }}>
+          <span><span className={l.code}>{p.code}</span> {p.name}</span>
+          <Switch label={!isOff(p.scope) ? "We run it" : labelOf("scope", p.scope)} checked={!isOff(p.scope)} onChange={(_, d) => apply(m => repo.setScope(m, m.items.find(x => x.id === p.id) || p, d.checked, how))} />
+        </div>
+      )}
+      {tab === "walk" && <WalkThrough p={p} model={model} repo={repo} apply={apply} how={how} />}
+      {tab === "flow" && <FlowWalk w={w} model={model} repo={repo} apply={apply} p={p} acts={walkActs} closed={closed} onVisit={onVisit} onAdapted={onAdapted} onOpenStudio={onOpenStudio} />}
+      {tab === "config" && <>
+        {model.decisions.filter(d => d.itemId === p.id).map(d => <DecisionRow key={d.id} d={d} model={model} repo={repo} apply={apply} />)}
+        {!model.decisions.some(d => d.itemId === p.id) && <div className={l.muted}>No configuration decisions on this business process.</div>}
+      </>}
+      {tab === "fitgap" && <>
+        <Field label="Fit gap status"><FitGapPick fitGap={p.fitGap} gapApproach={p.gapApproach} onSave={(fitGap, gapApproach) => apply(m => repo.saveItem(m, m.items.find(x => x.id === p.id) || p, { fitGap, gapApproach }, how))} /></Field>
+        {captured.some(r => r.itemId === p.id) && <RequirementList model={model} repo={repo} apply={apply} rows={model.requirements.filter(r => r.workshopId === w.id && isActive(r) && r.itemId === p.id)} />}
+      </>}
+    </div>
+  );
+}
+
+/** Microsoft's key questions of the template, by topic, each with its source; an answer per question, or an open question for later. */
+function Questions({ tpl, run, onRun, closed, onOpen }: { tpl: MsTemplate | null; run: RunState; onRun: (fn: (r: RunState) => RunState) => void; closed: boolean; onOpen: (text: string, source: string) => void }) {
+  const l = useLook();
+  const qs = tpl ? tpl.questions.map((q, i) => ({ ...q, key: tpl.id + ":q:" + (i + 1) })) : [];
+  if (!qs.length) return <div className={l.muted}>Microsoft's template has no key questions here. Capture what is said below.</div>;
+  const groups = Array.from(new Set(qs.map(q => q.group)));
+  return (
+    <div data-emph="questions" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {groups.map(g => (
+        <div key={g} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <b style={{ fontSize: 13 }}>{g}</b>
+          {qs.filter(q => q.group === g).map(q => (
+            <div key={q.key} data-emph="question" style={{ display: "flex", flexDirection: "column", gap: 2, borderLeft: "2px solid " + C.line, paddingLeft: 8 }}>
+              <span style={{ fontSize: 13 }} title={q.source}>{q.text}{q.statement && <span className={l.muted}> (to discuss)</span>}</span>
+              <div className={l.row}>
+                <span style={{ flexGrow: 1 }}><Edit value={run.answers[q.key] || ""} placeholder="Answer" disabled={closed} onSave={v => onRun(r => { const answers = { ...r.answers }; if (v.trim()) answers[q.key] = v.trim(); else delete answers[q.key]; return { ...r, answers }; })} /></span>
+                <Button size="small" disabled={closed} data-emph="question-open" onClick={() => onOpen(q.text, q.source)}>Open question</Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Notes({ tpl, w, save }: { tpl: MsTemplate | null; w: Workshop; save: (p: Partial<Workshop>) => Promise<void> }) {
+  const l = useLook();
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }} data-emph="notes">
+      {tpl?.objectives.length ? <><b style={{ fontSize: 13 }}>Objectives</b><ul style={{ margin: 0, paddingLeft: 20, fontSize: 13 }}>{tpl.objectives.map((a, i) => <li key={i}>{a}</li>)}</ul></> : <div className={l.muted}>Introduce the workshop, or wrap up.</div>}
+      <Field label="Minutes"><Edit multiline value={w.minutes} onSave={v => save({ minutes: v })} /></Field>
+    </div>
+  );
+}
+
+/** Analyse: what the workshop recorded, one place to look before the conclusion. The AI analysis comes in a later version. */
+function Analyse({ w, run, model, shots, transcriptLines, used, captured, openPoints }: { w: Workshop; run: RunState; model: Model; shots: Screenshot[]; transcriptLines: number; used: number; captured: number; openPoints: number }) {
+  const l = useLook();
+  const marks = Object.values(run.marks);
+  const comments = model.comments.filter(c => c.workshopId === w.id).length;
+  const rows: [string, string | number][] = [
+    ["Transcript lines", transcriptLines ? transcriptLines + " (" + used + " used)" : "none pasted"], ["Screenshots", shots.length], ["Requirements captured", captured], ["Comments", comments], ["Action items and open questions", openPoints],
+    ["Scope proposals", Object.keys(run.scope).length], ["Board cards kept / struck / main path", marks.filter(m => m.state === "keep").length + " / " + marks.filter(m => m.state === "strike").length + " / " + marks.filter(m => m.main).length],
+    ["Steps fit-checked", Object.keys(run.stepFit).length], ["Fit-gap proposals", Object.keys(run.processFit).length], ["Questions answered", Object.keys(run.answers).length], ["Agenda lines walked", run.done.length + " of " + run.agenda.length],
+  ];
+  return (
+    <div data-emph="analyse" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <table className={l.table}><tbody>{rows.map(([k, v]) => <tr key={k}><td>{k}</td><td>{v}</td></tr>)}</tbody></table>
+      <div className={l.muted} style={{ fontSize: 12 }}>Nothing here changes data. Go on to the Conclusion when the record is complete.</div>
+    </div>
   );
 }
 
