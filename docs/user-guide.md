@@ -14,7 +14,9 @@ Each end-to-end process in scope is a section with its progress (fit or gap deci
 On the map you can:
 
 - **Click a process** to open it.
-- **Tick or untick the box** to set Microsoft's Scope to *20 - In scope* or *30 - Out of scope*. Putting one in also brings its area and end-to-end process into scope, and its scenarios whose scope isn't decided yet. A process only counts as in scope when everything above it is too: an area out of scope greys all its processes.
+- **Set the Scope** of an end-to-end process or a process area with the picker in its header: Microsoft's *10 - Unspecified*, *20 - In scope*, *30 - Out of scope* or *40 - Not applicable*. Out of scope and Not applicable ask for a reason. An end-to-end process or area that is out, not applicable or not decided greys everything below it.
+- **Tick or untick a business process**. A business process takes fit/gap, not scope of its own (as in Business Map): unticking sets it *40 - Not applicable*, ticking clears that and brings its area and end-to-end process into scope, with its scenarios whose scope isn't decided yet. When an area comes into scope this way, its other business processes that weren't decided are set Not applicable, so the tick means just this one.
+- Each area shows the **products** of its scenarios in scope.
 - **Rename** with the pencil next to any end-to-end process, area or business process, to use your own wording. Microsoft's name stays underneath, with **use** to go back to it. The catalog ID never changes.
 - Switch on **Only what's in scope** to hide the rest.
 - Open an end-to-end process that isn't in scope from the list at the bottom, to pick its processes.
@@ -25,13 +27,16 @@ The tree follows the Microsoft Business Process Catalog: end-to-end process > pr
 
 Fields carry Microsoft's names and values (the Azure DevOps template for Dynamics 365 projects).
 
-- **End-to-end process**, **process area** and **scenario**: name, Process sequence ID, Scope and scope reason, description, the items below it with their scope. A scenario also has its Fit gap status and its **Products** (the software that runs it). Add our own items at any level (they get X-numbered IDs, Author *Project*, Catalog status *50 - Custom*).
+The tree marks items that are out of scope (*out*) or not applicable (*n/a*), scenarios in scope (*in*), and fit (green) or gap (red).
+
+- **End-to-end process** and **process area**: name, Process sequence ID, **Scope** (all four values) with its reason when out or not applicable, description, the products of the scenarios in scope below it, the items below it with their scope, and the item's history. Add our own items (they get X-numbered IDs, Author *Project*, Catalog status *50 - Custom*). Fit-gap is not set at these levels.
+- **Scenario** (level 4, the business process in one piece of software): Scope (all four values: in scope means we use that software for it), Fit gap status and gap solution approach with its rationale, **Products**, owners, baseline complexity, priority, history. Our own scenario has Products *Other* and its software in **Software solutions** (SAP S/4HANA, DATEV); that software counts as its product.
 - **Business process**:
-  - **Scope** and scope reason; who set it, how and when.
-  - **Fit gap status** and its rationale. Picking *Gap* asks for the **Gap solution approach** (Personalization, Power Platform, Java/Plug-in, X++ Extension, ISV, ISV Extension) before anything is saved: a gap without one isn't allowed.
-  - Business process owner, workstream lead, subject matter expert, baseline complexity, priority, roles involved.
+  - **Scope**: only *40 - Not applicable* (or unset); a Not applicable process greys its scenarios.
+  - **Fit gap status** and its rationale. Picking *Gap* asks for the **Gap solution approach** (Personalization, Power Platform, Java/Plug-in, X++ Extension, ISV, ISV Extension) before anything is saved: a gap without one isn't allowed. When it isn't set, the scenarios in scope suggest it (any Gap makes a Gap, all Fit a Fit).
+  - Business process owner, workstream lead, subject matter expert, baseline complexity, priority, roles involved; who set scope or fit-gap, how and when; the history.
   - **Today and target**: the systems used today in its area (see Systems) and the products of its scenarios in scope.
-  - **Scenarios**: Microsoft's level 4, usually one per product. Switch each in or out of scope and set its fit or gap; the products of those in scope are the target.
+  - **Scenarios**: Microsoft's level 4, usually one per product. Set each one's scope and its fit or gap; the products of those in scope are the target, read up to the area and the end-to-end process. Add our own scenario with its software.
   - **Process flow**: opens the flow studio.
   - **Configuration decisions**: answer them in place, or add new ones.
   - **Requirements** raised against this process.
@@ -49,6 +54,25 @@ Two tabs: **Our process** and **Microsoft reference**.
 ## Requirements
 
 Capture a requirement, then open it to set Microsoft's fields: process item (a business process or a scenario), requirement type, **MoSCoW** (stored as Microsoft's priority: Must 1, Should 2, Could 3, Won't 4), Fit gap status with its gap solution approach, estimated complexity, business approval state, author, owner, approved by and on, source text (the quoted line), acceptance criteria, requirement mapping and scope approach. A closed reason (deferred, duplicate, withdrawn) or *Rejected* takes it out of the counts. Filter by approval state, fit or gap, or "needs review", and export to Excel. A requirement is flagged for review when what it came from changes (a flow, a configuration answer, a scope or fit-gap decision).
+
+## RAID
+
+Microsoft's **Risk**, **Assumption**, **Issue**, **Decision**, **Action item** and **Change request**, with the open count per type at the top (click one to filter). Add one with its type, text and, if you like, the process item it is about. An **open question** is an Action item marked as a question; a workshop's open points land here too. Filter by type, by status (open, closed, all) or to open questions only.
+
+Open an item for its own fields: Owner, Target date, Priority and process item on every type, and
+
+- **Risk**: probability, impact severity, risk category, risk response, risk impact assessment, triggers, contingency plan;
+- **Assumption**: impact if it is wrong, how it was validated;
+- **Issue**: issue type, severity, reported by, impact, resolution;
+- **Decision**: decision maker, impact, justification, alternatives considered;
+- **Action item**: responsible party, responsible role, outcome, open question;
+- **Change request**: change request type, requestor, approver, justification, impact assessment, alternative solution.
+
+Decisions and change requests go *Proposed*, *Decided* or *Withdrawn* (a decided decision needs its decision maker); the others *Open*, *In progress* or *Closed*. **Change requests** are offered once a sign-off is approved: on the Sign-off page, *Compare with today* offers *Raise a change request* for each change, with the old and new values as its justification.
+
+## History
+
+Every change to a process item's scope, scope reason, fit-gap, gap solution approach, rationale, products, software, owners, complexity, priority or name, and to a requirement's description, fit-gap, priority, approval, owner, acceptance criteria, mapping or process item: old → new, how (Workshop, Direct, Migration, Proposal, Restore), by whom and when. Filter by process items or requirements and search. Each process item and requirement shows its own history too. **Restore** puts the old value back; that is a change of its own, so it writes a new row (how *Restore*). A Gap comes back with the gap solution approach that was changed with it.
 
 ## Workshops
 
@@ -87,13 +111,21 @@ Teams doesn't give apps a live transcript, so you paste it in after the meeting 
 - **Excel**: everything.
 - **Word** and **PDF**: requirements, decisions and flow changes, with the out-of-scope processes listed at the end.
 
+After a sign-off is approved, **Compare with today** offers **Raise a change request** on each change (see RAID).
+
+**Azure Boards import file** writes today's work items as a CSV for Azure Boards (*Boards > Queries > Import work items*), in the shape of Microsoft's Azure DevOps template for Dynamics 365 projects: the process items in scope as *End to end*, *Process area*, *Process* and *Scenario*, each followed by its active requirements (*Requirement*) and its RAID items (*Risk*, *Issue*, *Action item*…), then the requirements and RAID items on no item. The tree is carried by the *Title 1* to *Title 5* columns; Microsoft's fields use the column names of Microsoft's catalog workbook (*Process sequence ID MS BPC*, *Scope MS BPC*, *Fit gap status MS BPC*, …); fields without such a column (acceptance criteria, RAID fields…) go into the description. An item out of scope or not applicable is listed with its scope, without what lies below it. Each file holds at most 1,000 work items and starts with an end-to-end process where it can. The project must use Microsoft's template (or have these work item types and fields).
+
 ## Systems
 
 The software used today, per process area in scope (or on one business process in it), with vendor, users and the decision: **Keep**, **Migrate** or **Retire** (with a retire date). There is no list of target applications: the target is the products of the scenarios in scope, shown per area and at the top.
 
 ## Settings
 
-The organisation name and the roles: Microsoft's responsible role, headcount, licence type, base product and attach products. The totals add up the headcount per licence type and base product.
+The organisation name and the roles: Microsoft's responsible role, headcount and the **licence** the people in the role need: *Full* (a base product, the highest priced app, plus attach products), *Team Members*, *Operations - Activity*, *Device* or *None*. Each role gets a **suggestion** from the products of the scenarios in scope below the processes it works in (Dynamics 365 products only; Microsoft 365, Power Platform and the like are licensed apart): **Use it** applies it and notes why. Problems are flagged (Full without a base, attach products without a Full licence, the base attached again).
+
+**Licences per type** adds up the headcount: Full per base and attach product, Team Members, Operations - Activity, Device, None and not decided, with a monthly estimate from the price table.
+
+**Licence prices** is a dated price table you keep: product, licence (Base, Attach, Team Members, Operations - Activity, Device), price per user (or device) per month, currency, valid from and source. The newest row valid today counts. No prices come with the app; take them from Microsoft's current Dynamics 365 Licensing Guide or your agreement. The estimate is for planning: the licence follows the security roles people get.
 
 ## The guide
 

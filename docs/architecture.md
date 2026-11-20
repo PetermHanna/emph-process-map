@@ -21,9 +21,9 @@ Chrome
 | `src/data/api.ts` | `Gateway` interface and the Dataverse implementation; entity set names |
 | `src/domain/codes.ts` | Microsoft's picklists (verbatim) and ours; choice value = 582100000 + position |
 | `src/domain/types.ts` | One interface per table |
-| `src/domain/rules.ts` | The process item tree, scope, products read up from scenarios, fit-gap, flow changes, sign-off comparison, with no UI or Dataverse |
+| `src/domain/rules.ts` | The process item tree, scope per level, products read up from scenarios, fit-gap, RAID per type, history restore, licence suggestion and summary, change requests, flow changes, sign-off comparison, with no UI or Dataverse |
 | `src/domain/session.ts` | Workshop phases, visits and the read-back summary |
-| `src/domain/documents.ts` | Excel, Word and PDF export, with no library |
+| `src/domain/documents.ts` | Excel, Word and PDF export and the Azure Boards import file, with no library |
 | `src/domain/repository.ts` | Loads the model and makes every write (and the history rows) |
 | `src/ui/Shell.tsx`, `look.ts`, `kit.tsx` | Navigation rail, theme and shared controls |
 | `src/ui/pages/*` | One file per page |
@@ -39,13 +39,15 @@ Version 2 follows Microsoft's Azure DevOps template for Dynamics 365 projects: o
 
 | Table | Purpose | Main columns |
 |---|---|---|
-| `emph_workspace` | Hosts the component | Organisation, HostData, Settings |
-| `emph_processitem` | Catalog level 1-4 (End to end, Process area, Process, Scenario) or our own (X001…) | Level, CatalogCode (Process sequence ID), CatalogName (Microsoft's name, kept when renamed), Rank, Description, **Scope** (10 - Unspecified, 20 - In scope, 30 - Out of scope, 40 - Not applicable), Scope reason, Scope approach, **Fit gap status** (Fit, Gap, Unspecified), **Gap solution approach** (10 - Unspecified … 70 - ISV Extension; required for a Gap), Fit gap rationale, Business process owner, Workstream lead, Subject matter expert, Baseline complexity, Priority (1-5), Process type, IsOwn, Author (Project for our own), Catalog status (50 - Custom for our own), **Products** (on a scenario: the software that runs it), Set how / by / on, Present, Agreed in workshop, Accent (level 1), Comments, → Parent |
+| `emph_workspace` | Hosts the component | Organisation, HostData, Settings (JSON: the licence price table) |
+| `emph_processitem` | Catalog level 1-4 (End to end, Process area, Process, Scenario) or our own (X001…) | Level, CatalogCode (Process sequence ID), CatalogName (Microsoft's name, kept when renamed), Rank, Description, **Scope** (10 - Unspecified, 20 - In scope, 30 - Out of scope, 40 - Not applicable), Scope reason, Scope approach, **Fit gap status** (Fit, Gap, Unspecified), **Gap solution approach** (10 - Unspecified … 70 - ISV Extension; required for a Gap), Fit gap rationale, Business process owner, Workstream lead, Subject matter expert, Baseline complexity, Priority (1-5), Process type, IsOwn, Author (Project for our own), Catalog status (50 - Custom for our own), **Products** (on a scenario: the software that runs it), Software solutions (our own scenario on other software, Products *Other*), Set how / by / on, Present, Agreed in workshop, Accent (level 1), Comments, → Parent |
 | `emph_system` | Software used today in a process area (or one business process) | Vendor, Decision (Keep, Migrate, Retire), Retire on, Users, Hosting, Note, → Item |
 | `emph_role` | Lane in flows, with headcount and licence | Summary, Rank, Headcount, Responsible role (Microsoft's list), Licence type (Full, Team Members, Operations - Activity, Device, None), Base product, Attach products, Note (quoted transcript lines) |
 | `emph_itemrole` | Role involved in a process item | → Item, → Role |
 
-Scope counts only when the item and every item above it are 20 - In scope: an area out of scope greys its business processes and scenarios. The target is not a list of applications: it is the **products of the scenarios in scope**, read up to business processes, areas and end-to-end processes.
+Scope per level follows Business Map's decision 1: end-to-end processes, process areas and scenarios take all four Scope values; a business process (level 3) takes fit/gap instead, so its Scope is only 10 - Unspecified or 40 - Not applicable. Fit gap status and Gap solution approach are set on levels 3 and 4 only. An item counts as in scope when it and every item above it count as in: levels 1, 2 and 4 at 20 - In scope, a business process when not Not applicable. An end-to-end process or area out of scope, not applicable or not decided greys everything below it. The target is not a list of applications: it is the **products of the scenarios in scope** (for our own scenario on other software, its Software solutions), read up to business processes, areas and end-to-end processes. A business process without its own fit-gap reads it up from its scenarios in scope.
+
+Licences per role (as Business Map's C7): the role's items (`emph_itemrole`) → the scenarios in scope below them → their Dynamics 365 products → Full with the highest priced product as base (from the price table in workspace Settings) and the others attached; no product = None.
 
 ### Flows and decisions
 
@@ -60,15 +62,15 @@ Scope counts only when the item and every item above it are 20 - In scope: an ar
 | Table | Purpose | Main columns |
 |---|---|---|
 | `emph_requirement` | Microsoft's Requirement work item | ReqId (RQ-00001), Description, Requirement type (Functional … Compliance, Business rule), Fit gap status, Gap solution approach, Scope approach, Acceptance criteria, Requirement mapping, Priority (1-5; MoSCoW on screen: Must 1, Should 2, Could 3, Won't 4), Business approval state (New, Ready for review, In review, Approved, Rejected), Author, Estimated complexity, Owner, Approved by / on, Closed reason, Source type, Source text (the quoted line), Raised by, Origin, Origin reference, Needs review, → Item (lowest level), → FlowActivity, → Workshop, → OriginFlow, → EvidenceFlow |
-| `emph_raid` | Microsoft's Risk, Assumption, Issue, Decision, Action item, Change request | Type, Description, Owner, Priority, Target date, Status (Open, In progress, Closed), Open question, Source text, and Microsoft's fields per type (risk impact, probability, impact severity, risk category and response, decision maker, issue type, responsible party and role, change request type, justification…), → Item, → Workshop |
-| `emph_history` | One row per changed value, insert only | Table, Row, Field, Old value, New value, How (Workshop, Direct, Migration, Proposal), By, Agreed in workshop |
+| `emph_raid` | Microsoft's Risk, Assumption, Issue, Decision, Action item, Change request | Type, Description, Owner, Priority, Target date, Status (Open, In progress, Closed for most types; Proposed, Decided, Withdrawn for decisions and change requests), Open question, Source text, and Microsoft's fields per type (risk impact assessment, triggers, contingency plan, probability, impact severity, risk category and response; issue type, severity, reported by; decision maker, impact, resolution; responsible party and role; change request type, requestor, justification, impact assessment, alternative solution), Signed-off item (the frozen item a change request changes), → Item, → Workshop, → SignOff |
+| `emph_history` | One row per changed value, insert only | Table, Row, Field, Old value, New value, How (Workshop, Direct, Migration, Proposal, Restore), By, Agreed in workshop, Created on |
 | `emph_proposal` | A suggested change waiting for a person (AI analysis, later) | Table, Row, Field, Current value, Proposed value, Quotes, Source, Status (Proposed, Accepted, Edited, Rejected), Reason, Decided by / on, → Item, → Workshop |
 | `emph_comment` | A remark on a process item or one of its flow activities | ActivityCode, Author, Text, Source (quoted transcript line), → Item, → FlowActivity, → Workshop |
 | `emph_workshop` | Workshop; screenshots are notes on it | HeldOn, Facilitator, Participants, Phase, Status, Microsoft workshop type (Storyboard, Storyline design review, Detailed design, FastTrack), Success by Design phase, Kind, Session order, Units, Child tasks (JSON), SessionData (JSON: agenda, visits, transcript start, captured lines), Transcript, → Item (end-to-end process) |
 | `emph_signoff` | Frozen, approved version | Version, State (Draft, In review, Approved, Superseded), ApprovedOn, → Approver |
 | `emph_signoffitem` | Frozen copy of one item | ItemType, ItemKey, Snapshot (JSON), → SignOff |
 
-A workshop's open points are RAID **Action items** (marked as a question when the line asks one). Changes to scope, fit-gap, products, owner and name on process items, and to description, fit-gap, priority, approval and item on requirements, each write an `emph_history` row; scope and fit-gap changes also set Set how / by / on on the item (Workshop when made in a workshop).
+A workshop's open points are RAID **Action items** (marked as a question when the line asks one). The fields in `HISTORY_FIELDS` (rules.ts) each write an `emph_history` row when they change: on process items name, scope, scope reason, fit-gap, gap solution approach, rationale, products, software solutions, owners, complexity and priority; on requirements description, fit-gap, gap solution approach, priority, approval, process item, owner, acceptance criteria and mapping. Values are stored as shown (labels for choices), so restoring maps a label back to its choice value; a restore writes a new row with How *Restore*. Scope and fit-gap changes also set Set how / by / on on the item (Workshop when made in a workshop). After a sign-off is approved, a change to what it froze can be raised as a Change request linked to that sign-off and the frozen item.
 
 ## How "our process" works
 

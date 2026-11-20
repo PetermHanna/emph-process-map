@@ -14,13 +14,15 @@ You scope the catalog's four levels (end-to-end processes, process areas, busine
 
 ## Pages
 
-- **Our processes** (main page): the catalog drawn like Microsoft's documentation. Process areas run left to right with arrows, and their business processes run top to bottom. Tick processes in or out of scope (Microsoft's Scope field), see the target products, and rename any of them to your own wording while Microsoft's name stays visible.
-- **Processes**: the catalog tree, levels 1 to 4. For a business process: Scope, Fit gap status with its gap solution approach, owner, workstream lead, subject matter expert, roles, systems today and target products, its scenarios, configuration decisions, requirements and its flow.
+- **Our processes** (main page): the catalog drawn like Microsoft's documentation. Process areas run left to right with arrows, and their business processes run top to bottom. Set Microsoft's Scope on end-to-end processes and areas (with a reason), tick business processes in or Not applicable, see the target products, and rename any of them to your own wording while Microsoft's name stays visible.
+- **Processes**: the catalog tree, levels 1 to 4, with Scope per level and the history of each item. For a business process: Not applicable, Fit gap status with its gap solution approach, owner, workstream lead, subject matter expert, roles, systems today and target products, its scenarios (scope per scenario = the software, our own scenarios on other software), configuration decisions, requirements and its flow.
 - **Flow studio**: the Microsoft reference flow next to *our process*, in swimlanes by role. Changes are tracked; confirming asks for a rationale for each one and turns it into a draft requirement.
 - **Requirements**: Microsoft's Requirement fields: type, MoSCoW (stored as Microsoft's priority), fit or gap with the gap solution approach, business approval state, acceptance criteria, requirement mapping, source text.
 - **Workshops**: seven phases: prepare, scope, walk-through, process flow, configuration, fit-gap, summary. Open points become RAID action items.
-- **Sign-off**: freeze, compare with today, approve, export.
-- **Systems** (used today per process area: keep, migrate or retire) and **Settings** (organisation, and roles with licence type and products).
+- **RAID**: Microsoft's Risk, Assumption, Issue, Decision, Action item and Change request, each with its own fields; open questions are action items marked as a question.
+- **Sign-off**: freeze, compare with today, approve, export; after approval a change becomes a change request. **Azure Boards import file**: process items, requirements and RAID as work items of Microsoft's ADO template.
+- **History**: every change, old → new, how, by whom and when, with restore.
+- **Systems** (used today per process area: keep, migrate or retire) and **Settings** (organisation, roles with the licence each needs, suggested from their scenarios, a summary per licence type and a dated price table you keep).
 
 ## Microsoft catalog and demos
 
