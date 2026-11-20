@@ -61,7 +61,8 @@ window.__emph = { log: [], done: false, error: null };
     ['emph_Application', 'Application', 'Applications', 'An application in use or planned.', [
       choice('Category', 'Category', ['Finance', 'Projects', 'Field service', 'Supply chain', 'Customer service', 'Sales', 'HR and payroll', 'Engineering', 'Collaboration', 'Analytics', 'Other']),
       text('Publisher', 'Publisher', 100), yesno('IsMicrosoft', 'Microsoft'), yesno('IsTarget', 'Target application'), choice('Status', 'Status', ['In use', 'Planned', 'Retiring']), text('Hosting', 'Hosting', 100), note('Summary', 'Summary', 2000)]],
-    ['emph_Role', 'Role', 'Roles', 'A role: a lane in process flows and an owner of business processes.', [note('Summary', 'Summary', 2000), whole('Rank', 'Rank'), whole('Headcount', 'Headcount')]],
+    ['emph_Role', 'Role', 'Roles', 'A role: a lane in process flows and an owner of business processes.', [note('Summary', 'Summary', 2000), whole('Rank', 'Rank'), whole('Headcount', 'Headcount'),
+      choice('LicenceType', 'Licence type', ['Full user', 'Team Members', 'Read-only', 'Device', 'External (no licence)']), whole('LicenceUsers', 'People needing the licence'), note('LicenceNote', 'Licence notes', 20000)]],
     ['emph_BusinessProcess', 'Business process', 'Business processes', 'Third level of the catalog, or our own process.', [
       ...scope(), choice('Origin', 'Origin', ['Microsoft catalog', 'Our own']), choice('ReviewState', 'Review', ['Not reviewed', 'Confirmed', 'Not used']),
       choice('Disposition', 'Disposition', ['Retain', 'Transition', 'Retire', 'Gap']), text('UserCount', 'Users', 50), note('Comments', 'Comments')]],
@@ -81,6 +82,8 @@ window.__emph = { log: [], done: false, error: null };
     ['emph_Workshop', 'Workshop', 'Workshops', 'A guided discovery session.', [
       date('HeldOn', 'Date'), text('Facilitator', 'Facilitator'), note('Participants', 'Participants', 20000), note('Minutes', 'Minutes', 20000), whole('Phase', 'Phase'),
       choice('Status', 'Status', ['Open', 'Closed']), note('SessionData', 'Session (JSON)', 100000), note('Transcript', 'Meeting transcript', 1048576)]],
+    ['emph_Comment', 'Comment', 'Comments', 'A remark on a business process or one of its flow activities, often a line from a workshop transcript.', [
+      text('ActivityCode', 'Activity code', 20), text('Author', 'Author'), note('Text', 'Comment', 20000), note('Source', 'Quoted line', 4000)]],
     ['emph_Requirement', 'Requirement', 'Requirements', 'Something needed that standard may not cover.', [
       numbered('ReqId', 'Requirement ID', 'RQ-{SEQNUM:5}'), note('Description', 'Description', 20000), choice('Moscow', 'MoSCoW', ['Must', 'Should', 'Could', "Won't"]),
       choice('Category', 'Category', ['Functional', 'Non-functional', 'Integration', 'Data', 'Reporting', 'Compliance', 'Licensing']), text('RaisedBy', 'Raised by'), note('Verbatim', 'In their words', 20000),
@@ -118,6 +121,10 @@ window.__emph = { log: [], done: false, error: null };
     ['requirement', 'OriginFlow', 'Origin flow', 'emph_processflow', 'RemoveLink'],
     ['requirement', 'EvidenceFlow', 'Evidence flow', 'emph_processflow', 'RemoveLink'],
     ['requirement', 'Workshop', 'Workshop', 'emph_workshop', 'RemoveLink'],
+    ['requirement', 'FlowActivity', 'Flow activity', 'emph_flowactivity', 'RemoveLink'],
+    ['comment', 'BusinessProcess', 'Business process', 'emph_businessprocess', 'Cascade'],
+    ['comment', 'FlowActivity', 'Flow activity', 'emph_flowactivity', 'RemoveLink'],
+    ['comment', 'Workshop', 'Workshop', 'emph_workshop', 'RemoveLink'],
     ['requirement', 'ParentRequirement', 'Parent requirement', 'emph_requirement', 'RemoveLink'],
     ['requirement', 'DuplicateOf', 'Duplicate of', 'emph_requirement', 'RemoveLink'],
     ['signoff', 'Approver', 'Approver', 'systemuser', 'RemoveLink'],
@@ -207,13 +214,14 @@ window.__emph = { log: [], done: false, error: null };
     emph_processarea: [['emph_catalogcode', 'emph_name', 'emph_endtoendprocess', 'emph_inscope'], [['emph_businessprocess', 'emph_processarea']]],
     emph_businessprocess: [['emph_catalogcode', 'emph_name', 'emph_processarea', 'emph_inscope', 'emph_reviewstate', 'emph_disposition'], [['emph_processrole', 'emph_businessprocess'], ['emph_processflow', 'emph_businessprocess'], ['emph_configdecision', 'emph_businessprocess'], ['emph_requirement', 'emph_businessprocess']]],
     emph_application: [['emph_name', 'emph_category', 'emph_publisher', 'emph_status', 'emph_istarget'], []],
-    emph_role: [['emph_name', 'emph_summary', 'emph_headcount'], []],
+    emph_role: [['emph_name', 'emph_summary', 'emph_headcount', 'emph_licencetype', 'emph_licenceusers'], []],
     emph_processrole: [['emph_name', 'emph_businessprocess', 'emph_role'], []],
     emph_processflow: [['emph_name', 'emph_flowtype', 'emph_state', 'emph_businessprocess'], [['emph_flowactivity', 'emph_processflow']]],
     emph_flowactivity: [['emph_activitycode', 'emph_name', 'emph_processflow', 'emph_shape', 'emph_lane', 'emph_delta'], []],
     emph_configdecision: [['emph_code', 'emph_name', 'emph_businessprocess', 'emph_answer', 'emph_state'], []],
     emph_requirement: [['emph_reqid', 'emph_name', 'emph_businessprocess', 'emph_moscow', 'emph_state', 'emph_coverage'], [['emph_requirementlink', 'emph_requirement'], ['emph_testrun', 'emph_requirement'], ['emph_reviewnote', 'emph_requirement']]],
-    emph_workshop: [['emph_name', 'emph_heldon', 'emph_facilitator', 'emph_status'], [['emph_requirement', 'emph_workshop']]],
+    emph_workshop: [['emph_name', 'emph_heldon', 'emph_facilitator', 'emph_status'], [['emph_requirement', 'emph_workshop'], ['emph_comment', 'emph_workshop']]],
+    emph_comment: [['emph_name', 'emph_businessprocess', 'emph_activitycode', 'emph_author'], []],
     emph_signoff: [['emph_name', 'emph_version', 'emph_state', 'emph_approvedon'], [['emph_signoffitem', 'emph_signoff'], ['emph_reviewnote', 'emph_signoff']]],
     emph_signoffitem: [['emph_reqid', 'emph_name', 'emph_signoff', 'emph_itemtype'], []],
     emph_requirementlink: [['emph_name', 'emph_linktype', 'emph_target', 'emph_requirement'], []],
@@ -273,7 +281,7 @@ window.__emph = { log: [], done: false, error: null };
   const sitemapxml = `<SiteMap IntroducedVersion="7.0.0.0"><Area Id="emph_area" ShowGroups="true"><Titles><Title LCID="1033" Title="Process map" /></Titles>` +
     group('emph_home', 'Process map', `<SubArea Id="emph_open" Url="$webresource:emph_/open.html" Icon="$webresource:emph_/icon.svg" AvailableOffline="false" PassParams="false"><Titles><Title LCID="1033" Title="Process map" /></Titles></SubArea>`) +
     group('emph_catalog', 'Process catalog', entry('emph_e2e', 'emph_endtoendprocess') + entry('emph_areas', 'emph_processarea') + entry('emph_bp', 'emph_businessprocess') + entry('emph_flows', 'emph_processflow') + entry('emph_dec', 'emph_configdecision')) +
-    group('emph_fitgap', 'Fit-gap', entry('emph_req', 'emph_requirement') + entry('emph_ws', 'emph_workshop') + entry('emph_so', 'emph_signoff') + entry('emph_tr', 'emph_testrun')) +
+    group('emph_fitgap', 'Fit-gap', entry('emph_req', 'emph_requirement') + entry('emph_ws', 'emph_workshop') + entry('emph_com', 'emph_comment') + entry('emph_so', 'emph_signoff') + entry('emph_tr', 'emph_testrun')) +
     group('emph_setup', 'Setup', entry('emph_apps', 'emph_application') + entry('emph_roles', 'emph_role')) +
     `</Area></SiteMap>`;
   let sitemap = await first(`sitemaps?$select=sitemapid&$filter=sitemapnameunique eq '${APP}'`);

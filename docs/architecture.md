@@ -5,7 +5,7 @@ Dataverse environment
 ├── App "EMPH Process Map"
 │   ├── Process map ─> emph_/open.html ─> workspace record ─> PCF component emph_EMPH.ProcessMap
 │   └── Standard forms and views for every emph_ table
-└── 17 emph_ tables  <── read and written by the component through context.webAPI
+└── 18 emph_ tables  <── read and written by the component through context.webAPI
 
 Chrome
 └── Guide extension  <── reads emph_processflow and emph_flowactivity, plays them over Dynamics 365 pages
@@ -44,7 +44,7 @@ Choice values start at 582100000, in the order listed.
 | `emph_processarea` | Catalog level 2 | CatalogCode, CatalogName, Rank, InScope, Summary, → EndToEndProcess |
 | `emph_businessprocess` | Catalog level 3, or our own (X001…) | CatalogCode, CatalogName, InScope, Origin (Microsoft catalog, Our own), ReviewState (Not reviewed, Confirmed, Not used), Disposition (Retain, Transition, Retire, Gap), UserCount, Comments, → ProcessArea, → CurrentApplication, → TargetApplication, → ProcessOwner |
 | `emph_application` | Application in use or planned | Category, Publisher, IsMicrosoft, IsTarget, Status (In use, Planned, Retiring) |
-| `emph_role` | Lane in flows, process owner | Summary, Rank, Headcount |
+| `emph_role` | Lane in flows, process owner, licence need | Summary, Rank, Headcount, LicenceType (Full user, Team Members, Read-only, Device, External), LicenceUsers, LicenceNote (quoted transcript lines) |
 | `emph_processrole` | Role involved in a business process | → BusinessProcess, → Role |
 
 ### Flows and decisions
@@ -59,7 +59,8 @@ Choice values start at 582100000, in the order listed.
 
 | Table | Purpose | Main columns |
 |---|---|---|
-| `emph_requirement` | A need standard may not cover | ReqId (RQ-00001), Description, Moscow, Category (… Compliance, Licensing), State, Coverage (Standard, Configuration, Extension, Gap), Size, Owner, Resolution, Origin, Review, → BusinessProcess, → Workshop, → OriginFlow, → EvidenceFlow |
+| `emph_requirement` | A need standard may not cover | ReqId (RQ-00001), Description, Moscow, Category (… Compliance, Licensing), State, Coverage (Standard, Configuration, Extension, Gap), Size, Owner, Resolution, Origin, Review, → BusinessProcess, → Workshop, → OriginFlow, → EvidenceFlow, → FlowActivity |
+| `emph_comment` | A remark on a business process or one of its flow activities | ActivityCode, Author, Text, Source (quoted transcript line), → BusinessProcess, → FlowActivity, → Workshop |
 | `emph_workshop` | Discovery session; screenshots are notes on it | HeldOn, Facilitator, Participants, Phase, Status, SessionData (JSON: agenda, visits, action items, transcript start, captured lines), Transcript, → EndToEndProcess |
 | `emph_signoff` | Frozen, approved version | Version, State (Draft, In review, Approved, Superseded), ApprovedOn, → Approver |
 | `emph_signoffitem` | Frozen copy of one item | ItemType, ItemKey, Snapshot (JSON), → SignOff |

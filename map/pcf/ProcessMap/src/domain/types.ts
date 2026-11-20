@@ -11,7 +11,9 @@ export interface BusinessProcess {
   users: string; comments: string;
 }
 export interface Application { id: string; name: string; category: number | null; publisher: string; microsoft: boolean; target: boolean; status: number | null; hosting: string; summary: string }
-export interface Role { id: string; name: string; summary: string; rank: number; headcount: number | null }
+export interface Role { id: string; name: string; summary: string; rank: number; headcount: number | null; licenceType?: number | null; licenceUsers?: number | null; licenceNote?: string }
+/** A remark on a business process, or on one activity of its flow (activityId and activityCode). */
+export interface Comment { id: string; processId: string | null; activityId: string | null; activityCode: string; workshopId: string | null; author: string; text: string; source: string; createdOn: string }
 export interface ProcessRole { id: string; processId: string; roleId: string }
 
 export interface FlowLink { to: string; label: string }
@@ -33,6 +35,8 @@ export interface Requirement {
   moscow: number | null; category: number | null; raisedBy: string; verbatim: string; owner: string; state: number | null;
   coverage: number | null; size: number | null; evidenceFlowId: string | null; resolution: string; resolvedBy: string; resolvedOn: string | null;
   workshopId: string | null; parentId: string | null; duplicateOfId: string | null;
+  /** the flow activity it was raised on, e.g. while walking the flow in a workshop */
+  activityId?: string | null;
 }
 export interface Workshop { id: string; name: string; heldOn: string | null; facilitator: string; participants: string; minutes: string; phase: number; status: number; endToEndId: string | null; session: SessionState; transcript: string }
 export interface Screenshot { id: string; subject: string; createdOn: string }
@@ -44,4 +48,5 @@ export interface Model {
   apps: Application[]; roles: Role[]; processRoles: ProcessRole[];
   flows: ProcessFlow[]; decisions: ConfigDecision[];
   requirements: Requirement[]; workshops: Workshop[]; signOffs: SignOff[];
+  comments: Comment[];
 }

@@ -107,13 +107,16 @@
     return sections + " sections, " + columns + " area columns, renamed \u201c" + before + "\u201d, in scope " + id + " -> " + after;
   }
 
-  // Meeting transcript (made-up): paste, place on the agenda, capture a requirement, a licence need and an open point; take a screenshot.
-  const TRANSCRIPT = "Ana Field   0:01\nUsually the foreman approves the work order, sometimes the PM skips it.\n\nBen Office   0:02\nWe need read-only access for the office, maybe five licences.\n\nAna Field   0:03\nWe always do the credit check.\n\nBen Office   0:04\nOnly above ten thousand, someone from management should look into that.\nBen Office stopped transcription\nCarl Site   0:05\nThirty technicians plus eight foremen.\n\nCarl Site   0:06\nWe don't do the second check any more.";
+  // Meeting transcript (made-up): agenda, paste, then each kind of use: requirement, licence, comment, open point, and a requirement on a flow step; a screenshot.
+  const TRANSCRIPT = "Ana Field   0:01\nUsually the foreman approves the work order, sometimes the PM skips it.\n\nBen Office   0:02\nWe need read-only access for the office, maybe five licences.\n\nAna Field   0:03\nWe always do the credit check.\n\nBen Office   0:04\nOnly above ten thousand, someone from management should look into that.\nBen Office stopped transcription\nCarl Site   0:05\nThirty technicians plus eight foremen.\n\nCarl Site   10:00\nWe don't do the second check any more.";
+  const pickOption = async (combo, text) => { combo.click(); const o = await until(() => [...document.querySelectorAll('[role="option"]')].find(x => x.innerText.trim() === text)); o.click(); await wait(150); };
   async function transcript() {
     await nav("workshops");
     if (!q('[data-emph="workshop-new"]')) { button(/All workshops/).click(); await wait(200); }
     q('[data-emph="workshop-new"]').click();
     await until(() => q('[data-emph="phases"]'));
+    const total = (await until(() => q('[data-emph="agenda-total"]'))).innerText;
+    if (!/\d+ business processes, \d+ min/i.test(total)) throw new Error("agenda: " + total);
     const items = await until(() => { const a = document.querySelectorAll('[data-emph="agenda-item"]'); return a.length >= 2 && a; });
     items[0].click(); await wait(300); items[1].click(); await wait(300);
     q('[data-emph="transcript-toggle"]').click();
@@ -124,25 +127,48 @@
     q('[data-emph="transcript-keep"]').click();
     const ws = () => rows("emph_workshop")[rows("emph_workshop").length - 1];
     await until(() => (ws().emph_transcript || "").includes("foreman"));
-    const lines = await until(() => { const a = document.querySelectorAll('[data-emph="transcript-line"]'); return a.length === 6 && a; });
-    if (!document.querySelector('mark[data-mark="hedge"]') || !document.querySelector('mark[data-mark="licence"]')) throw new Error("no highlights");
-    // a requirement from line 0
-    lines[0].querySelector('[data-emph="line-capture"]').click();
+    await until(() => document.querySelectorAll('[data-emph="transcript-line"]').length === 6); // line 5 moves onto a flow step once the walk starts
+    if (!document.querySelector('mark[data-mark="hedge"]')) throw new Error("no hedges marked");
+    const captureBox = () => [...q('[data-emph="capture"]').querySelectorAll("button")].find(b => b.innerText.trim() === "Capture");
+    // 0: a requirement
+    q('[data-line="0"] [data-emph="line-capture"]').click();
     const from = await until(() => q('[data-emph="capture-from"]'));
     if (!/\[0:01\] Ana Field: Usually/.test(from.innerText)) throw new Error("capture-from: " + from.innerText);
-    [...q('[data-emph="capture"]').querySelectorAll("button")].find(b => b.innerText.trim() === "Capture").click();
+    captureBox().click();
     const req = await until(() => rows("emph_requirement").find(r => (r.emph_verbatim || "").startsWith("[0:01] Ana Field:")));
     if (req.emph_raisedby !== "Ana Field" || !req._emph_workshop_value) throw new Error("requirement fields");
-    await until(() => /Captured as RQ-/.test(q('[data-line="0"]').innerText));
-    if (q('[data-line="0"] [data-emph="line-capture"]')) throw new Error("line 0 can still be captured");
-    // a licence need from line 1
+    await until(() => /RQ-/.test(q('[data-line="0"]').innerText));
+    if (q('[data-line="0"] [data-emph="line-capture"]')) throw new Error("line 0 can still be used");
+    // 1: a licence need on a role
     q('[data-line="1"] [data-emph="line-licence"]').click();
-    await until(() => q('[data-emph="capture-from"]'));
-    [...q('[data-emph="capture"]').querySelectorAll("button")].find(b => b.innerText.trim() === "Capture").click();
-    await until(() => rows("emph_requirement").some(r => r.emph_category === 582100006 && /read-only/.test(r.emph_description)));
-    // an open point from line 3
+    const form = await until(() => q('[data-emph="licence-form"]'));
+    const combos = form.querySelectorAll('[role="combobox"]');
+    const roleName = rows("emph_role")[0].emph_name;
+    await pickOption(combos[0], roleName); await pickOption(combos[1], "Read-only");
+    q('[data-emph="licence-save"]').click();
+    await until(() => rows("emph_role").some(r => r.emph_licencetype === 582100002 && /read-only access/.test(r.emph_licencenote || "")));
+    await until(() => /Licence: .+, Read-only/.test(q('[data-line="1"]').innerText));
+    // 2: a comment, 3: an open point
+    q('[data-line="2"] [data-emph="line-comment"]').click();
+    await until(() => rows("emph_comment").some(c => c.emph_source === "[0:03] Ana Field: We always do the credit check." && c.emph_author === "Ana Field" && c._emph_workshop_value));
+    await until(() => /Comment/.test(q('[data-line="2"]').innerText));
     q('[data-line="3"] [data-emph="line-open"]').click();
     await until(() => JSON.parse(ws().emph_sessiondata).actions.some(a => /ten thousand/.test(a.text) && /^\[0:04\] Ben Office:/.test(a.source)));
+    // walk the flow: the step visit collects line 5, and its requirement is linked to the step
+    [...document.querySelectorAll('[data-emph="phases"] button')][3].click();
+    const adapt = await until(() => q('[data-emph="walk-adapt"]') || q('[data-emph="walk-step"]'));
+    if (adapt.dataset.emph === "walk-adapt") adapt.click();
+    const step = await until(() => q('[data-emph="walk-step"]'));
+    const code = step.dataset.code; step.click();
+    await until(() => JSON.parse(ws().emph_sessiondata).current.endsWith("#" + code));
+    const l5 = await until(() => q('[data-line="5"]'));
+    if (!/›/.test(l5.innerText)) throw new Error("line 5 has no step: " + l5.innerText);
+    l5.querySelector('[data-emph="line-capture"]').click();
+    await until(() => q('[data-emph="capture-step"]'));
+    captureBox().click();
+    const onStep = await until(() => rows("emph_requirement").find(r => (r.emph_verbatim || "").includes("second check")));
+    const act = rows("emph_flowactivity").find(a => a.emph_flowactivityid === onStep._emph_flowactivity_value);
+    if (!act || act.emph_activitycode !== code || !onStep._emph_businessprocess_value) throw new Error("requirement not on the step");
     // a screenshot, with a canvas standing in for the screen picker
     const md = navigator.mediaDevices, real = md.getDisplayMedia;
     md.getDisplayMedia = async () => { const c = document.createElement("canvas"); c.width = 640; c.height = 360; const g = c.getContext("2d"); g.fillStyle = "#0D9488"; g.fillRect(0, 0, 640, 360); const st = c.captureStream(5); setInterval(() => g.fillRect(0, 0, 1, 1), 50); return st; };
@@ -152,9 +178,9 @@
     (await until(() => q('[data-emph="screenshots"] button'))).click();
     await until(() => document.querySelector('img[src^="data:image/jpeg;base64,"]'));
     button(/^Close$/)?.click(); await wait(200);
-    const session = JSON.parse(ws().emph_sessiondata), done = Object.keys(session.captured).length;
-    if (done !== 3 || session.actions.length !== 1) throw new Error("captured " + JSON.stringify(session.captured) + ", actions " + session.actions.length);
-    return "6 lines, captured " + done + " (requirement, licence, open point), screenshot " + Math.round(note.documentbody.length * 0.75 / 1024) + " KB";
+    const usedNow = (q('[data-emph="transcript-stats"]').innerText.match(/(\d+) used/) || [])[1];
+    if (usedNow !== "5") throw new Error("used " + usedNow);
+    return "agenda " + total.replace(/^· /, "").toLowerCase() + "; 6 lines, 5 used (requirement, licence, comment, open point, requirement on step " + act.emph_activitycode + "), screenshot " + Math.round(note.documentbody.length * 0.75 / 1024) + " KB";
   }
   window.__tests = {
     pages, processAndFlow, guide, capture, signOff, workshop, transcript, mainMap,

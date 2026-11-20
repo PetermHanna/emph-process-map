@@ -5,14 +5,15 @@ import { ChevronLeft20Regular, ChevronRight20Regular, Delete16Regular, Copy16Reg
 import { C, useLook } from "../look";
 import { PageProps, Pill, Pick, Choice, Edit, AddBox, Empty } from "../kit";
 import type { Nav } from "../Shell";
-import { SESSION, REVIEW_LABEL, DISPOSITION_LABEL, REVIEW, CATEGORY } from "../../domain/codes";
-import { PHASES, visit, wasVisited, minutesPerVisit, summaryLines, sourceLine, Utterance } from "../../domain/session";
+import { SESSION, REVIEW_LABEL, DISPOSITION_LABEL, REVIEW, LICENCE_LABEL } from "../../domain/codes";
+import { PHASES, visit, minutesPerVisit, summaryLines, sourceLine, parseTranscript, usedLines, processKeyOf, activityCodeOf } from "../../domain/session";
 import { isActive } from "../../domain/rules";
-import { areasOf } from "../../domain/repository";
-import type { Workshop, BusinessProcess, Screenshot } from "../../domain/types";
+import { areasOf, flowsOf, loadActivities } from "../../domain/repository";
+import type { Workshop, BusinessProcess, Screenshot, Activity } from "../../domain/types";
 import { DecisionRow } from "./Processes";
 import { Capture, RequirementList, CaptureFrom } from "./Requirements";
-import { TranscriptPanel, LineUse, grabScreen } from "./Transcript";
+import { TranscriptPanel, LineUse, Line, grabScreen } from "./Transcript";
+import { FacilitatorAgenda, FlowWalk, LicenceDialog } from "./WorkshopParts";
 import { FlowStudio } from "../flow/FlowStudio";
 
 export function Workshops({ model, repo, apply }: PageProps & { nav: Nav }) {
@@ -58,14 +59,29 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
   const [shooting, setShooting] = React.useState(false);
   const [image, setImage] = React.useState<{ subject: string; src: string } | null>(null);
   const [problem, setProblem] = React.useState<string | null>(null);
+  const [walkActs, setWalkActs] = React.useState<Activity[] | null>(null); // our process of the current business process
+  const [licenceFor, setLicenceFor] = React.useState<Line | null>(null);
   const closed = w.status === SESSION.closed;
   const save = (patch: Partial<Workshop>) => apply(m => repo.saveWorkshop(m, m.workshops.find(x => x.id === w.id) || w, patch));
   /** Session changes made from the latest saved session, not the one this screen was drawn with. */
   const saveSession = (fn: (s: Workshop["session"]) => Workshop["session"]) => apply(m => { const cur = m.workshops.find(x => x.id === w.id) || w; return repo.saveWorkshop(m, cur, { session: fn(cur.session) }); });
   const agenda = w.session.processIds.map(id => model.processes.find(p => p.id === id)).filter(Boolean) as BusinessProcess[];
-  const current = agenda.find(p => p.id === w.session.current) || null;
+  // the current visit is a business process, or "process#activity" while walking its flow: the process is the part before "#"
+  const current = agenda.find(p => p.id === processKeyOf(w.session.current)) || null;
   const idx = current ? agenda.indexOf(current) : -1;
-  const go = (p: BusinessProcess) => save({ session: visit(w.session, p.id, p.name, new Date().toISOString()) });
+  const onVisit = (key: string, name: string) => saveSession(s => visit(s, key, name, new Date().toISOString()));
+  const go = (p: BusinessProcess) => onVisit(p.id, p.name);
+  const visited = (p: BusinessProcess) => w.session.visits.some(v => processKeyOf(v.key) === p.id);
+  const ours = current ? flowsOf(model, current.id).ours : undefined;
+  const [walkTick, setWalkTick] = React.useState(0);
+  React.useEffect(() => {
+    let live = true;
+    if (!ours) { setWalkActs(null); return; }
+    loadActivities(repo.g, ours.id).then(a => { if (live) setWalkActs(a); }).catch(() => live && setWalkActs([]));
+    return () => { live = false; };
+  }, [ours?.id, studio, walkTick]);
+  const transcript = React.useMemo(() => parseTranscript(w.transcript), [w.transcript]);
+  const used = usedLines(transcript, model.requirements, w.session.actions, w.session.captured || {}, model.comments.filter(c => c.workshopId === w.id));
   const captured = model.requirements.filter(r => r.workshopId === w.id && isActive(r));
   // only what has been picked: business processes in scope, plus any still on the agenda
   const areas = (w.endToEndId ? areasOf(model, w.endToEndId) : model.areas).slice().sort((x, y) => x.code.localeCompare(y.code, undefined, { numeric: true })).map(a => ({ a, ps: model.processes.filter(p => p.areaId === a.id && (p.inScope || w.session.processIds.includes(p.id))) })).filter(x => x.ps.length);
@@ -76,14 +92,16 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
     saveSession(s => ({ ...s, captured: { ...(s.captured || {}), [String(i)]: as } }));
     setMark(null);
   }, [mark]);
-  const useLine = (u: Utterance & { i: number }, use: LineUse) => {
-    if (w.session.captured?.[String(u.i)]) return; // each line is used once
-    if (use === "open") {
-      saveSession(s => ({ ...s, actions: s.actions.concat({ text: u.text, owner: "", due: "", source: sourceLine(u) }), captured: { ...(s.captured || {}), [String(u.i)]: "open point" } }));
-      return;
-    }
-    if (use === "flow") { setFlowNote({ text: u.text, i: u.i }); setStudio(true); return; }
-    setFrom({ key: u.i + ":" + Date.now(), i: u.i, text: u.text, who: u.speaker, verbatim: sourceLine(u), category: use === "licence" ? CATEGORY.licensing : null });
+  const useLine = (u: Line, use: LineUse) => {
+    if (used.has(u.i)) return; // each line is used once
+    // the business process the line was said on (else the current one), and the flow step when it fell in a step's visit
+    const processId = processKeyOf(u.key) || current?.id || null, code = activityCodeOf(u.key);
+    const act = code && processId === current?.id ? (walkActs || []).find(a => a.code === code) || null : null;
+    if (use === "open") { saveSession(s => ({ ...s, actions: s.actions.concat({ text: u.text, owner: "", due: "", source: sourceLine(u) }) })); return; }
+    if (use === "comment") { apply(m => repo.addComment(m, { processId, activityId: act?.id ?? null, activityCode: act ? code : "", workshopId: w.id, author: u.speaker, text: u.text, source: sourceLine(u) })); return; }
+    if (use === "flow") { setFlowNote({ text: sourceLine(u), i: u.i }); setStudio(true); return; }
+    if (use === "licence") { setLicenceFor(u); return; }
+    setFrom({ key: u.i + ":" + Date.now(), i: u.i, text: u.text, who: u.speaker, verbatim: sourceLine(u), processId, activityId: act?.id ?? null, activityName: act?.name || "" });
     if (w.phase !== 5) save({ phase: 5 });
   };
   const screenshot = async () => {
@@ -95,7 +113,7 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
     finally { setShooting(false); }
   };
   const lines = summaryLines(captured.map(r => ({ reqId: r.reqId, description: r.description, owner: r.owner, resolution: r.resolution, resolvedBy: r.resolvedBy })),
-    agenda.map(p => ({ name: p.name, disposition: p.disposition, visited: wasVisited(w.session.visits, p.id) })), w.session.actions);
+    agenda.map(p => ({ name: p.name, disposition: p.disposition, visited: visited(p) })), w.session.actions);
 
   return (
     <>
@@ -131,7 +149,7 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
           <div className={l.section} style={{ marginTop: 0 }}>Agenda</div>
           {agenda.map((p, i) => (
             <div key={p.id} data-emph="agenda-item" className={l.node + (p.id === w.session.current ? " " + l.nodeOn : "")} onClick={() => !closed && go(p)} style={{ opacity: p.inScope ? 1 : 0.55 }}>
-              <span className={l.code} style={{ minWidth: 20 }}>{i + 1}</span><span style={{ flexGrow: 1 }}>{p.name}</span>{wasVisited(w.session.visits, p.id) && <span style={{ color: C.ok }}>✓</span>}
+              <span className={l.code} style={{ minWidth: 20 }}>{i + 1}</span><span style={{ flexGrow: 1 }}>{p.name}</span>{visited(p) && <span style={{ color: C.ok }}>✓</span>}
             </div>
           ))}
           {!agenda.length && <div className={l.muted}>Add processes in phase 1.</div>}
@@ -162,6 +180,7 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
                   ))}
                 </div>
               ))}</div>
+              {agenda.length > 0 && <FacilitatorAgenda w={w} model={model} repo={repo} agenda={agenda} />}
             </>}
             {w.phase === 1 && agenda.map(p => (
               <div key={p.id} className={l.row} style={{ justifyContent: "space-between", borderBottom: "1px solid " + C.line, paddingBottom: 6 }}>
@@ -178,7 +197,7 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
               <Field label="Target application"><Pick value={current.targetAppId} items={model.apps} onChange={v => apply(m => repo.saveProcess(m, current, { targetAppId: v }))} /></Field>
               <Field label="Users"><Edit value={current.users} onSave={v => apply(m => repo.saveProcess(m, current, { users: v }))} /></Field>
             </div>}
-            {w.phase === 3 && current && <div><Button appearance="primary" onClick={() => setStudio(true)}>Open the process flow for {current.name}</Button></div>}
+            {w.phase === 3 && current && <FlowWalk w={w} model={model} repo={repo} apply={apply} p={current} acts={walkActs} closed={closed} onVisit={onVisit} onAdapted={() => setWalkTick(t => t + 1)} onOpenStudio={() => setStudio(true)} />}
             {w.phase === 4 && current && <>
               {model.decisions.filter(d => d.processId === current.id).map(d => <DecisionRow key={d.id} d={d} model={model} repo={repo} apply={apply} />)}
               {!model.decisions.some(d => d.processId === current.id) && <div className={l.muted}>No configuration decisions on this business process.</div>}
@@ -211,9 +230,14 @@ function Runner({ w, model, repo, apply, onBack }: PageProps & { w: Workshop; on
           </Tooltip></div>}
         </div>
       </div>
-        {showTranscript && <TranscriptPanel w={w} agenda={agenda} current={current} closed={closed} save={save} saveSession={saveSession} onUse={useLine} />}
+        {showTranscript && <TranscriptPanel w={w} agenda={agenda} current={current} closed={closed} save={save} saveSession={saveSession} used={used} onUse={useLine} />}
       {studio && current && <FlowStudio model={model} repo={repo} apply={apply} process={current} onClose={() => { setStudio(false); setFlowNote(null); }}
-        note={flowNote ? { text: flowNote.text, onUsed: code => { setMark({ i: flowNote.i, as: "flow change " + code }); setFlowNote(null); } } : null} />}
+        note={flowNote ? { text: flowNote.text, onUsed: (_code, name) => { setMark({ i: flowNote.i, as: "Flow change: " + name }); setFlowNote(null); } } : null} />}
+      {licenceFor && <LicenceDialog model={model} quote={sourceLine(licenceFor)} onClose={() => setLicenceFor(null)} onSave={(role, type, people) => {
+        const u = licenceFor; setLicenceFor(null);
+        apply(m => { const r = m.roles.find(x => x.id === role.id) || role; return repo.saveRole(m, r, { licenceType: type, licenceUsers: people, licenceNote: (r.licenceNote ? r.licenceNote + "\n" : "") + sourceLine(u) }); });
+        setMark({ i: u.i, as: "Licence: " + role.name + ", " + LICENCE_LABEL[type] });
+      }} />}
       {image && (
         <Dialog open onOpenChange={(_, d) => { if (!d.open) setImage(null); }}>
           <DialogSurface style={{ maxWidth: "90vw" }}><DialogBody>

@@ -17,11 +17,18 @@ for (const name of ["codes", "types", "session", "rules", "documents"]) {
     .replace(/from "\.\/(\w+)"/g, 'from "./$1.mjs"');
   writeFileSync(join(out, name + ".mjs"), js);
 }
+// the flow editor's placement rules live next to the canvas; they import only shape.ts and the codes
+for (const name of ["shape", "placement"]) {
+  const js = ts.transpileModule(readFileSync(join(root, "pcf/ProcessMap/src/ui/flow", name + ".ts"), "utf8"), { compilerOptions: { module: "ESNext", target: "ES2020" } }).outputText
+    .replace(/from "\.\.\/\.\.\/domain\/(\w+)"/g, 'from "./$1.mjs"').replace(/from "\.\/(\w+)"/g, 'from "./$1.mjs"');
+  writeFileSync(join(out, name + ".mjs"), js);
+}
 const load = name => import(pathToFileURL(join(out, name + ".mjs")));
 const C = await load("codes");
 const R = await load("rules");
 const S = await load("session");
 const D = await load("documents");
+const P = await load("placement");
 
 let n = 0;
 const req = p => ({ id: "r" + ++n, reqId: "", name: "n", description: "d", processId: "p1", origin: C.REQ_ORIGIN.captured, originRef: "", originFlowId: null, review: false,
@@ -225,15 +232,84 @@ test("lines go under the business process being discussed at that moment", () =>
   assert.deepEqual(S.linesByVisit(u, [], null), {});
 });
 
-test("highlights hedging, must and licence words without overlaps", () => {
-  const k = t => S.marks(t).map(m => t.slice(m.start, m.end) + ":" + m.kind);
-  assert.deepEqual(k("Usually we must check, but not always."), ["Usually:hedge", "must:must", "not always:hedge"]);
-  assert.deepEqual(k("Subcontractors shouldn't need a full licence, read-only is fine."), ["licence:licence", "read-only:licence"]);
-  assert.deepEqual(k("Eigentlich machen wir das meistens so."), ["Eigentlich:hedge", "meistens:hedge"]);
+test("line signals: hedges in English and German, a longer hedge counts once, must and licence flags", () => {
+  const a = S.lineSignals("Usually we must check it, but it depends, not always.");
+  assert.deepEqual(a.hedges, ["usually", "it depends", "not always"]); assert.equal(a.must, true); assert.equal(a.licence, false);
+  assert.equal("Usually we must check it, but it depends, not always.".slice(a.spans[1].start, a.spans[1].end), "it depends");
+  const b = S.lineSignals("Eigentlich machen wir das meistens so, vielleicht ungefähr zehn.");
+  assert.deepEqual(b.hedges, ["eigentlich", "meistens", "vielleicht", "ungefähr"]);
+  const c = S.lineSignals("Subcontractors shouldn't need a full licence; read-only for the office, I think.");
+  assert.deepEqual(c.hedges, ["i think"]); assert.equal(c.licence, true);
+  assert.deepEqual(S.lineSignals("Someone from management should look into that, or something.").hedges, ["someone", "or something"]);
+  assert.deepEqual(S.lineSignals("Somewhere usuallyish").hedges, []); // whole words only
+});
+
+test("used lines: requirement number, open point, comment, then what the session recorded", () => {
+  const u = [{ at: 1, speaker: "Ana", text: "One." }, { at: 2, speaker: "Ben", text: "Two." }, { at: 3, speaker: "Ana", text: "Three." }, { at: 4, speaker: "Ben", text: "Four." }, { at: 5, speaker: "Ana", text: "Five." }, { at: 6, speaker: "Ben", text: "Six." }];
+  const m = S.usedLines(u, [{ reqId: "RQ-00003", verbatim: "[0:01] Ana: One." }], [{ text: "x", source: "[0:02] Ben: Two." }], { 3: "Flow change: Approve order", 4: "Licence: Technician, Team Members" }, [{ source: "[0:03] Ana: Three." }]);
+  assert.deepEqual([...m], [[0, "RQ-00003"], [1, "Open point"], [2, "Comment"], [3, "Flow change: Approve order"], [4, "Licence: Technician, Team Members"]]);
+  assert.equal(m.has(5), false);
+});
+
+test("visit keys: a process, or a process and one of its activities", () => {
+  assert.equal(S.processKeyOf("abc#P300"), "abc"); assert.equal(S.processKeyOf("abc"), "abc"); assert.equal(S.processKeyOf(null), "");
+  assert.equal(S.activityCodeOf("abc#P300"), "P300"); assert.equal(S.activityCodeOf("abc"), "");
+});
+
+test("the facilitator's agenda: prompts, minutes and a printable page", () => {
+  const acts = [{ name: "Receive request", decision: false }, { name: "Approved?", decision: true }, { name: "Plan visit", decision: false }];
+  const a = S.buildAgenda([
+    { key: "p1", code: "95.25.100", name: "Receive service requests", notUsed: false, appToday: "Spreadsheet", appTarget: "Field Service", disposition: "Transition", roles: ["Dispatcher"], scope: ["Emergency jobs <b>"], openQuestions: 2, activities: acts },
+    { key: "p2", code: "95.25.950", name: "Schedule frontline workers", notUsed: false, appToday: "", appTarget: "", disposition: "", roles: [], scope: [], openQuestions: 0, activities: [] },
+    { key: "p3", code: "95.35.100", name: "Old process", notUsed: true, appToday: "X", appTarget: "Y", disposition: "", roles: ["R"], scope: ["s"], openQuestions: 3, activities: acts },
+  ]);
+  const [x, y, z] = a.items;
+  assert.equal(x.minutes, 5 + Math.ceil(3 * 1.5) + 2 + 2); assert.equal(x.from, 0); assert.equal(y.from, x.to); assert.equal(y.minutes, 5); assert.equal(z.minutes, 2); assert.equal(a.total, x.minutes + 5 + 2);
+  assert.deepEqual(x.prompts, ["Do you do this? Who does it (Dispatcher)?", "Today in Spreadsheet: still right?", "After migration in Field Service: agreed?", "Planned: Transition. Agreed?", "In scope: Emergency jobs <b>",
+    "Decision \u201cApproved?\u201d: what happens on each outcome, and who decides?", "2 setup questions to answer", "What can't the standard do here, and why does it matter?"]);
+  assert.deepEqual(y.prompts.slice(0, 3), ["Do you do this? Who does it?", "Which system or tool is used today?", "Which system after migration?"]);
+  assert.deepEqual(z.prompts, ["Marked not used: confirm nobody does this."]);
+  assert.equal(x.chain, "Receive request \u2192 Approved? \u2192 Plan visit");
+  const html = S.agendaHtml("Service workshop", "8 Nov 2026", a);
+  assert.match(html, /^<!DOCTYPE html>/); assert.match(html, /1\. <span class="c">95\.25\.100<\/span> Receive service requests <span class="t">0\u201314 min<\/span>/);
+  assert.match(html, /Emergency jobs &lt;b&gt;/); assert.match(html, /3 business processes, 21 min/);
 });
 
 test("a session keeps its transcript start and captured lines", () => {
   const s = S.readSession(JSON.stringify({ processIds: ["p"], transcriptStart: "2026-11-08T10:00:00Z", captured: { 3: "RQ-00001" } }));
   assert.equal(s.transcriptStart, "2026-11-08T10:00:00Z"); assert.equal(s.captured["3"], "RQ-00001");
   assert.deepEqual(S.readSession("{}").captured, {});
+});
+
+// ---------- flow editor: a step on a branch of a choice ----------
+const st = (code, type, next, extra = {}) => ({ id: code, flowId: "f", code, name: code, type: C.SHAPE[type], func: "Lane", phase: "", next: next.map(([to, label = ""]) => ({ to, label })), description: "", change: C.DELTA.same, sort: 0, ...extra });
+const loopFlow = () => [st("P100", "start", [["P200"]]), st("P200", "activity", [["P300"]]), st("P300", "decision", [["P400", "Yes"], ["P200", "No"]]), st("P400", "end", [])];
+
+test("a step on the No branch takes the branch's place, even when the branch loops back", () => {
+  const before = loopFlow(), copy = JSON.stringify(before);
+  const out = P.addOnBranch(before, "P300", 1, st("P350", "activity", []));
+  assert.equal(JSON.stringify(before), copy); // the input is left as it was
+  const by = Object.fromEntries(out.map(x => [x.code, x]));
+  assert.deepEqual(by.P300.next, [{ to: "P400", label: "Yes" }, { to: "P350", label: "No" }]);
+  assert.deepEqual(by.P350.next, [{ to: "P200", label: "" }]);
+  assert.equal(by.P350.change, C.DELTA.added); assert.equal(by.P300.change, C.DELTA.changed);
+  assert.deepEqual(P.addOnBranch(before, "P300", 0, st("P350", "activity", [])).find(x => x.code === "P350").next, [{ to: "P400", label: "" }]);
+});
+
+test("a step on a branch refuses a missing branch or a code in use", () => {
+  assert.equal(P.addOnBranch(loopFlow(), "P300", 2, st("P350", "activity", [])), null);
+  assert.equal(P.addOnBranch(loopFlow(), "P300", -1, st("P350", "activity", [])), null);
+  assert.equal(P.addOnBranch(loopFlow(), "P300", 0, st("P200", "activity", [])), null);
+  assert.equal(P.addOnBranch(loopFlow(), "P999", 0, st("P350", "activity", [])), null);
+});
+
+test("a choice's loop back gets a stacked dot right of it; a plain step's loop back gets none", () => {
+  const steps = loopFlow().map(x => (x.code === "P400" ? st("P400", "activity", [["P200"]]) : x));
+  const pos = new Map([["P100", { x: 0, y: 0 }], ["P200", { x: 200, y: 0 }], ["P300", { x: 400, y: 0 }], ["P400", { x: 600, y: 0 }]]);
+  const g = { pos, back: new Set(["P300>P200", "P400>P200"]), W: 100, H: 40, ROW: 80 };
+  const list = P.slots(steps, g);
+  const loop = list.find(x => x.from === "P300" && x.to === "P200");
+  assert.ok(loop && loop.stacked); assert.equal(loop.x, 400 + 100 + 18); assert.equal(loop.y, 0 + 20 + 2 * 40); assert.equal(loop.label, "No");
+  assert.ok(!list.some(x => x.from === "P400" && x.to === "P200"));
+  assert.ok(list.some(x => x.from === "P300" && x.to === "P400" && !x.stacked));
 });

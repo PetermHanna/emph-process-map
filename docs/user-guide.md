@@ -37,7 +37,7 @@ The tree follows the Microsoft Business Process Catalog: end-to-end process > pr
 Two tabs: **Our process** and **Microsoft reference**.
 
 1. With no flow of our own yet, choose **Adapt the reference** (or **Start blank** when there is no reference).
-2. Drag activities from the palette onto the dots between activities. Select an activity to rename it, move it to another lane, change its shape or set where it goes next. Undo is available.
+2. Drag activities from the palette onto the dots between activities. Select an activity to rename it, move it to another lane, change its shape or set where it goes next. On a decision, the **+** next to each outcome adds a step on that branch (also on a branch that loops back). Undo is available.
 3. **Confirm** when it's right. For each real change from the reference, give a rationale or link a requirement that covers it. Rationales become draft requirements.
 4. **Reopen** to change a confirmed flow. **Back to reference** deletes our flow and the requirements it generated.
 5. **Play in the guide** opens a new tab and plays the flow you're looking at (our process or the Microsoft reference) step by step over the live app. The button needs the guide extension (below); without it, the button explains how to install it.
@@ -50,10 +50,10 @@ Capture a requirement, then open it to set MoSCoW, category, state, coverage by 
 
 Start a workshop for one end-to-end process in scope (or all of them). A workshop only covers what you've picked: the agenda starts with the business processes in scope, and Prepare lists only those, by area, to tick on or off. To discuss another process, put it in scope on **Our processes** first. It runs in seven phases:
 
-1. **Prepare**: participants and the business processes on the agenda.
+1. **Prepare**: participants and the business processes on the agenda. The **facilitator's agenda** below gives each business process its questions (who does it, which system today and after migration, each decision in the flow, open setup questions, what standard can't do) and its minutes, with **Print / PDF** and **.doc**.
 2. **Scope**: in or out.
 3. **Walk-through**: review, disposition, owner and applications per process.
-4. **Process flow**: opens the flow studio.
+4. **Process flow**: walk our process step by step (or **Adapt the reference** first). The step you click is where what's said lands: transcript lines show "› step", and requirements and comments made there are linked to the step. **Back to the whole process** returns to the process. **Open the flow studio** to change the flow.
 5. **Configuration**: the decisions for the current process.
 6. **Fit-gap**: capture requirements as people speak.
 7. **Summary**: the read-back in fixed phrases, action items, minutes and time per process. Close the workshop to lock it.
@@ -66,12 +66,13 @@ Teams doesn't give apps a live transcript, so you paste it in after the meeting 
 2. In the workshop, choose **Transcript** and paste. The preview says how many lines and speakers it read. Choose **Keep this transcript**.
 3. **Recording started at** places each line on the business process you were discussing at that moment, using the times you moved through the agenda. Fix the time if the recording started earlier or later. Switch on **All lines** to see everything.
 4. Each line can become one thing, once:
-   - **Capture**: a requirement. The capture box (Fit-gap) fills with the sentence and the speaker, and the requirement keeps the quoted line as *In their words*. **Don't keep** clears it.
-   - **Licence**: the same, with category *Licensing* (who needs which licence, how many, read-only).
-   - **Flow change**: opens the flow studio for the current process. Select the activity it's about and choose **Use the transcript line as the rationale**; it becomes a draft requirement when you confirm the flow.
+   - **Capture**: a requirement. The capture box (Fit-gap) fills with the sentence and the speaker, and the requirement keeps the quoted line as *In their words*. A line said on a flow step links to that step (**Whole process instead** undoes it). **Don't keep** clears it.
+   - **Comment**: a remark on the business process, or on the flow step it was said on. Comments show in the flow walk and in the flow studio's activity panel, where they can be deleted.
    - **Open point**: an action item in the Summary, with the quoted line, for contradictions and things someone has to find out.
+   - **Flow**: opens the flow studio for the current process. Select the activity it's about and choose **Use as this step's reason**; it becomes a draft requirement when you confirm the flow.
+   - **Licence**: pick the role, the licence type (Full user, Team Members, Read-only, Device, External) and how many people. It's saved on the role with the quoted line; **Settings** shows the licence per role and the totals per type.
 
-   A used line shows what it became, for example *Captured as RQ-00012*. Words that hint at variants (*usually*, *sometimes*, *meistens*), firm needs (*must*, *always*) and licences (*licence*, *read-only*) are highlighted.
+   A used line shows what it became, for example *Captured as RQ-00012*. Hedging words that hint at a variant or exception (*usually*, *sometimes*, *it depends*, *meistens*, *eigentlich*) are highlighted; lines with a firm need or about licences get a *must* or *licence* tag.
 
 **Screenshot** asks which screen, window or tab to capture and keeps one picture as a note on the workshop, named after the current business process. Recent screenshots show under the title; click one to open it.
 

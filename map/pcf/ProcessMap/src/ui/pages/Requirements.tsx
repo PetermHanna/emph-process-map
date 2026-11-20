@@ -14,17 +14,18 @@ import type { Repository } from "../../domain/repository";
 const coverageTone = (c: number | null) => (c === COVERAGE.gap ? "bad" : c === COVERAGE.standard ? "ok" : c == null ? "neutral" : "warn") as "bad" | "ok" | "neutral" | "warn";
 
 /** A line from a meeting transcript to capture: it fills the box, and is kept as the requirement's own words. */
-export interface CaptureFrom { key: string; text: string; who: string; verbatim: string; category?: number | null }
+export interface CaptureFrom { key: string; text: string; who: string; verbatim: string; category?: number | null; processId?: string | null; activityId?: string | null; activityName?: string }
 
 export function Capture({ model, repo, apply, processId, workshopId, onCaptured, from, onDropFrom }: { model: Model; repo: Repository; apply: Apply; processId?: string | null; workshopId?: string | null; onCaptured?: (r: Requirement) => void; from?: CaptureFrom | null; onDropFrom?: () => void }) {
   const [text, setText] = React.useState("");
   const [who, setWho] = React.useState("");
   const [pid, setPid] = React.useState<string | null>(processId ?? null);
   React.useEffect(() => setPid(processId ?? null), [processId]);
-  React.useEffect(() => { if (from) { setText(from.text); setWho(from.who); } }, [from?.key]);
+  const [act, setAct] = React.useState<{ id: string; name: string } | null>(null); // the flow step it was said on
+  React.useEffect(() => { if (from) { setText(from.text); setWho(from.who); if (from.processId) setPid(from.processId); setAct(from.activityId ? { id: from.activityId, name: from.activityName || "" } : null); } else setAct(null); }, [from?.key]);
   const go = () => apply(async m => {
-    const r = await repo.addRequirement(m, text, { processId: pid, workshopId: workshopId || null, raisedBy: who.trim(), verbatim: from?.verbatim || "", category: from?.category ?? null });
-    setText(""); setWho(""); onCaptured?.(r.requirement);
+    const r = await repo.addRequirement(m, text, { processId: pid, workshopId: workshopId || null, raisedBy: who.trim(), verbatim: from?.verbatim || "", category: from?.category ?? null, activityId: act?.id ?? null });
+    setText(""); setWho(""); setAct(null); onCaptured?.(r.requirement);
     return r.model;
   });
   return (
@@ -33,7 +34,13 @@ export function Capture({ model, repo, apply, processId, workshopId, onCaptured,
       {from && (
         <div data-emph="capture-from" style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "#475569", background: "#F8FAFC", borderLeft: "3px solid #94A3B8", padding: "4px 8px" }}>
           <span style={{ flexGrow: 1, fontStyle: "italic" }}>{from.verbatim}{from.category != null ? " · " + (CATEGORY_LABEL[from.category] || "") : ""}</span>
-          <Button size="small" appearance="transparent" onClick={() => { setText(""); setWho(""); onDropFrom?.(); }}>Don't keep</Button>
+          <Button size="small" appearance="transparent" onClick={() => { setText(""); setWho(""); setAct(null); onDropFrom?.(); }}>Don't keep</Button>
+        </div>
+      )}
+      {act && (
+        <div data-emph="capture-step" style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
+          <span>On flow step: <b>{act.name}</b></span>
+          <Button size="small" appearance="transparent" onClick={() => setAct(null)}>Whole process instead</Button>
         </div>
       )}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>

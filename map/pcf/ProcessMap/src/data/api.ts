@@ -31,6 +31,6 @@ export const SETS: Record<string, string> = {
   emph_processflow: "emph_processflows", emph_flowactivity: "emph_flowactivities", emph_configdecision: "emph_configdecisions",
   emph_requirement: "emph_requirements", emph_workshop: "emph_workshops", emph_signoff: "emph_signoffs", emph_signoffitem: "emph_signoffitems",
   emph_requirementlink: "emph_requirementlinks", emph_testrun: "emph_testruns", emph_reviewnote: "emph_reviewnotes",
-  annotation: "annotations",
+  annotation: "annotations", emph_comment: "emph_comments",
 };
 export const ref = (table: string, id: string) => "/" + SETS[table] + "(" + id + ")";

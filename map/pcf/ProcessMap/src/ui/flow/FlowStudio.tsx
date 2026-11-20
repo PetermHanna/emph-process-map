@@ -2,25 +2,26 @@
 import * as React from "react";
 import {
   OverlayDrawer, DrawerHeader, DrawerHeaderTitle, DrawerBody, Button, Spinner, Field, Input, Textarea, Dropdown, Option, OptionGroup,
-  Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent, DialogActions, TabList, Tab,
+  Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent, DialogActions, TabList, Tab, Tooltip,
 } from "@fluentui/react-components";
 import { Dismiss24Regular, Add16Regular, Delete16Regular, ArrowUp16Regular, ArrowDown16Regular, CheckmarkCircle20Regular, ArrowReset20Regular, Edit20Regular, Play20Regular } from "@fluentui/react-icons";
 import { C, useLook } from "../look";
 import { Pill, Problem, Apply } from "../kit";
 import { FlowCanvas, swimlaneLayout } from "./Canvas";
 import { FlowStep, toStep, toActivity, STEP_TYPE, CHANGE } from "./shape";
-import { moveBranch } from "./placement";
+import { moveBranch, addOnBranch } from "./placement";
 import { useGuide, playInGuide } from "./guide";
 import { SHAPE_LABEL, FLOW_STATE, REQ_ORIGIN } from "../../domain/codes";
 import { flowDeltas, unreachable, covers, nextActivityCode, FlowDelta } from "../../domain/rules";
 import { loadActivities, flowsOf, Repository, ResetPlan } from "../../domain/repository";
+import { ActivityNotes } from "../pages/WorkshopParts";
 import type { Model, BusinessProcess, Activity } from "../../domain/types";
 
 const DELTA_TONE: Record<number, "ok" | "warn" | "bad"> = { [CHANGE.added]: "ok", [CHANGE.changed]: "warn", [CHANGE.removed]: "bad" };
 const DELTA_TEXT: Record<number, string> = { [CHANGE.added]: "Added", [CHANGE.changed]: "Changed", [CHANGE.removed]: "Dropped" };
 
 /** A sentence from a workshop transcript that describes a change to the flow; it becomes an activity's rationale. */
-export interface FlowNote { text: string; onUsed: (code: string) => void }
+export interface FlowNote { text: string; onUsed: (code: string, name: string) => void }
 
 export function FlowStudio({ model, repo, apply, process: p, onClose, note }: { model: Model; repo: Repository; apply: Apply; process: BusinessProcess; onClose: () => void; note?: FlowNote | null }) {
   const l = useLook();
@@ -74,6 +75,16 @@ export function FlowStudio({ model, repo, apply, process: p, onClose, note }: { 
     const created = await store({ id: "", flowId: ours!.id, code, name: "New activity", type: STEP_TYPE.task, func: s.func, phase: s.phase, next: s.next, description: "", change: CHANGE.added, sort: s.sort + 1 });
     const prev = await store({ ...s, next: [{ to: code, label: "" }], change: s.change === CHANGE.unchanged ? CHANGE.changed : s.change });
     setActs(xs => (xs || []).map(x => (x.id === s.id ? prev : x)).concat(created));
+    setSel(code);
+  });
+  const addOnChoiceBranch = (s: FlowStep, i: number) => run(async () => {
+    remember();
+    const code = nextActivityCode(acts || []), target = (acts || []).find(x => x.code === s.next[i]?.to);
+    const res = addOnBranch(acts || [], s.code, i, { id: "", flowId: ours!.id, code, name: "New activity", type: STEP_TYPE.task, func: target && target.func ? target.func : s.func, phase: s.phase, next: [], description: "", change: CHANGE.added, sort: s.sort + 1 });
+    if (!res) return;
+    const created = await store(res.find(x => x.code === code)!);
+    const choice = await store(res.find(x => x.code === s.code)!);
+    setActs(xs => (xs || []).map(x => (x.code === s.code ? choice : x)).concat(created));
     setSel(code);
   });
   const remove = (s: FlowStep) => run(async () => {
@@ -181,8 +192,9 @@ export function FlowStudio({ model, repo, apply, process: p, onClose, note }: { 
             <div className={l.card}>
               {!cur ? <div className={l.muted}>{editable ? "Select an activity to edit it, or drag one from the palette." : view === "reference" ? "The Microsoft reference flow. Switch to Our process to adapt it." : "Confirmed. Reopen to change it."}</div>
                 : <ActivityPanel key={cur.code + cur.id} s={cur} all={shown} lanes={lanes} roles={model.roles.map(r => r.name)} editable={editable} original={view === "ours" ? refActs.map(toStep).find(x => x.code === cur.code) : undefined}
-                    onSave={patch => save(cur, patch)} onAddAfter={() => addAfter(cur)} onRemove={() => remove(cur)}
-                    note={view === "ours" && note ? { text: note.text, use: () => { save(cur, { reason: note.text }); note.onUsed(cur.code); } } : null} />}
+                    onSave={patch => save(cur, patch)} onAddAfter={() => addAfter(cur)} onAddOnBranch={i => addOnChoiceBranch(cur, i)} onRemove={() => remove(cur)}
+                    notes={view === "ours" && cur.id ? <ActivityNotes model={model} repo={repo} apply={apply} activityId={cur.id} /> : null}
+                    note={view === "ours" && note ? { text: note.text, use: () => { save(cur, { reason: note.text }); note.onUsed(cur.code, cur.name); } } : null} />}
             </div>
           </div>
         ) : <Spinner label="Loading the flow" />)}
@@ -252,9 +264,9 @@ export function FlowStudio({ model, repo, apply, process: p, onClose, note }: { 
   );
 }
 
-function ActivityPanel({ s, all, lanes, roles, editable, original, onSave, onAddAfter, onRemove, note }: {
+function ActivityPanel({ s, all, lanes, roles, editable, original, onSave, onAddAfter, onAddOnBranch, onRemove, note, notes }: {
   s: FlowStep; all: FlowStep[]; lanes: string[]; roles: string[]; editable: boolean; original?: FlowStep;
-  onSave: (p: Partial<FlowStep>) => void; onAddAfter: () => void; onRemove: () => void; note?: { text: string; use: () => void } | null;
+  onSave: (p: Partial<FlowStep>) => void; onAddAfter: () => void; onAddOnBranch: (i: number) => void; onRemove: () => void; note?: { text: string; use: () => void } | null; notes?: React.ReactNode;
 }) {
   const l = useLook();
   const live = all.filter(x => x.change !== CHANGE.removed);
@@ -288,6 +300,7 @@ function ActivityPanel({ s, all, lanes, roles, editable, original, onSave, onAdd
               <Dropdown disabled={!editable} size="small" style={{ minWidth: 0, flexGrow: 1 }} value={(back(k.to) ? "↩ " : "") + (all.find(x => x.code === k.to)?.name || k.to)} selectedOptions={[k.to]} onOptionSelect={(_, d) => setLink(i, { to: d.optionValue as string })}>
                 {targets.map(t => <Option key={t.code} value={t.code} text={t.name}>{(back(t.code) ? "↩ back to " : "") + t.name}</Option>)}
               </Dropdown>
+              {decision && <Tooltip content={"Add a step on the " + (k.label || (i === 0 ? "first" : "next")) + " branch"} relationship="label"><Button size="small" appearance="subtle" disabled={!editable} icon={<Add16Regular />} data-emph="branch-add" onClick={() => onAddOnBranch(i)} /></Tooltip>}
               {decision && <Button size="small" appearance="subtle" disabled={!editable || i === 0} icon={<ArrowUp16Regular />} aria-label="Up" onClick={() => onSave({ next: moveBranch(s.next, i, -1) })} />}
               {decision && <Button size="small" appearance="subtle" disabled={!editable || i === s.next.length - 1} icon={<ArrowDown16Regular />} aria-label="Down" onClick={() => onSave({ next: moveBranch(s.next, i, 1) })} />}
               <Button size="small" appearance="subtle" disabled={!editable || (decision && s.next.length <= 1)} icon={<Delete16Regular />} aria-label="Remove" onClick={() => onSave({ next: s.next.filter((_, x) => x !== i) })} />
@@ -296,12 +309,13 @@ function ActivityPanel({ s, all, lanes, roles, editable, original, onSave, onAdd
           {editable && targets.length > 0 && (decision || !s.next.length) && <Button size="small" appearance="transparent" icon={<Add16Regular />} style={{ alignSelf: "flex-start" }} onClick={() => onSave({ next: s.next.concat({ to: s.next[0]?.to || targets[0].code, label: decision && s.next.length === 1 ? "No" : "" }) })}>{decision ? "Add an outcome" : "Add a link"}</Button>}
         </div>
       </Field>
+      {notes}
       {s.reason && <Field label="Rationale"><div style={{ fontSize: 13 }}>{s.reason}</div></Field>}
-      {note && editable && s.type !== STEP_TYPE.start && <Button size="small" appearance="primary" data-emph="flow-note-use" onClick={note.use}>Use the transcript line as the rationale</Button>}
+      {note && editable && s.type !== STEP_TYPE.start && <Button size="small" appearance="primary" data-emph="flow-note-use" onClick={note.use}>Use as this step's reason</Button>}
       {original && s.change === CHANGE.changed && <div className={l.muted} style={{ fontSize: 12 }}>{"Reference: “" + original.name + "”, " + original.func}</div>}
       {editable && s.type !== STEP_TYPE.end && (
         <div className={l.row}>
-          <Button size="small" icon={<Add16Regular />} onClick={onAddAfter}>Add after</Button>
+          {!decision && <Button size="small" icon={<Add16Regular />} onClick={onAddAfter}>Add after</Button>}
           {s.type !== STEP_TYPE.start && s.change !== CHANGE.removed && <Button size="small" appearance="subtle" icon={<Delete16Regular />} onClick={onRemove}>Drop</Button>}
           {s.change === CHANGE.removed && <Button size="small" onClick={() => onSave({ change: CHANGE.changed })}>Restore</Button>}
         </div>

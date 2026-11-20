@@ -3,7 +3,7 @@ import { Gateway, Row, ref } from "../data/api";
 import { ORIGIN, REVIEW, FLOW_TYPE, FLOW_STATE, DELTA, SHAPE, DECISION_STATE, REQ_STATE, REQ_ORIGIN, SIGNOFF, ITEM, SESSION, ANSWER } from "./codes";
 import { isActive, freeze, FrozenItem, titleOf, requirementProblem, flowDeltas, coveredBy, deltaText, touchedByHand, canApprove, nextOwnCode, starterActivities } from "./rules";
 import { newSession, readSession } from "./session";
-import type { Model, EndToEnd, ProcessArea, BusinessProcess, Application, Role, ProcessFlow, Activity, ConfigDecision, Requirement, Workshop, SignOff, FlowLink, Screenshot } from "./types";
+import type { Model, EndToEnd, ProcessArea, BusinessProcess, Application, Role, ProcessFlow, Activity, ConfigDecision, Requirement, Workshop, SignOff, FlowLink, Screenshot, Comment } from "./types";
 
 const txt = (v: unknown) => (v == null ? "" : String(v));
 const json = <T>(v: unknown, fallback: T): T => { try { return v ? JSON.parse(String(v)) : fallback; } catch { return fallback; } };
@@ -18,11 +18,12 @@ const COLS = {
   area: "emph_processareaid,emph_name,emph_catalogname,emph_catalogcode,emph_summary,emph_rank,emph_inscope,_emph_endtoendprocess_value",
   process: "emph_businessprocessid,emph_name,emph_catalogname,emph_catalogcode,emph_summary,emph_rank,emph_inscope,emph_origin,emph_reviewstate,emph_disposition,emph_usercount,emph_comments,_emph_processarea_value,_emph_currentapplication_value,_emph_targetapplication_value,_emph_processowner_value",
   app: "emph_applicationid,emph_name,emph_category,emph_publisher,emph_ismicrosoft,emph_istarget,emph_status,emph_hosting,emph_summary",
-  role: "emph_roleid,emph_name,emph_summary,emph_rank,emph_headcount",
+  role: "emph_roleid,emph_name,emph_summary,emph_rank,emph_headcount,emph_licencetype,emph_licenceusers,emph_licencenote",
+  comment: "emph_commentid,emph_name,emph_activitycode,emph_author,emph_text,emph_source,createdon,_emph_businessprocess_value,_emph_flowactivity_value,_emph_workshop_value",
   processRole: "emph_processroleid,_emph_businessprocess_value,_emph_role_value",
   flow: "emph_processflowid,emph_name,emph_flowtype,emph_state,emph_catalogcode,emph_sourcelink,emph_comments,_emph_businessprocess_value,_emph_referenceflow_value",
   decision: "emph_configdecisionid,emph_name,emph_code,emph_answertype,emph_choices,emph_guidance,emph_menupath,emph_steps,emph_expected,emph_sourcelink,emph_sourcelabel,emph_rank,emph_answer,emph_state,emph_comments,_emph_businessprocess_value,_emph_application_value",
-  requirement: "emph_requirementid,emph_reqid,emph_name,emph_description,emph_moscow,emph_category,emph_raisedby,emph_verbatim,emph_owner,emph_state,emph_coverage,emph_size,emph_resolution,emph_resolvedby,emph_resolvedon,emph_origin,emph_originref,emph_review,_emph_businessprocess_value,_emph_originflow_value,_emph_evidenceflow_value,_emph_workshop_value,_emph_parentrequirement_value,_emph_duplicateof_value",
+  requirement: "emph_requirementid,emph_reqid,emph_name,emph_description,emph_moscow,emph_category,emph_raisedby,emph_verbatim,emph_owner,emph_state,emph_coverage,emph_size,emph_resolution,emph_resolvedby,emph_resolvedon,emph_origin,emph_originref,emph_review,_emph_businessprocess_value,_emph_originflow_value,_emph_evidenceflow_value,_emph_workshop_value,_emph_parentrequirement_value,_emph_duplicateof_value,_emph_flowactivity_value",
   workshop: "emph_workshopid,emph_name,emph_heldon,emph_facilitator,emph_participants,emph_minutes,emph_phase,emph_status,emph_sessiondata,emph_transcript,_emph_endtoendprocess_value",
   signOff: "emph_signoffid,emph_name,emph_version,emph_scopenote,emph_state,emph_approvedon,_emph_approver_value",
   activity: "emph_flowactivityid,emph_name,emph_activitycode,emph_shape,emph_lane,emph_stage,emph_links,emph_summary,emph_delta,emph_rationale,emph_rank,emph_x,emph_y,_emph_processflow_value",
@@ -30,10 +31,11 @@ const COLS = {
 
 export async function loadModel(g: Gateway): Promise<Model> {
   const q = (t: string, cols: string) => g.query(t, "?$select=" + cols);
-  const [ws, e2e, ar, bp, ap, ro, pr, fl, dc, rq, wk, so] = await Promise.all([
+  const [ws, e2e, ar, bp, ap, ro, pr, fl, dc, rq, wk, so, cm] = await Promise.all([
     q("emph_workspace", COLS.workspace + "&$top=1"), q("emph_endtoendprocess", COLS.e2e), q("emph_processarea", COLS.area), q("emph_businessprocess", COLS.process),
     q("emph_application", COLS.app), q("emph_role", COLS.role), q("emph_processrole", COLS.processRole), optional(q("emph_processflow", COLS.flow)),
     optional(q("emph_configdecision", COLS.decision)), optional(q("emph_requirement", COLS.requirement)), optional(q("emph_workshop", COLS.workshop)), optional(q("emph_signoff", COLS.signOff)),
+    optional(q("emph_comment", COLS.comment)),
   ]);
   return {
     workspace: { id: id(ws[0]?.emph_workspaceid), organisation: txt(ws[0]?.emph_organisation) },
@@ -42,7 +44,10 @@ export async function loadModel(g: Gateway): Promise<Model> {
     processes: bp.map(processFrom).sort(byRank),
     apps: ap.map(r => ({ id: r.emph_applicationid, name: txt(r.emph_name), category: r.emph_category ?? null, publisher: txt(r.emph_publisher), microsoft: !!r.emph_ismicrosoft, target: !!r.emph_istarget, status: r.emph_status ?? null, hosting: txt(r.emph_hosting), summary: txt(r.emph_summary) }))
       .sort((a, b) => a.name.localeCompare(b.name)),
-    roles: ro.map(r => ({ id: r.emph_roleid, name: txt(r.emph_name), summary: txt(r.emph_summary), rank: r.emph_rank ?? 0, headcount: r.emph_headcount ?? null })).sort(byRank),
+    roles: ro.map(r => ({ id: r.emph_roleid, name: txt(r.emph_name), summary: txt(r.emph_summary), rank: r.emph_rank ?? 0, headcount: r.emph_headcount ?? null,
+      licenceType: r.emph_licencetype ?? null, licenceUsers: r.emph_licenceusers ?? null, licenceNote: txt(r.emph_licencenote) })).sort(byRank),
+    comments: (cm || []).map(r => ({ id: r.emph_commentid, processId: id(r._emph_businessprocess_value), activityId: id(r._emph_flowactivity_value), activityCode: txt(r.emph_activitycode),
+      workshopId: id(r._emph_workshop_value), author: txt(r.emph_author), text: txt(r.emph_text), source: txt(r.emph_source), createdOn: r.createdon || "" })),
     processRoles: pr.map(r => ({ id: r.emph_processroleid, processId: r._emph_businessprocess_value, roleId: r._emph_role_value })),
     flows: fl.map(r => ({ id: r.emph_processflowid, processId: r._emph_businessprocess_value, name: txt(r.emph_name), type: r.emph_flowtype ?? FLOW_TYPE.reference, state: r.emph_state ?? FLOW_STATE.draft, code: txt(r.emph_catalogcode), sourceLink: txt(r.emph_sourcelink), comments: txt(r.emph_comments), referenceId: id(r._emph_referenceflow_value) })),
     decisions: dc.map(decisionFrom).sort(byRank),
@@ -69,7 +74,7 @@ const requirementFrom = (r: Row): Requirement => ({
   origin: r.emph_origin ?? REQ_ORIGIN.captured, originRef: txt(r.emph_originref), originFlowId: id(r._emph_originflow_value), review: !!r.emph_review,
   moscow: r.emph_moscow ?? null, category: r.emph_category ?? null, raisedBy: txt(r.emph_raisedby), verbatim: txt(r.emph_verbatim), owner: txt(r.emph_owner), state: r.emph_state ?? null,
   coverage: r.emph_coverage ?? null, size: r.emph_size ?? null, evidenceFlowId: id(r._emph_evidenceflow_value), resolution: txt(r.emph_resolution), resolvedBy: txt(r.emph_resolvedby), resolvedOn: r.emph_resolvedon || null,
-  workshopId: id(r._emph_workshop_value), parentId: id(r._emph_parentrequirement_value), duplicateOfId: id(r._emph_duplicateof_value),
+  workshopId: id(r._emph_workshop_value), parentId: id(r._emph_parentrequirement_value), duplicateOfId: id(r._emph_duplicateof_value), activityId: id(r._emph_flowactivity_value),
 });
 
 export async function loadActivities(g: Gateway, flowId: string): Promise<Activity[]> {
@@ -216,7 +221,7 @@ export class Repository {
   }
   async saveRole(m: Model, r: Role, patch: Partial<Role>): Promise<Model> {
     const n = { ...r, ...patch };
-    const data = { emph_name: n.name, emph_summary: n.summary || null, emph_rank: n.rank, emph_headcount: n.headcount };
+    const data = { emph_name: n.name, emph_summary: n.summary || null, emph_rank: n.rank, emph_headcount: n.headcount, emph_licencetype: n.licenceType ?? null, emph_licenceusers: n.licenceUsers ?? null, emph_licencenote: n.licenceNote || null };
     if (!r.id) { n.id = await this.g.insert("emph_role", data); return { ...m, roles: m.roles.concat(n).sort(byRank) }; }
     await this.g.patch("emph_role", r.id, data);
     return { ...m, roles: m.roles.map(x => (x.id === r.id ? n : x)) };
@@ -262,6 +267,7 @@ export class Repository {
     const data: Row = requirementColumns(r);
     if (r.processId) data["emph_BusinessProcess@odata.bind"] = ref("emph_businessprocess", r.processId);
     if (r.workshopId) data["emph_Workshop@odata.bind"] = ref("emph_workshop", r.workshopId);
+    if (r.activityId) data["emph_FlowActivity@odata.bind"] = ref("emph_flowactivity", r.activityId);
     if (r.originFlowId) data["emph_OriginFlow@odata.bind"] = ref("emph_processflow", r.originFlowId);
     r.id = await this.g.insert("emph_requirement", data);
     // Dataverse numbers it, so read the number back.
@@ -393,6 +399,20 @@ export class Repository {
     await this.g.patch("emph_workshop", w.id, { emph_heldon: n.heldOn, emph_facilitator: n.facilitator || null, emph_participants: n.participants || null, emph_minutes: n.minutes || null, emph_phase: n.phase, emph_status: n.status, emph_sessiondata: JSON.stringify(n.session), ...("transcript" in patch ? { emph_transcript: n.transcript || null } : {}) });
     return { ...m, workshops: m.workshops.map(x => (x.id === w.id ? n : x)) };
   }
+  // ---------- comments ----------
+  async addComment(m: Model, c: Omit<Comment, "id" | "createdOn">): Promise<Model> {
+    const data: Row = { emph_name: (c.text || "Comment").slice(0, 300), emph_activitycode: c.activityCode || null, emph_author: c.author || null, emph_text: c.text, emph_source: c.source || null };
+    if (c.processId) data["emph_BusinessProcess@odata.bind"] = ref("emph_businessprocess", c.processId);
+    if (c.activityId) data["emph_FlowActivity@odata.bind"] = ref("emph_flowactivity", c.activityId);
+    if (c.workshopId) data["emph_Workshop@odata.bind"] = ref("emph_workshop", c.workshopId);
+    const n: Comment = { ...c, id: await this.g.insert("emph_comment", data), createdOn: new Date().toISOString() };
+    return { ...m, comments: m.comments.concat(n) };
+  }
+  async deleteComment(m: Model, c: Comment): Promise<Model> {
+    await this.g.drop("emph_comment", c.id);
+    return { ...m, comments: m.comments.filter(x => x.id !== c.id) };
+  }
+
   /** A screenshot taken during a workshop, kept as a note (annotation) on it. `jpeg` is base64 without the data: prefix. */
   async addScreenshot(w: Workshop, subject: string, jpeg: string): Promise<Screenshot> {
     const at = new Date().toISOString();

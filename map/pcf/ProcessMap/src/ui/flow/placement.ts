@@ -20,8 +20,13 @@ export function slots(steps: FlowStep[], g: Geometry, moving?: string | null): S
     const seen = new Map<string, number>();
     a.next.forEach((l, i) => {
       const b = by.get(l.to); const k = seen.get(l.to) || 0; seen.set(l.to, k + 1);
-      if (!b || g.back.has(a.code + ">" + l.to) || a.code === moving || l.to === moving) return;
+      if (!b || a.code === moving || l.to === moving) return;
       const pa = g.pos.get(a.code), pb = g.pos.get(b.code); if (!pa || !pb) return;
+      if (g.back.has(a.code + ">" + l.to)) {
+        // a branch of a choice that loops back: a dot just right of the choice, half a row down per branch; a plain step's loop has none
+        if (a.type === STEP_TYPE.decision) out.push({ id: a.code + ">" + l.to + ">" + k, from: a.code, to: l.to, k, x: pa.x + g.W + 18, y: pa.y + g.H / 2 + (i + 1) * g.ROW / 2, label: l.label, stacked: true });
+        return;
+      }
       const x = (pa.x + g.W + pb.x) / 2;
       // branches of a choice that share their target are stacked under the choice, in branch order
       const shared = a.type === STEP_TYPE.decision && a.next.filter(z => z.to === l.to).length > 1;
@@ -176,6 +181,21 @@ export function place(steps: FlowStep[], what: { code: string } | { type: number
   const changed = out.filter(s => { const o = steps.find(x => x.code === s.code); return !o || o.func !== s.func || JSON.stringify(o.next) !== JSON.stringify(s.next); }).map(s => s.code);
   out.forEach(s => { if (changed.includes(s.code) && s.change === CHANGE.unchanged) s.change = CHANGE.changed; });
   return { steps: out, changed, created };
+}
+
+/**
+ * A new step on one branch of a choice: the branch (keeping its label) now goes to the new step, and the new step goes
+ * where the branch went, even back to an earlier step. The new step is added, the choice changed. Null for a branch that
+ * doesn't exist or a code already in use; the input is left as it was.
+ */
+export function addOnBranch(steps: FlowStep[], choiceCode: string, branch: number, step: FlowStep): FlowStep[] | null {
+  const me = steps.find(s => s.code === choiceCode);
+  if (!me || !Number.isInteger(branch) || branch < 0 || branch >= me.next.length || steps.some(s => s.code === step.code)) return null;
+  const out = clone(steps), c = out.find(s => s.code === choiceCode)!, old = c.next[branch];
+  c.next[branch] = { to: step.code, label: old.label };
+  if (c.change === CHANGE.unchanged) c.change = CHANGE.changed;
+  out.push({ ...step, next: old.to ? [{ to: old.to, label: "" }] : [], change: CHANGE.added });
+  return out;
 }
 
 /** Branch editing in the properties of a choice. */

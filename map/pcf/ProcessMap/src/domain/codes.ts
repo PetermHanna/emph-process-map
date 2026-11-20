@@ -40,6 +40,9 @@ export const SIZE_LABEL = set("XS", "S", "M", "L", "XL");
 export const REQ_ORIGIN = keys("captured", "flow", "decision", "scope", "process");
 export const REQ_ORIGIN_LABEL = set("Captured", "Flow change", "Configuration decision", "Scope change", "Process decision");
 
+export const LICENCE = keys("full", "teamMembers", "readOnly", "device", "external");
+export const LICENCE_LABEL = set("Full user", "Team Members", "Read-only", "Device", "External (no licence)");
+
 export const SESSION = keys("open", "closed");
 export const SIGNOFF = keys("draft", "review", "approved", "superseded");
 export const SIGNOFF_LABEL = set("Draft", "In review", "Approved", "Superseded");

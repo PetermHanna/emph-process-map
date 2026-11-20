@@ -12,7 +12,7 @@ Use a Dataverse environment of your own (a trial or a sandbox is fine). The inst
 It creates:
 
 - Publisher `emphprocessmap` (prefix `emph`, choice values from 582100000) and the unmanaged solution `EMPHProcessMap`.
-- 17 tables (see [architecture](architecture.md)), each with a main form and a default view.
+- 18 tables (see [architecture](architecture.md)), each with a main form and a default view.
 - Web resources `emph_/open.html` and `emph_/icon.svg`.
 - The model-driven app **EMPH Process Map**.
 - One workspace record, which hosts the component.

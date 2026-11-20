@@ -150,14 +150,79 @@ export function linesByVisit(u: Utterance[], visits: Visit[], startIso: string |
   return out;
 }
 
-/** Words worth a second look: hedging (a variant or an exception), must and need, licences. */
-export const MARKS: { kind: "hedge" | "must" | "licence"; re: RegExp }[] = [
-  { kind: "hedge", re: /\b(usually|sometimes|maybe|perhaps|normally|mostly|not always|it depends|eigentlich|meistens|manchmal|normalerweise|vielleicht|kommt darauf an)\b/gi },
-  { kind: "must", re: /\b(must|need to|needs to|have to|has to|required|mandatory|always|never|muss|müssen|brauchen|immer|nie)\b/gi },
-  { kind: "licence", re: /\b(licen[cs]es?|licen[cs]ed|seats?|read-only|named users?|Lizenz(?:en)?)\b/gi },
-];
-export function marks(text: string): { start: number; end: number; kind: string }[] {
-  const out: { start: number; end: number; kind: string }[] = [];
-  for (const { kind, re } of MARKS) for (const m of text.matchAll(re)) out.push({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length, kind });
-  return out.sort((a, b) => a.start - b.start).filter((m, i, a) => !a.slice(0, i).some(x => x.end > m.start));
+/** A visit key is a business process id, or "processId#activityCode" while walking its flow. */
+export const processKeyOf = (key: string | null | undefined) => String(key || "").split("#")[0];
+export const activityCodeOf = (key: string | null | undefined) => { const k = String(key || ""); const i = k.indexOf("#"); return i < 0 ? "" : k.slice(i + 1); };
+
+// ---------- what a transcript line says ----------
+const HEDGES = ["usually", "sometimes", "maybe", "probably", "perhaps", "normally", "mostly", "not always", "kind of", "sort of", "more or less", "i think", "i guess", "it depends",
+  "somehow", "or something", "someone", "somebody", "meistens", "manchmal", "eigentlich", "vielleicht", "ungefähr", "normalerweise", "irgendwie", "kommt darauf an", "jemand", "glaube ich"];
+// longest first, so "it depends" is one hedge and "not always" isn't also counted as something shorter
+const HEDGE_RE = new RegExp("(?<![\\p{L}])(" + HEDGES.slice().sort((a, b) => b.length - a.length).map(h => h.replace(/ /g, "\\s+")).join("|") + ")(?![\\p{L}])", "giu");
+const MUST_RE = /(?<![\p{L}])(must|need to|needs to|have to|has to|required|mandatory|muss|müssen|brauchen|zwingend)(?![\p{L}])/iu;
+const LICENCE_RE = /(?<![\p{L}])(licen[cs]es?|licen[cs]ed|licensing|seats?|read-only|named users?|team members|lizenz(?:en)?)(?![\p{L}])/iu;
+
+/** Hedging words (with where they are), and whether the line states a must or need, or talks about licences. */
+export function lineSignals(text: string): { hedges: string[]; spans: { start: number; end: number }[]; must: boolean; licence: boolean } {
+  const spans: { start: number; end: number }[] = [], hedges: string[] = [];
+  for (const m of String(text || "").matchAll(HEDGE_RE)) { spans.push({ start: m.index ?? 0, end: (m.index ?? 0) + m[0].length }); hedges.push(m[0].toLowerCase().replace(/\s+/g, " ")); }
+  return { hedges, spans, must: MUST_RE.test(text || ""), licence: LICENCE_RE.test(text || "") };
+}
+
+/**
+ * What each transcript line became: a requirement number (its quoted line), "Open point" (an action item's source),
+ * "Comment" (a comment's source), or what the session recorded ("Flow change: Approve order", "Licence: Technician, Team Members").
+ */
+export function usedLines(lines: Utterance[], requirements: { reqId: string; verbatim: string }[], openItems: { source?: string }[], used: Record<string, string> = {}, comments: { source: string }[] = []): Map<number, string> {
+  const out = new Map<number, string>();
+  lines.forEach((u, i) => {
+    const q = sourceLine(u);
+    const r = requirements.find(x => x.verbatim === q);
+    const label = r ? r.reqId || "Requirement" : openItems.some(a => a.source === q) ? "Open point" : comments.some(c => c.source === q) ? "Comment" : used[String(i)] || "";
+    if (label) out.set(i, label);
+  });
+  return out;
+}
+
+// ---------- the facilitator's agenda ----------
+export interface AgendaBlock {
+  key: string; code: string; name: string; notUsed: boolean; appToday: string; appTarget: string; disposition: string;
+  roles: string[]; scope: string[]; openQuestions: number; activities: { name: string; decision: boolean }[];
+}
+export interface AgendaItem { key: string; code: string; name: string; from: number; to: number; minutes: number; prompts: string[]; chain: string }
+
+/** Prompts and minutes per business process, one after the other. */
+export function buildAgenda(blocks: AgendaBlock[]): { items: AgendaItem[]; total: number } {
+  let at = 0;
+  const items = blocks.map(b => {
+    const prompts: string[] = [];
+    let minutes: number;
+    if (b.notUsed) { prompts.push("Marked not used: confirm nobody does this."); minutes = 2; }
+    else {
+      prompts.push("Do you do this? Who does it" + (b.roles.length ? " (" + b.roles.join(", ") + ")" : "") + "?");
+      prompts.push(b.appToday ? "Today in " + b.appToday + ": still right?" : "Which system or tool is used today?");
+      prompts.push(b.appTarget ? "After migration in " + b.appTarget + ": agreed?" : "Which system after migration?");
+      if (b.disposition) prompts.push("Planned: " + b.disposition + ". Agreed?");
+      if (b.scope.length) prompts.push("In scope: " + b.scope.join("; "));
+      b.activities.filter(a => a.decision).forEach(a => prompts.push("Decision “" + a.name + "”: what happens on each outcome, and who decides?"));
+      if (b.openQuestions) prompts.push(b.openQuestions + " setup question" + (b.openQuestions === 1 ? "" : "s") + " to answer");
+      prompts.push("What can't the standard do here, and why does it matter?");
+      minutes = 5 + Math.ceil(b.activities.length * 1.5) + b.openQuestions + (b.scope.length ? 2 : 0);
+    }
+    const item = { key: b.key, code: b.code, name: b.name, from: at, to: at + minutes, minutes, prompts, chain: b.notUsed ? "" : b.activities.map(a => a.name).join(" → ") };
+    at += minutes;
+    return item;
+  });
+  return { items, total: at };
+}
+
+const htmlText = (s: string) => String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+/** The agenda as one printable page (also saved as .doc). */
+export function agendaHtml(title: string, sub: string, a: { items: AgendaItem[]; total: number }): string {
+  const rows = a.items.map((x, i) => `<div class="it"><h2>${i + 1}. ${x.code ? `<span class="c">${htmlText(x.code)}</span> ` : ""}${htmlText(x.name)} <span class="t">${x.from}–${x.to} min</span></h2>`
+    + `<ul>${x.prompts.map(p => `<li>${htmlText(p)}</li>`).join("")}</ul>${x.chain ? `<p class="f">Flow: ${htmlText(x.chain)}</p>` : ""}</div>`).join("");
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${htmlText(title)}</title><style>body{font-family:'Segoe UI',Arial,sans-serif;color:#1E293B;margin:24px}h1{font-size:20px;margin:0}`
+    + `.s{color:#64748B;margin:4px 0 16px}.it{break-inside:avoid;border-top:1px solid #E2E8F0;padding:8px 0}h2{font-size:15px;margin:0 0 4px}.c{color:#64748B;font-family:Consolas,monospace;font-size:12px}`
+    + `.t{color:#0D9488;font-weight:400;font-size:13px}ul{margin:4px 0;padding-left:20px}li{margin:2px 0}.f{color:#64748B;font-size:12px;margin:4px 0 0}</style></head>`
+    + `<body><h1>${htmlText(title)}</h1><div class="s">${htmlText(sub)}${sub ? " · " : ""}${a.items.length} business processes, ${a.total} min</div>${rows}</body></html>`;
 }
