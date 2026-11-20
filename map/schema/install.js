@@ -75,7 +75,7 @@ window.__emph = { log: [], done: false, error: null };
   businessApprovalState: ["New", "Ready for review", "In review", "Approved", "Rejected"],
   processType: ["Setup", "Master data", "Transactional", "Analytical", "Governance"],
 
-  setHow: ["Workshop", "Direct", "Migration", "Proposal", "Restore"],
+  setHow: ["Workshop", "Direct", "Migration", "Proposal", "Restore", "AI accepted"],
   systemDecision: ["Keep", "Migrate", "Retire"],
   raidType: ["Risk", "Assumption", "Issue", "Decision", "Action item", "Change request"],
   raidStatus: ["Open", "In progress", "Closed", "Proposed", "Decided", "Withdrawn"],
@@ -83,8 +83,9 @@ window.__emph = { log: [], done: false, error: null };
   licenceType: ["Full", "Team Members", "Operations - Activity", "Device", "None"],
   requirementOrigin: ["Captured", "Flow change", "Configuration decision", "Scope change", "Process decision"],
   workshopKind: ["Discovery", "Scenario board", "Storyline review", "Deep dive"],
-  proposalStatus: ["Proposed", "Accepted", "Edited", "Rejected"],
-  proposalSource: ["Transcript", "Screenshot", "Document"],
+  proposalStatus: ["Suggested", "Accepted", "Edited", "Rejected"],
+  proposalSource: ["Transcript", "Screenshot", "Document", "Drawing"],
+  aiConfidence: ["High", "Medium", "Low"],
   };
   // LISTS-END
   const choice = (name, t, options) => ({ '@odata.type': NS + 'PicklistAttributeMetadata', ...col(name, t),
@@ -143,9 +144,10 @@ window.__emph = { log: [], done: false, error: null };
     ['emph_History', 'History', 'History', 'One row per changed value, insert only: what changed, from what to what, how and by whom.', [
       text('Table', 'Table', 50), text('RowId', 'Row', 50), text('Field', 'Field', 100), note('OldValue', 'Old value', 2000), note('NewValue', 'New value', 2000),
       pick('How', 'How', 'setHow'), text('By', 'By'), text('WorkshopName', 'Agreed in workshop', 300)]],
-    ['emph_Proposal', 'Proposal', 'Proposals', 'A suggested change (for example from AI analysis of a transcript), with its quotes. Nothing changes until a person accepts it.', [
+    ['emph_Proposal', 'Proposal', 'Proposals', 'A change suggested by the AI analysis of a workshop or of documents, with its quotes. Nothing changes until a person accepts it.', [
       text('TargetTable', 'Table', 50), text('TargetRowId', 'Row', 50), text('Field', 'Field', 100), note('CurrentValue', 'Current value', 4000), note('ProposedValue', 'Proposed value', 4000),
-      note('Quotes', 'Quotes', 20000), pick('Source', 'Source', 'proposalSource'), pick('Status', 'Status', 'proposalStatus'), note('Reason', 'Reason', 4000), text('DecidedBy', 'Decided by'), stamp('DecidedOn', 'Decided on')]],
+      note('Quotes', 'Quotes (JSON)', 20000), pick('Source', 'Source', 'proposalSource'), pick('Status', 'Status', 'proposalStatus'), note('Reason', 'Reason', 4000), text('DecidedBy', 'Decided by'), stamp('DecidedOn', 'Decided on'),
+      text('Run', 'AI run', 60), pick('Confidence', 'Confidence', 'aiConfidence'), note('Details', 'Details (JSON)', 100000)]],
     ['emph_Workshop', 'Workshop', 'Workshops', 'A workshop with the people who run the processes.', [
       date('HeldOn', 'Date'), text('Facilitator', 'Facilitator'), note('Participants', 'Participants', 20000), note('Minutes', 'Minutes', 20000), whole('Phase', 'Phase'),
       choice('Status', 'Status', ['Open', 'Closed']), pick('MicrosoftWorkshopType', 'Microsoft workshop type', 'microsoftWorkshopType'), pick('SbdPhase', 'Success by Design phase', 'sbdPhase'),
@@ -266,7 +268,7 @@ window.__emph = { log: [], done: false, error: null };
     emph_requirement: [['emph_reqid', 'emph_name', 'emph_item', 'emph_priority', 'emph_fitgapstatus', 'emph_approvalstate'], []],
     emph_raid: [['emph_name', 'emph_raidtype', 'emph_item', 'emph_owner', 'emph_targetdate', 'emph_status'], []],
     emph_history: [['emph_name', 'emph_oldvalue', 'emph_newvalue', 'emph_how', 'emph_by', 'createdon'], []],
-    emph_proposal: [['emph_name', 'emph_targettable', 'emph_field', 'emph_status', 'emph_item'], []],
+    emph_proposal: [['emph_name', 'emph_run', 'emph_targettable', 'emph_field', 'emph_status', 'emph_confidence', 'emph_item'], []],
     emph_workshop: [['emph_name', 'emph_heldon', 'emph_microsoftworkshoptype', 'emph_facilitator', 'emph_status'], [['emph_requirement', 'emph_workshop'], ['emph_raid', 'emph_workshop'], ['emph_comment', 'emph_workshop']]],
     emph_comment: [['emph_name', 'emph_item', 'emph_activitycode', 'emph_author'], []],
     emph_signoff: [['emph_name', 'emph_version', 'emph_state', 'emph_approvedon'], [['emph_signoffitem', 'emph_signoff']]],

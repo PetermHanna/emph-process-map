@@ -138,7 +138,7 @@ window.EMPH_LOAD = async (catalog, S, add, say = () => {}, flows = null, allFlow
     products: ['Agent 365', 'Azure', 'Business Central', 'Commerce', 'Contact Center', 'Microsoft Copilot Studio', 'Customer Insights', 'Customer Insights Data', 'Customer Insights Journey', 'Customer Service', 'Customer Voice', 'Field Service', 'Finance', 'Fraud Protection', 'Guides', 'Human Resources', 'Microsoft 365', 'Microsoft Cloud for Sustainability', 'Other', 'Power Apps', 'Power Automate', 'Power BI', 'Power Pages', 'Project', 'Project Operations', 'Remote Assist', 'Sales', 'Sales Copilot', 'SharePoint', 'Supply Chain Management', 'Teams'],
     systemDecision: ['Keep', 'Migrate', 'Retire'],
     licenceType: ['Full', 'Team Members', 'Operations - Activity', 'Device', 'None'],
-    setHow: ['Workshop', 'Direct', 'Migration', 'Proposal', 'Restore'],
+    setHow: ['Workshop', 'Direct', 'Migration', 'Proposal', 'Restore', 'AI accepted'],
     requirementOrigin: ['Captured', 'Flow change', 'Configuration decision', 'Scope change', 'Process decision'],
     businessApprovalState: ['New', 'Ready for review', 'In review', 'Approved', 'Rejected'],
   };

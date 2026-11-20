@@ -1,6 +1,7 @@
 // Workshop sessions: the rules with no Dataverse or UI, so they can be tested alone. The session order, board, storyline
 // review and Close are in workshop.ts; this file keeps visits, the read-back, the transcript and the facilitator's agenda.
 import { RunState, readRun } from "./workshop";
+import type { AiRun } from "./types";
 
 /** EMPH's seven phases before slice 3: Prepare and Summary became steps, the five between them the tabs of a business process line (workshop.ts). */
 export const PHASES: { name: string; discuss: string; produces: string }[] = [
@@ -22,6 +23,8 @@ export interface OpenPoint { text: string; owner: string; due: string; done?: bo
 export interface SessionState {
   processIds: string[]; current: string | null; visits: Visit[]; transcriptStart?: string | null; captured?: Record<string, string>; run?: RunState;
   review?: Record<string, ReviewEntry>; readBack?: ReadBackState;
+  /** the logs of this workshop's AI runs, newest first (the suggestions themselves are emph_proposal rows) */
+  ai?: AiRun[];
 }
 
 export const newSession = (processIds: string[] = []): SessionState => ({ processIds, current: null, visits: [] });
@@ -33,7 +36,8 @@ export function readSession(raw: string | null | undefined): SessionState {
     const obj = (v: any) => (v && typeof v === "object" && !Array.isArray(v) ? v : {});
     const run = readRun(j.run);
     return { processIds: arr(j.processIds), current: j.current || null, visits: arr(j.visits), transcriptStart: j.transcriptStart || null, captured: obj(j.captured), ...(run ? { run } : {}),
-      ...(Object.keys(obj(j.review)).length ? { review: obj(j.review) } : {}), ...(Object.keys(obj(j.readBack)).length ? { readBack: obj(j.readBack) } : {}) };
+      ...(Object.keys(obj(j.review)).length ? { review: obj(j.review) } : {}), ...(Object.keys(obj(j.readBack)).length ? { readBack: obj(j.readBack) } : {}),
+      ...(arr(j.ai).length ? { ai: arr(j.ai).filter((x: any) => x && typeof x.run === "string") } : {}) };
   } catch { return newSession(); }
 }
 

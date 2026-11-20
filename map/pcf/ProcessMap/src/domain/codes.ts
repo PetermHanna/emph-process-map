@@ -63,7 +63,7 @@ export type MsValue<K extends MsPicklist> = (typeof MS_PICKLISTS)[K][number];
 
 /** EMPH's own lists (not Microsoft's). The same position rule applies. */
 export const OURS = {
-  setHow: ["Workshop", "Direct", "Migration", "Proposal", "Restore"],
+  setHow: ["Workshop", "Direct", "Migration", "Proposal", "Restore", "AI accepted"],
   systemDecision: ["Keep", "Migrate", "Retire"],
   raidType: ["Risk", "Assumption", "Issue", "Decision", "Action item", "Change request"],
   raidStatus: ["Open", "In progress", "Closed", "Proposed", "Decided", "Withdrawn"],
@@ -71,8 +71,9 @@ export const OURS = {
   licenceType: ["Full", "Team Members", "Operations - Activity", "Device", "None"],
   requirementOrigin: ["Captured", "Flow change", "Configuration decision", "Scope change", "Process decision"],
   workshopKind: ["Discovery", "Scenario board", "Storyline review", "Deep dive"],
-  proposalStatus: ["Proposed", "Accepted", "Edited", "Rejected"],
-  proposalSource: ["Transcript", "Screenshot", "Document"],
+  proposalStatus: ["Suggested", "Accepted", "Edited", "Rejected"],
+  proposalSource: ["Transcript", "Screenshot", "Document", "Drawing"],
+  aiConfidence: ["High", "Medium", "Low"],
 } as const;
 export type OurList = keyof typeof OURS;
 export type ListName = MsPicklist | OurList;
@@ -105,7 +106,10 @@ export const SYSTEM = { keep: must("systemDecision", "Keep"), migrate: must("sys
 export const RAID = { risk: must("raidType", "Risk"), assumption: must("raidType", "Assumption"), issue: must("raidType", "Issue"), decision: must("raidType", "Decision"), action: must("raidType", "Action item"), change: must("raidType", "Change request") };
 export const RAID_STATUS = { open: must("raidStatus", "Open"), progress: must("raidStatus", "In progress"), closed: must("raidStatus", "Closed"),
   proposed: must("raidStatus", "Proposed"), decided: must("raidStatus", "Decided"), withdrawn: must("raidStatus", "Withdrawn") };
-export const HOW = { workshop: must("setHow", "Workshop"), direct: must("setHow", "Direct"), migration: must("setHow", "Migration"), proposal: must("setHow", "Proposal"), restore: must("setHow", "Restore") };
+export const HOW = { workshop: must("setHow", "Workshop"), direct: must("setHow", "Direct"), migration: must("setHow", "Migration"), proposal: must("setHow", "Proposal"), restore: must("setHow", "Restore"), ai: must("setHow", "AI accepted") };
+export const PROPOSAL = { suggested: must("proposalStatus", "Suggested"), accepted: must("proposalStatus", "Accepted"), edited: must("proposalStatus", "Edited"), rejected: must("proposalStatus", "Rejected") };
+export const PROPOSAL_SOURCE = { transcript: must("proposalSource", "Transcript"), screenshot: must("proposalSource", "Screenshot"), document: must("proposalSource", "Document"), drawing: must("proposalSource", "Drawing") };
+export const AI_CONFIDENCE = { high: must("aiConfidence", "High"), medium: must("aiConfidence", "Medium"), low: must("aiConfidence", "Low") };
 export const LICENCE = { full: must("licenceType", "Full"), teamMembers: must("licenceType", "Team Members"), activity: must("licenceType", "Operations - Activity"), device: must("licenceType", "Device"), none: must("licenceType", "None") };
 export const LICENCE_LABEL = labels("licenceType");
 export const PRODUCT_OTHER = must("products", "Other");

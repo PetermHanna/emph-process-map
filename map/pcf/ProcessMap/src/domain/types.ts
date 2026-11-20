@@ -3,12 +3,19 @@
 // (end-to-end process > process area > business process > scenario). Choice fields hold the option value (codes.ts).
 import type { SessionState } from "./session";
 import type { DemoLink } from "./workshop";
+import type { AiPromptSettings } from "./aiModels";
 
 /** A dated list price (per user or device per month) the person enters in Settings, with where it comes from. */
 export interface LicencePrice { product: string; kind: PriceKind; price: number; currency: string; validFrom: string; source: string }
 export type PriceKind = "Base" | "Attach" | "Team Members" | "Operations - Activity" | "Device";
 /** Settings kept as JSON on the workspace row (emph_settings): the price table, and demo links for the storyline review. */
-export interface WorkspaceSettings { prices: LicencePrice[]; demoLinks?: DemoLink[] }
+export interface WorkspaceSettings {
+  prices: LicencePrice[]; demoLinks?: DemoLink[];
+  /** the AI Builder prompt per job and model: its id or name (aiModels.ts); empty = the default name */
+  aiPrompts?: AiPromptSettings;
+  /** the logs of AI runs with no workshop (draft from documents), newest first, at most 10 */
+  aiRuns?: AiRun[];
+}
 export interface Workspace { id: string | null; organisation: string; settings: WorkspaceSettings }
 
 /** A level 1-4 item of the catalog, or our own (Author Project, Catalog status 50 - Custom). */
@@ -89,10 +96,47 @@ export interface Workshop {
 /** note: the note text, with the marks drawn on the picture (drawing.ts) */ export interface Screenshot { id: string; subject: string; createdOn: string; note?: string }
 export interface SignOff { id: string; name: string; version: number; scopeNote: string; state: number; approver: string; approvedOn: string | null }
 
+/** One quote of an AI suggestion: the source (S1 transcript, S2 pictures, S3... documents), where in it, the words; checked = found in the source by the app. */
+export interface AiEvidence { source: string; sourceName: string; where: string; quote: string; checked: boolean }
+/** What an AI suggestion carries for the review and for applying it (emph_proposal.emph_details, JSON). */
+export interface ProposalDetails {
+  /** the change-set item: its ref in the run, what it is and does, its target and parent as the answer named them */
+  ref: string; object: string; op: string; target: string; parent: string;
+  /** the fields to apply, as the answer gave them (after the checks); `edited` is the reviewer's own words */
+  fields: Record<string, string>; edited?: string;
+  /** the level of what it changes: "Confirmed" shows the badge "changes a confirmed value" */
+  level: "Draft" | "Confirmed" | "";
+  /** the review segment: "org", an end-to-end code, an area code, or "flow:<flow id>" */
+  segment: string; segmentTitle: string;
+  /** a flow step: the flow, its process item and the step code; an item under a process made in this run: that ref */
+  flowId?: string; processId?: string; stepCode?: string; parentRef?: string;
+  confidence: string; quotesChecked: number; quotesUnchecked: number;
+  /** a field the object does not have: shown, never applied */ notApplied?: Record<string, string>;
+  /** accepting it records it as a comment, with this reason */ keptAsNote?: string;
+}
+/** An AI suggestion (emph_proposal). Nothing changes until a person accepts it. */
+export interface Proposal {
+  id: string; name: string; run: string; workshopId: string | null; itemId: string | null;
+  targetTable: string; targetRowId: string; field: string; current: string; proposed: string;
+  evidence: AiEvidence[]; source: number | null; status: number; reason: string; decidedBy: string; decidedOn: string | null; confidence: number | null;
+  details: ProposalDetails; createdOn: string;
+}
+/** The log of one AI run: what was sent, how long it took, what the checks dropped, what was already so, the questions. */
+export interface AiRun {
+  run: string; at: string; task: "workshop" | "draft"; workshopId: string | null; model: string; seconds: number; estimate: string;
+  calls: { name: string; ok: boolean; error: string; seconds: number | null }[];
+  sources: { id: string; kind: string; name: string }[];
+  summary: string; kept: number; proposals: number;
+  dropped: { ref: string; object: string; reason: string; text: string; quotes: { source: string; where: string; quote: string }[] }[];
+  skipped: { ref: string; object: string; why: string; text: string }[];
+  questions: { unit: string; text: string; why: string }[];
+  problems: string[];
+}
+
 export interface Model {
   workspace: Workspace;
   items: ProcessItem[]; systems: CurrentSystem[]; roles: Role[]; itemRoles: ItemRole[];
   flows: ProcessFlow[]; decisions: ConfigDecision[];
   requirements: Requirement[]; raids: Raid[]; workshops: Workshop[]; signOffs: SignOff[];
-  comments: Comment[]; history: HistoryRow[];
+  comments: Comment[]; history: HistoryRow[]; proposals: Proposal[];
 }

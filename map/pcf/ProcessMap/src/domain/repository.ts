@@ -3,16 +3,17 @@
 import { Gateway, Row, ref } from "../data/api";
 import {
   FLOW_TYPE, FLOW_STATE, DELTA, SHAPE, DECISION_STATE, REQ_ORIGIN, SIGNOFF, ITEM, SESSION, ANSWER, SCOPE, APPROVAL, AUTHOR, CATALOG_CUSTOM,
-  HOW, RAID, RAID_STATUS, PRODUCT_OTHER, LICENCE, labelOf, option,
+  HOW, RAID, RAID_STATUS, PRODUCT_OTHER, LICENCE, PROPOSAL, FIT_GAP, labelOf, option,
 } from "./codes";
 import {
   isActive, freeze, FrozenItem, titleOf, requirementProblem, flowDeltas, coveredBy, deltaText, touchedByHand, canApprove, nextOwnCode, starterActivities,
   inScope, childrenOf, ancestorsOf, descendantsOf, levelUp, fitGapProblem, scopeDecided, scopeProblem, fitGapLevel, isOff, HISTORY_FIELDS, HistoryField, historyText,
-  restorePatch, raidProblem, raidStart, changeRequestFor, Difference,
+  restorePatch, raidProblem, raidStart, changeRequestFor, Difference, nextActivityCode,
 } from "./rules";
 import { newSession, readSession } from "./session";
 import { WorkshopKindName, MsTemplate, kindValue, emptyRun, newAgenda, childTasksOf, WORKSHOP_TYPE_OF_KIND, SBD_PHASE_OF_KIND, Change, Written, beforeOf, RunState, ChildTask } from "./workshop";
-import type { Model, ProcessItem, CurrentSystem, Role, ProcessFlow, Activity, ConfigDecision, Requirement, Raid, Workshop, SignOff, FlowLink, Screenshot, Comment, HistoryRow, WorkspaceSettings } from "./types";
+import type { Model, ProcessItem, CurrentSystem, Role, ProcessFlow, Activity, ConfigDecision, Requirement, Raid, Workshop, SignOff, FlowLink, Screenshot, Comment, HistoryRow, WorkspaceSettings, Proposal, ProposalDetails, AiEvidence, AiRun } from "./types";
+import { ProposalDraft, fitValue, approachValue, priorityValue, reqTypeValue, licenceValue, headcountValue, systemDecisionValue, raidOf } from "./ai";
 
 const txt = (v: unknown) => (v == null ? "" : String(v));
 const json = <T>(v: unknown, fallback: T): T => { try { return v ? JSON.parse(String(v)) : fallback; } catch { return fallback; } };
@@ -45,19 +46,22 @@ const COLS = {
   workshop: "emph_workshopid,emph_name,emph_heldon,emph_facilitator,emph_participants,emph_minutes,emph_phase,emph_status,emph_sessiondata,emph_transcript,emph_drawings,emph_microsoftworkshoptype,emph_sbdphase,"
     + "emph_kind,emph_sessionorder,emph_units,emph_childtasks,_emph_item_value",
   signOff: "emph_signoffid,emph_name,emph_version,emph_scopenote,emph_state,emph_approvedon,_emph_approver_value",
+  proposal: "emph_proposalid,emph_name,emph_run,emph_targettable,emph_targetrowid,emph_field,emph_currentvalue,emph_proposedvalue,emph_quotes,emph_source,emph_status,emph_reason,emph_decidedby,emph_decidedon,emph_confidence,emph_details,createdon,_emph_item_value,_emph_workshop_value",
   activity: "emph_flowactivityid,emph_name,emph_activitycode,emph_shape,emph_lane,emph_stage,emph_links,emph_summary,emph_delta,emph_rationale,emph_rank,emph_x,emph_y,_emph_processflow_value",
 };
 
 export async function loadModel(g: Gateway): Promise<Model> {
   const q = (t: string, cols: string) => g.query(t, "?$select=" + cols);
-  const [ws, it, sy, ro, ir, fl, dc, rq, ra, wk, so, cm, hi] = await Promise.all([
+  const [ws, it, sy, ro, ir, fl, dc, rq, ra, wk, so, cm, hi, pr] = await Promise.all([
     q("emph_workspace", COLS.workspace + "&$top=1"), q("emph_processitem", COLS.item), q("emph_system", COLS.system), q("emph_role", COLS.role), q("emph_itemrole", COLS.itemRole),
     optional(q("emph_processflow", COLS.flow)), optional(q("emph_configdecision", COLS.decision)), optional(q("emph_requirement", COLS.requirement)), optional(q("emph_raid", COLS.raid)),
     optional(q("emph_workshop", COLS.workshop)), optional(q("emph_signoff", COLS.signOff)), optional(q("emph_comment", COLS.comment)), optional(q("emph_history", COLS.history)),
+    optional(q("emph_proposal", COLS.proposal)),
   ]);
   return {
     workspace: { id: id(ws[0]?.emph_workspaceid), organisation: txt(ws[0]?.emph_organisation), settings: settingsFrom(ws[0]?.emph_settings) },
     history: hi.map(historyFrom),
+    proposals: pr.map(proposalFrom).sort((a, b) => a.createdOn.localeCompare(b.createdOn)),
     items: it.map(itemFrom).sort((a, b) => a.level - b.level || a.rank - b.rank),
     systems: sy.map(r => ({ id: r.emph_systemid, itemId: id(r._emph_item_value), name: txt(r.emph_name), vendor: txt(r.emph_vendor), decision: num(r.emph_decision), retireOn: day(r.emph_retireon),
       users: txt(r.emph_users), hosting: txt(r.emph_hosting), note: txt(r.emph_note) })).sort((a, b) => a.name.localeCompare(b.name)),
@@ -148,8 +152,22 @@ const historyFrom = (r: Row): HistoryRow => ({ id: r.emph_historyid, table: txt(
 const settingsFrom = (v: unknown): WorkspaceSettings => {
   const s = json<Partial<WorkspaceSettings>>(v, {});
   return { prices: Array.isArray(s.prices) ? s.prices.filter(p => p && typeof p.price === "number") : [],
-    demoLinks: Array.isArray(s.demoLinks) ? s.demoLinks.filter(d => d && typeof d.code === "string" && typeof d.url === "string") : [] };
+    demoLinks: Array.isArray(s.demoLinks) ? s.demoLinks.filter(d => d && typeof d.code === "string" && typeof d.url === "string") : [],
+    ...(s.aiPrompts && typeof s.aiPrompts === "object" ? { aiPrompts: s.aiPrompts } : {}),
+    ...(Array.isArray(s.aiRuns) ? { aiRuns: s.aiRuns.filter(r => r && typeof r.run === "string") } : {}) };
 };
+const BLANK_DETAILS: ProposalDetails = { ref: "", object: "observation", op: "create", target: "", parent: "", fields: {}, level: "", segment: "org", segmentTitle: "Organisation and notes", confidence: "medium", quotesChecked: 0, quotesUnchecked: 0 };
+const proposalFrom = (r: Row): Proposal => {
+  const details = { ...BLANK_DETAILS, ...json<Partial<ProposalDetails>>(r.emph_details, {}) };
+  return { id: r.emph_proposalid, name: txt(r.emph_name), run: txt(r.emph_run), workshopId: id(r._emph_workshop_value), itemId: id(r._emph_item_value), targetTable: txt(r.emph_targettable), targetRowId: txt(r.emph_targetrowid),
+    field: txt(r.emph_field), current: txt(r.emph_currentvalue), proposed: txt(r.emph_proposedvalue), evidence: json<AiEvidence[]>(r.emph_quotes, []), source: num(r.emph_source), status: r.emph_status ?? PROPOSAL.suggested,
+    reason: txt(r.emph_reason), decidedBy: txt(r.emph_decidedby), decidedOn: r.emph_decidedon || null, confidence: num(r.emph_confidence), details: { ...details, fields: details.fields || {} }, createdOn: r.createdon || "" };
+};
+const proposalColumns = (p: ProposalDraft | Proposal): Row => ({
+  emph_name: (p.name || "Suggestion").slice(0, 200), emph_run: p.run, emph_targettable: p.targetTable || null, emph_targetrowid: p.targetRowId || null, emph_field: (p.field || "").slice(0, 100) || null,
+  emph_currentvalue: (p.current || "").slice(0, 4000) || null, emph_proposedvalue: (p.proposed || "").slice(0, 4000) || null, emph_quotes: JSON.stringify(p.evidence).slice(0, 20000), emph_source: p.source,
+  emph_status: p.status, emph_reason: (p.reason || "").slice(0, 4000) || null, emph_confidence: p.confidence, emph_details: JSON.stringify(p.details).slice(0, 100000),
+});
 const activityColumns = (a: Activity) => ({
   emph_name: (a.name || "Activity").slice(0, 300), emph_activitycode: a.code, emph_shape: a.shape, emph_lane: a.lane || null, emph_stage: a.stage || null,
   emph_links: JSON.stringify(a.links || []), emph_summary: a.summary || null, emph_delta: a.delta, emph_rationale: a.rationale || null, emph_rank: a.rank,
@@ -681,6 +699,243 @@ export class Repository {
     await this.g.drop("emph_workshop", w.id);
     return { ...m, workshops: m.workshops.filter(x => x.id !== w.id), requirements: m.requirements.map(r => (r.workshopId === w.id ? { ...r, workshopId: null } : r)),
       raids: m.raids.map(r => (r.workshopId === w.id ? { ...r, workshopId: null } : r)) };
+  }
+
+  // ---------- AI analysis: suggestions (emph_proposal) ----------
+  /** A row of history for what the history fields don't cover (a row made, a closed reason, a licence), as the How says. */
+  private async logRow(table: string, rowId: string, field: string, oldValue: string, newValue: string, how: How): Promise<HistoryRow | null> {
+    const row: HistoryRow = { id: "", table, rowId, field, oldValue: oldValue.slice(0, 2000), newValue: newValue.slice(0, 2000), how: how.how, by: this.user, workshopName: how.workshop || "", createdOn: new Date().toISOString() };
+    try {
+      row.id = await this.g.insert("emph_history", { emph_name: (table + " " + field).slice(0, 200), emph_table: table, emph_rowid: rowId, emph_field: field, emph_oldvalue: row.oldValue || null,
+        emph_newvalue: row.newValue || null, emph_how: how.how, emph_by: this.user || null, emph_workshopname: how.workshop || null });
+      return row;
+    } catch { return null; }
+  }
+  private async logRows(m: Model, rows: [string, string, string, string, string][], how: How): Promise<Model> {
+    const out: HistoryRow[] = [];
+    for (const [table, rowId, field, a, b] of rows) { if (a === b) continue; const r = await this.logRow(table, rowId, field, a, b, how); if (r) out.push(r); }
+    return out.length ? { ...m, history: m.history.concat(out) } : m;
+  }
+
+  /**
+   * One AI run: its suggestions as Suggested rows, and its log (what was sent, dropped, already so, the questions) on the
+   * workshop's session, or for a run without a workshop in the workspace settings (the last ten).
+   */
+  async saveRun(m: Model, drafts: ProposalDraft[], log: AiRun): Promise<Model> {
+    const made: Proposal[] = [];
+    for (const d of drafts) {
+      const data: Row = proposalColumns(d);
+      if (d.itemId) data["emph_Item@odata.bind"] = ref("emph_processitem", d.itemId);
+      if (d.workshopId) data["emph_Workshop@odata.bind"] = ref("emph_workshop", d.workshopId);
+      const pid = await this.g.insert("emph_proposal", data);
+      made.push({ ...d, id: pid, decidedBy: "", decidedOn: null, createdOn: new Date().toISOString() });
+    }
+    let model: Model = { ...m, proposals: m.proposals.concat(made) };
+    const w = log.workshopId ? model.workshops.find(x => x.id === log.workshopId) : undefined;
+    if (w) model = await this.saveWorkshop(model, w, { session: { ...w.session, ai: [log, ...(w.session.ai || [])].slice(0, 20) } });
+    else model = await this.saveSettings(model, { ...model.workspace.settings, aiRuns: [log, ...(model.workspace.settings.aiRuns || [])].slice(0, 10) });
+    return model;
+  }
+  private async decided(m: Model, p: Proposal, status: number, patch: Partial<Proposal> = {}): Promise<Model> {
+    const n: Proposal = { ...p, ...patch, status, decidedBy: this.user, decidedOn: new Date().toISOString() };
+    await this.g.patch("emph_proposal", p.id, { emph_status: status, emph_decidedby: this.user || null, emph_decidedon: n.decidedOn, emph_targetrowid: n.targetRowId || null, emph_details: JSON.stringify(n.details).slice(0, 100000) });
+    return { ...m, proposals: m.proposals.map(x => (x.id === p.id ? n : x)) };
+  }
+  async rejectProposal(m: Model, p: Proposal): Promise<Model> {
+    if (p.status !== PROPOSAL.suggested) return m;
+    return this.decided(m, p, PROPOSAL.rejected);
+  }
+  /** Clear this run: the suggestions nobody decided go; accepted, edited and rejected ones stay as the record. */
+  async clearRun(m: Model, run: string): Promise<Model> {
+    const gone = m.proposals.filter(p => p.run === run && p.status === PROPOSAL.suggested);
+    for (const p of gone) await this.g.drop("emph_proposal", p.id);
+    const ids = new Set(gone.map(p => p.id));
+    return { ...m, proposals: m.proposals.filter(p => !ids.has(p.id)) };
+  }
+
+  /**
+   * Accept an AI suggestion: it is applied through the same saves as a change made by hand, each change written to history
+   * with How "AI accepted" (and the workshop's name for a workshop's run). `edited` is the reviewer's own words for its
+   * main text: the suggestion is then Edited, not Accepted. A decided suggestion is never applied again.
+   */
+  async acceptProposal(m: Model, p: Proposal, edited?: string): Promise<Model> {
+    if (p.status !== PROPOSAL.suggested) throw new Error("This suggestion is decided already.");
+    const w = p.workshopId ? m.workshops.find(x => x.id === p.workshopId) : undefined;
+    const how: How = { how: HOW.ai, workshop: w?.name, on: today() };
+    const d = p.details, f = d.fields;
+    const words = edited != null && edited.trim() ? edited.trim() : undefined;
+    const text = words ?? (f.text || f.name || p.proposed);
+    const quote = p.evidence[0] ? p.evidence[0].quote : "";
+    const heard = quote ? "AI analysis" + (p.evidence[0].sourceName ? " of " + p.evidence[0].sourceName : "") + ": “" + quote + "”" : "AI analysis";
+    let model = m, rowId = p.targetRowId;
+    const item = (rid: string | null | undefined) => model.items.find(x => x.id === rid);
+    /** the process a create goes under: the item it names, or the process this run made for its parent ref */
+    const parentId = (): string | null => {
+      if (d.parentRef) {
+        const made = model.proposals.find(x => x.run === p.run && x.details.ref.toLowerCase() === d.parentRef!.toLowerCase());
+        if (!made || made.status === PROPOSAL.rejected) throw new Error("It goes under a new process that was not accepted: accept that one first, or reject this.");
+        if (made.status === PROPOSAL.suggested || !made.targetRowId) throw new Error("It goes under the new process “" + (made.details.fields.name || made.proposed) + "”: accept that one first.");
+        return made.targetRowId;
+      }
+      return p.itemId;
+    };
+    switch (d.object) {
+      case "scope": {
+        const it = item(p.targetRowId);
+        if (!it) throw new Error("That process item is gone.");
+        model = await this.setScope(model, it, d.op === "create", how, f.reason || undefined);
+        break;
+      }
+      case "fit_gap": {
+        const it = item(p.targetRowId);
+        if (!it) throw new Error("That process item is gone.");
+        const fit = fitValue(f.fit);
+        model = await this.saveItem(model, it, { fitGap: fit, gapApproach: fit === FIT_GAP.gap ? approachValue(f.approach) : null, fitGapReason: words ?? (f.reason || it.fitGapReason) }, how);
+        break;
+      }
+      case "process": {
+        if (d.op === "create") {
+          const r = await this.addOwnItem(model, parentId(), words ?? (f.name || f.text));
+          model = r.model; rowId = r.item.id;
+          const extra: Partial<ProcessItem> = { ...(f.name && f.text ? { summary: f.text } : {}), ...(f.owner ? { owner: f.owner } : {}), ...(f.sme ? { sme: f.sme } : {}) };
+          if (Object.keys(extra).length) model = await this.saveItem(model, r.item, extra, how);
+          model = await this.logRows(model, [["emph_processitem", rowId, "Created", "", r.item.code + " " + r.item.name + " (" + heard + ")"]], how);
+        } else {
+          const it = item(p.targetRowId);
+          if (!it) throw new Error("That process item is gone.");
+          const main = f.name ? "name" : f.text ? "text" : f.owner ? "owner" : "sme";
+          const v = (k: string) => (words != null && k === main ? words : f[k]);
+          model = await this.saveItem(model, it, { ...(v("name") ? { name: v("name") } : {}), ...(v("text") ? { summary: v("text") } : {}), ...(v("owner") ? { owner: v("owner") } : {}), ...(v("sme") ? { sme: v("sme") } : {}) }, how);
+        }
+        break;
+      }
+      case "step": {
+        const r = await this.applyStep(model, p, words, how, heard);
+        model = r.model; rowId = r.rowId;
+        break;
+      }
+      case "requirement": {
+        if (d.op === "create") {
+          const fit = fitValue(f.fit || "");
+          const r = await this.addRequirement(model, text, { itemId: parentId(), workshopId: p.workshopId, type: reqTypeValue(f.type || ""), priority: priorityValue(f.priority || ""), owner: f.owner || "",
+            fitGap: fit, gapApproach: fit === FIT_GAP.gap ? approachValue(f.approach) : null, sourceType: "AI analysis (accepted)", sourceText: quote, raisedBy: f.speaker || "", review: false });
+          model = r.model; rowId = r.requirement.id;
+          model = await this.logRows(model, [["emph_requirement", rowId, "Created", "", (r.requirement.reqId ? r.requirement.reqId + ": " : "") + text]], how);
+        } else {
+          const q = model.requirements.find(x => x.id === p.targetRowId);
+          if (!q) throw new Error("That requirement is gone.");
+          if (d.op === "remove") {
+            model = await this.updateRequirement(model, q, { closedReason: "Withdrawn" }, how);
+            model = await this.logRows(model, [["emph_requirement", q.id, "Closed reason", q.closedReason, "Withdrawn"]], how);
+          } else {
+            const fit = f.fit ? fitValue(f.fit) : undefined;
+            const desc = words ?? f.text;
+            model = await this.updateRequirement(model, q, { ...(desc ? { description: desc } : {}), ...(f.priority ? { priority: priorityValue(f.priority) } : {}), ...(f.owner ? { owner: f.owner } : {}),
+              ...(fit !== undefined ? { fitGap: fit, gapApproach: fit === FIT_GAP.gap ? approachValue(f.approach) : null } : {}) }, how);
+          }
+        }
+        break;
+      }
+      case "risk": case "assumption": case "issue": case "decision": case "action": case "open_question": {
+        if (d.op === "create") {
+          const before = model.raids.length;
+          model = await this.addRaid(model, { ...raidOf(d, text), source: quote ? heard : "", workshopId: p.workshopId, itemId: parentId() });
+          const r = model.raids[before];
+          rowId = r?.id || "";
+          if (r) model = await this.logRows(model, [["emph_raid", r.id, "Created", "", labelOf("raidType", r.type) + ": " + r.description]], how);
+        } else {
+          const ra = model.raids.find(x => x.id === p.targetRowId);
+          if (!ra) throw new Error("That RAID item is gone.");
+          const desc = words ?? f.text;
+          const patch: Partial<Raid> = { ...(desc ? { description: desc } : {}), ...(f.owner ? { owner: f.owner } : {}), ...(f.resolution ? { resolution: f.resolution } : {}), ...(f.decided_by ? { decisionMaker: f.decided_by } : {}) };
+          model = await this.saveRaid(model, ra, patch);
+          model = await this.logRows(model, [["emph_raid", ra.id, "Description", ra.description, patch.description ?? ra.description], ["emph_raid", ra.id, "Owner", ra.owner, patch.owner ?? ra.owner],
+            ["emph_raid", ra.id, "Resolution", ra.resolution, patch.resolution ?? ra.resolution], ["emph_raid", ra.id, "Decision maker", ra.decisionMaker, patch.decisionMaker ?? ra.decisionMaker]], how);
+        }
+        break;
+      }
+      case "licence": {
+        const r = model.roles.find(x => x.id === p.targetRowId);
+        if (!r) throw new Error("That role is gone.");
+        const lv = licenceValue(f.licence || ""), hc = f.headcount ? headcountValue(f.headcount) : null;
+        model = await this.saveRole(model, r, { ...(lv != null ? { licenceType: lv } : {}), ...(hc != null ? { headcount: hc } : {}), licenceNote: (r.licenceNote ? r.licenceNote + "\n" : "") + heard });
+        const n = model.roles.find(x => x.id === r.id) || r;
+        model = await this.logRows(model, [["emph_role", r.id, "Licence type", labelOf("licenceType", r.licenceType), labelOf("licenceType", n.licenceType)],
+          ["emph_role", r.id, "Headcount", r.headcount == null ? "" : String(r.headcount), n.headcount == null ? "" : String(n.headcount)]], how);
+        break;
+      }
+      case "system": {
+        const dv = systemDecisionValue(f.decision || "");
+        if (d.op === "create") {
+          const before = new Set(model.systems.map(x => x.id));
+          model = await this.saveSystem(model, { id: "", itemId: p.itemId, name: words ?? f.name, vendor: f.vendor || "", decision: dv, retireOn: null, users: f.users || "", hosting: "", note: [f.text, heard].filter(Boolean).join("\n") }, {});
+          const s = model.systems.find(x => !before.has(x.id));
+          rowId = s?.id || "";
+          if (s) model = await this.logRows(model, [["emph_system", s.id, "Created", "", s.name + (dv != null ? " (" + labelOf("systemDecision", dv) + ")" : "")]], how);
+        } else {
+          const s = model.systems.find(x => x.id === p.targetRowId);
+          if (!s) throw new Error("That system is gone.");
+          model = await this.saveSystem(model, s, { ...(dv != null ? { decision: dv } : {}), ...(f.users ? { users: f.users } : {}), note: (s.note ? s.note + "\n" : "") + heard });
+          model = await this.logRows(model, [["emph_system", s.id, "Decision", labelOf("systemDecision", s.decision), labelOf("systemDecision", dv ?? s.decision)], ["emph_system", s.id, "Users", s.users, f.users || s.users]], how);
+        }
+        break;
+      }
+      case "organisation":
+        if (p.targetTable === "emph_workspace") {
+          const before = model.workspace.organisation;
+          model = await this.setOrganisation(model, words ?? f.name);
+          model = await this.logRows(model, [["emph_workspace", model.workspace.id || "", "Organisation", before, model.workspace.organisation]], how);
+          break;
+        }
+      // falls through: a note about the organisation is a comment
+      default: {
+        let activityId: string | null = null;
+        if (d.flowId && d.stepCode) activityId = (await loadActivities(this.g, d.flowId)).find(a => a.code === d.stepCode)?.id || null;
+        model = await this.addComment(model, { itemId: p.itemId, activityId, activityCode: activityId ? d.stepCode || "" : "", workshopId: p.workshopId, author: "AI analysis, accepted by " + (this.user || "a reviewer"), text, source: quote ? heard : "" });
+        rowId = model.comments[model.comments.length - 1]?.id || "";
+      }
+    }
+    const cur = model.proposals.find(x => x.id === p.id) || p;
+    return this.decided(model, cur, words != null ? PROPOSAL.edited : PROPOSAL.accepted, { targetRowId: rowId, details: { ...cur.details, ...(words != null ? { edited: words } : {}) } });
+  }
+
+  /** A flow step suggestion on our process (copied from Microsoft's reference first when there is none), as the flow studio edits it. */
+  private async applyStep(m: Model, p: Proposal, words: string | undefined, how: How, heard: string): Promise<{ model: Model; rowId: string }> {
+    const d = p.details, f = d.fields;
+    const proc = m.items.find(x => x.id === d.processId);
+    if (!proc) throw new Error("That business process is gone.");
+    let model = m;
+    const both = flowsOf(model, proc.id);
+    let ours = both.ours, acts: Activity[];
+    if (!ours) {
+      const r = await this.createOurFlow(model, proc, both.reference || null, both.reference ? await loadActivities(this.g, both.reference.id) : []);
+      model = r.model; ours = r.flow; acts = r.activities;
+    } else acts = await loadActivities(this.g, ours.id);
+    if (ours.state === FLOW_STATE.confirmed) model = await this.setFlowState(model, ours, FLOW_STATE.draft);
+    const rationale = (p.reason ? p.reason + " " : "") + heard;
+    if (d.op === "create") {
+      const after = acts.find(a => a.code.toLowerCase() === (f.after || "").split(" ")[0].toLowerCase());
+      if (!after) throw new Error("Step " + f.after + " is no longer in the flow.");
+      const code = nextActivityCode(acts);
+      const made = await this.saveActivity({ id: "", flowId: ours.id, code, name: (words ?? f.name).slice(0, 300), shape: SHAPE.activity, lane: f.lane || after.lane, stage: after.stage, links: after.links, summary: f.text || "", delta: DELTA.added, rank: after.rank + 1, rationale, pos: null });
+      for (const a of acts.filter(x => x.rank > after.rank)) await this.saveActivity({ ...a, rank: a.rank + 1 });
+      await this.saveActivity({ ...after, links: [{ to: code, label: "" }], delta: after.delta === DELTA.same ? DELTA.changed : after.delta });
+      model = await this.logRows(model, [["emph_flowactivity", made.id, "Created", "", code + " " + made.name + " after " + after.code]], how);
+      return { model, rowId: made.id };
+    }
+    const a = acts.find(x => x.code === d.stepCode);
+    if (!a) throw new Error("Step " + d.stepCode + " is no longer in the flow.");
+    if (d.op === "remove") {
+      for (const o of acts.filter(x => x.id !== a.id && x.links.some(k => k.to === a.code)))
+        await this.saveActivity({ ...o, links: o.links.flatMap(k => (k.to === a.code ? a.links.map(x => ({ to: x.to, label: k.label })) : [k])), delta: o.delta === DELTA.same ? DELTA.changed : o.delta });
+      if (a.delta === DELTA.added) await this.dropActivity(a); else await this.saveActivity({ ...a, delta: DELTA.removed, rationale });
+      model = await this.logRows(model, [["emph_flowactivity", a.id, "Change", "In the flow", "Dropped: " + a.code + " " + a.name]], how);
+      return { model, rowId: a.id };
+    }
+    const name = (words ?? f.name ?? a.name).slice(0, 300), lane = f.lane || a.lane;
+    await this.saveActivity({ ...a, name, lane, delta: a.delta === DELTA.same ? DELTA.changed : a.delta, rationale });
+    model = await this.logRows(model, [["emph_flowactivity", a.id, "Name", a.name, name], ["emph_flowactivity", a.id, "Lane", a.lane, lane]], how);
+    return { model, rowId: a.id };
   }
 
   // ---------- sign-off ----------
