@@ -3,14 +3,15 @@
 import { Gateway, Row, ref } from "../data/api";
 import {
   FLOW_TYPE, FLOW_STATE, DELTA, SHAPE, DECISION_STATE, REQ_ORIGIN, SIGNOFF, ITEM, SESSION, ANSWER, SCOPE, APPROVAL, AUTHOR, CATALOG_CUSTOM,
-  HOW, RAID, RAID_STATUS, WORKSHOP_KIND, labelOf, ListName,
+  HOW, RAID, RAID_STATUS, WORKSHOP_KIND, PRODUCT_OTHER, LICENCE, labelOf, option,
 } from "./codes";
 import {
   isActive, freeze, FrozenItem, titleOf, requirementProblem, flowDeltas, coveredBy, deltaText, touchedByHand, canApprove, nextOwnCode, starterActivities,
-  inScope, childrenOf, ancestorsOf, descendantsOf, levelUp, fitGapProblem, scopeDecided,
+  inScope, childrenOf, ancestorsOf, descendantsOf, levelUp, fitGapProblem, scopeDecided, scopeProblem, fitGapLevel, isOff, HISTORY_FIELDS, HistoryField, historyText,
+  restorePatch, raidProblem, raidStart, changeRequestFor, Difference,
 } from "./rules";
 import { newSession, readSession } from "./session";
-import type { Model, ProcessItem, CurrentSystem, Role, ProcessFlow, Activity, ConfigDecision, Requirement, Raid, Workshop, SignOff, FlowLink, Screenshot, Comment } from "./types";
+import type { Model, ProcessItem, CurrentSystem, Role, ProcessFlow, Activity, ConfigDecision, Requirement, Raid, Workshop, SignOff, FlowLink, Screenshot, Comment, HistoryRow, WorkspaceSettings } from "./types";
 
 const txt = (v: unknown) => (v == null ? "" : String(v));
 const json = <T>(v: unknown, fallback: T): T => { try { return v ? JSON.parse(String(v)) : fallback; } catch { return fallback; } };
@@ -23,10 +24,10 @@ const optional = <T>(p: Promise<T[]>) => p.catch(() => [] as T[]);
 const today = () => new Date().toISOString().slice(0, 10);
 
 const COLS = {
-  workspace: "emph_workspaceid,emph_organisation",
+  workspace: "emph_workspaceid,emph_organisation,emph_settings",
   item: "emph_processitemid,emph_name,emph_level,emph_catalogcode,emph_catalogname,emph_summary,emph_rank,emph_scope,emph_scopereason,emph_scopeapproach,emph_fitgapstatus,emph_gapsolutionapproach,"
     + "emph_fitgapreason,emph_businessprocessowner,emph_workstreamlead,emph_subjectmatterexpert,emph_baselinecomplexity,emph_priority,emph_processtype,emph_isown,emph_author,emph_catalogstatus,"
-    + "emph_products,emph_sethow,emph_setby,emph_seton,emph_present,emph_workshopname,emph_accent,emph_comments,_emph_parent_value",
+    + "emph_products,emph_softwaresolutions,emph_sethow,emph_setby,emph_seton,emph_present,emph_workshopname,emph_accent,emph_comments,_emph_parent_value",
   system: "emph_systemid,emph_name,emph_vendor,emph_decision,emph_retireon,emph_users,emph_hosting,emph_note,_emph_item_value",
   role: "emph_roleid,emph_name,emph_summary,emph_rank,emph_headcount,emph_responsiblerole,emph_licencetype,emph_baseproduct,emph_attachproducts,emph_licencenote",
   itemRole: "emph_itemroleid,_emph_item_value,_emph_role_value",
@@ -36,7 +37,10 @@ const COLS = {
   requirement: "emph_requirementid,emph_reqid,emph_name,emph_description,emph_requirementtype,emph_fitgapstatus,emph_gapsolutionapproach,emph_scopeapproach,emph_acceptancecriteria,emph_requirementmapping,"
     + "emph_priority,emph_approvalstate,emph_author,emph_estimatedcomplexity,emph_owner,emph_approvedby,emph_approvedon,emph_closedreason,emph_sourcetype,emph_sourcetext,emph_raisedby,"
     + "emph_origin,emph_originref,emph_review,_emph_item_value,_emph_originflow_value,_emph_evidenceflow_value,_emph_workshop_value,_emph_flowactivity_value",
-  raid: "emph_raidid,emph_name,emph_raidtype,emph_description,emph_owner,emph_priority,emph_targetdate,emph_status,emph_isquestion,emph_sourcetext,emph_resolution,emph_decisionmaker,createdon,_emph_item_value,_emph_workshop_value",
+  raid: "emph_raidid,emph_name,emph_raidtype,emph_description,emph_owner,emph_priority,emph_targetdate,emph_status,emph_isquestion,emph_sourcetext,emph_resolution,emph_decisionmaker,createdon,"
+    + "emph_riskimpactassessment,emph_triggers,emph_contingencyplan,emph_probability,emph_impactseverity,emph_riskcategory,emph_riskresponse,emph_impact,emph_issuetype,emph_severity,emph_reportedby,"
+    + "emph_responsibleparty,emph_responsiblerole,emph_justification,emph_impactassessment,emph_alternativesolution,emph_changerequesttype,emph_requestor,emph_frozenkey,_emph_item_value,_emph_workshop_value,_emph_signoff_value",
+  history: "emph_historyid,emph_table,emph_rowid,emph_field,emph_oldvalue,emph_newvalue,emph_how,emph_by,emph_workshopname,createdon",
   workshop: "emph_workshopid,emph_name,emph_heldon,emph_facilitator,emph_participants,emph_minutes,emph_phase,emph_status,emph_sessiondata,emph_transcript,emph_microsoftworkshoptype,emph_sbdphase,"
     + "emph_kind,emph_sessionorder,emph_units,emph_childtasks,_emph_item_value",
   signOff: "emph_signoffid,emph_name,emph_version,emph_scopenote,emph_state,emph_approvedon,_emph_approver_value",
@@ -45,13 +49,14 @@ const COLS = {
 
 export async function loadModel(g: Gateway): Promise<Model> {
   const q = (t: string, cols: string) => g.query(t, "?$select=" + cols);
-  const [ws, it, sy, ro, ir, fl, dc, rq, ra, wk, so, cm] = await Promise.all([
+  const [ws, it, sy, ro, ir, fl, dc, rq, ra, wk, so, cm, hi] = await Promise.all([
     q("emph_workspace", COLS.workspace + "&$top=1"), q("emph_processitem", COLS.item), q("emph_system", COLS.system), q("emph_role", COLS.role), q("emph_itemrole", COLS.itemRole),
     optional(q("emph_processflow", COLS.flow)), optional(q("emph_configdecision", COLS.decision)), optional(q("emph_requirement", COLS.requirement)), optional(q("emph_raid", COLS.raid)),
-    optional(q("emph_workshop", COLS.workshop)), optional(q("emph_signoff", COLS.signOff)), optional(q("emph_comment", COLS.comment)),
+    optional(q("emph_workshop", COLS.workshop)), optional(q("emph_signoff", COLS.signOff)), optional(q("emph_comment", COLS.comment)), optional(q("emph_history", COLS.history)),
   ]);
   return {
-    workspace: { id: id(ws[0]?.emph_workspaceid), organisation: txt(ws[0]?.emph_organisation) },
+    workspace: { id: id(ws[0]?.emph_workspaceid), organisation: txt(ws[0]?.emph_organisation), settings: settingsFrom(ws[0]?.emph_settings) },
+    history: hi.map(historyFrom),
     items: it.map(itemFrom).sort((a, b) => a.level - b.level || a.rank - b.rank),
     systems: sy.map(r => ({ id: r.emph_systemid, itemId: id(r._emph_item_value), name: txt(r.emph_name), vendor: txt(r.emph_vendor), decision: num(r.emph_decision), retireOn: day(r.emph_retireon),
       users: txt(r.emph_users), hosting: txt(r.emph_hosting), note: txt(r.emph_note) })).sort((a, b) => a.name.localeCompare(b.name)),
@@ -79,7 +84,7 @@ const itemFrom = (r: Row): ProcessItem => ({
   fitGap: num(r.emph_fitgapstatus), gapApproach: num(r.emph_gapsolutionapproach), fitGapReason: txt(r.emph_fitgapreason),
   owner: txt(r.emph_businessprocessowner), workstreamLead: txt(r.emph_workstreamlead), sme: txt(r.emph_subjectmatterexpert),
   complexity: num(r.emph_baselinecomplexity), priority: num(r.emph_priority), processType: num(r.emph_processtype), isOwn: !!r.emph_isown, author: num(r.emph_author), catalogStatus: num(r.emph_catalogstatus),
-  products: txt(r.emph_products), setHow: num(r.emph_sethow), setBy: txt(r.emph_setby), setOn: day(r.emph_seton), present: txt(r.emph_present), workshopName: txt(r.emph_workshopname),
+  products: txt(r.emph_products), softwareSolution: txt(r.emph_softwaresolutions), setHow: num(r.emph_sethow), setBy: txt(r.emph_setby), setOn: day(r.emph_seton), present: txt(r.emph_present), workshopName: txt(r.emph_workshopname),
   accent: txt(r.emph_accent), comments: txt(r.emph_comments),
 });
 const itemColumns = (n: ProcessItem): Row => ({
@@ -87,7 +92,7 @@ const itemColumns = (n: ProcessItem): Row => ({
   emph_scope: n.scope, emph_scopereason: n.scopeReason || null, emph_scopeapproach: n.scopeApproach || null, emph_fitgapstatus: n.fitGap, emph_gapsolutionapproach: n.gapApproach,
   emph_fitgapreason: n.fitGapReason || null, emph_businessprocessowner: n.owner || null, emph_workstreamlead: n.workstreamLead || null, emph_subjectmatterexpert: n.sme || null,
   emph_baselinecomplexity: n.complexity, emph_priority: n.priority, emph_processtype: n.processType, emph_isown: n.isOwn, emph_author: n.author, emph_catalogstatus: n.catalogStatus,
-  emph_products: n.products || null, emph_sethow: n.setHow, emph_setby: n.setBy || null, emph_seton: n.setOn, emph_present: n.present || null, emph_workshopname: n.workshopName || null,
+  emph_products: n.products || null, emph_softwaresolutions: n.softwareSolution || null, emph_sethow: n.setHow, emph_setby: n.setBy || null, emph_seton: n.setOn, emph_present: n.present || null, emph_workshopname: n.workshopName || null,
   emph_accent: n.accent || null, emph_comments: n.comments || null,
 });
 const decisionFrom = (r: Row): ConfigDecision => ({
@@ -115,7 +120,34 @@ const raidFrom = (r: Row): Raid => ({
   id: r.emph_raidid, name: txt(r.emph_name), type: r.emph_raidtype ?? RAID.action, description: txt(r.emph_description), itemId: id(r._emph_item_value), workshopId: id(r._emph_workshop_value),
   owner: txt(r.emph_owner), priority: num(r.emph_priority), targetDate: day(r.emph_targetdate), status: r.emph_status ?? RAID_STATUS.open, isQuestion: !!r.emph_isquestion, source: txt(r.emph_sourcetext),
   resolution: txt(r.emph_resolution), decisionMaker: txt(r.emph_decisionmaker), createdOn: r.createdon || "",
+  riskImpactAssessment: txt(r.emph_riskimpactassessment), triggers: txt(r.emph_triggers), contingencyPlan: txt(r.emph_contingencyplan), probability: num(r.emph_probability),
+  impactSeverity: num(r.emph_impactseverity), riskCategory: num(r.emph_riskcategory), riskResponse: num(r.emph_riskresponse), impact: txt(r.emph_impact), issueType: num(r.emph_issuetype),
+  severity: num(r.emph_severity), reportedBy: txt(r.emph_reportedby), responsibleParty: num(r.emph_responsibleparty), responsibleRole: num(r.emph_responsiblerole),
+  justification: txt(r.emph_justification), impactAssessment: txt(r.emph_impactassessment), alternativeSolution: txt(r.emph_alternativesolution), changeRequestType: num(r.emph_changerequesttype),
+  requestor: txt(r.emph_requestor), signOffId: id(r._emph_signoff_value), frozenKey: txt(r.emph_frozenkey),
 });
+const raidColumns = (r: Raid): Row => ({
+  emph_name: titleOf(r.description), emph_raidtype: r.type, emph_description: r.description, emph_owner: r.owner || null, emph_priority: r.priority, emph_targetdate: r.targetDate,
+  emph_status: r.status, emph_isquestion: r.isQuestion, emph_sourcetext: r.source || null, emph_resolution: r.resolution || null, emph_decisionmaker: r.decisionMaker || null,
+  emph_riskimpactassessment: r.riskImpactAssessment || null, emph_triggers: r.triggers || null, emph_contingencyplan: r.contingencyPlan || null, emph_probability: r.probability,
+  emph_impactseverity: r.impactSeverity, emph_riskcategory: r.riskCategory, emph_riskresponse: r.riskResponse, emph_impact: r.impact || null, emph_issuetype: r.issueType, emph_severity: r.severity,
+  emph_reportedby: r.reportedBy || null, emph_responsibleparty: r.responsibleParty, emph_responsiblerole: r.responsibleRole, emph_justification: r.justification || null,
+  emph_impactassessment: r.impactAssessment || null, emph_alternativesolution: r.alternativeSolution || null, emph_changerequesttype: r.changeRequestType, emph_requestor: r.requestor || null,
+  emph_frozenkey: r.frozenKey || null,
+});
+export const blankRaid = (p: Partial<Raid> = {}): Raid => {
+  const type = p.type ?? RAID.action;
+  return { id: "", name: "", type, description: "", itemId: null, workshopId: null, owner: "", priority: null, targetDate: null, status: raidStart(type), isQuestion: false, source: "",
+    resolution: "", decisionMaker: "", createdOn: new Date().toISOString(), riskImpactAssessment: "", triggers: "", contingencyPlan: "", probability: null, impactSeverity: null, riskCategory: null,
+    riskResponse: null, impact: "", issueType: null, severity: null, reportedBy: "", responsibleParty: null, responsibleRole: null, justification: "", impactAssessment: "", alternativeSolution: "",
+    changeRequestType: null, requestor: "", signOffId: null, frozenKey: "", ...p };
+};
+const historyFrom = (r: Row): HistoryRow => ({ id: r.emph_historyid, table: txt(r.emph_table), rowId: txt(r.emph_rowid), field: txt(r.emph_field), oldValue: txt(r.emph_oldvalue), newValue: txt(r.emph_newvalue),
+  how: num(r.emph_how), by: txt(r.emph_by), workshopName: txt(r.emph_workshopname), createdOn: r.createdon || "" });
+const settingsFrom = (v: unknown): WorkspaceSettings => {
+  const s = json<Partial<WorkspaceSettings>>(v, {});
+  return { prices: Array.isArray(s.prices) ? s.prices.filter(p => p && typeof p.price === "number") : [] };
+};
 const activityColumns = (a: Activity) => ({
   emph_name: (a.name || "Activity").slice(0, 300), emph_activitycode: a.code, emph_shape: a.shape, emph_lane: a.lane || null, emph_stage: a.stage || null,
   emph_links: JSON.stringify(a.links || []), emph_summary: a.summary || null, emph_delta: a.delta, emph_rationale: a.rationale || null, emph_rank: a.rank,
@@ -125,7 +157,7 @@ const activityColumns = (a: Activity) => ({
 /** A blank item; `level` 1-4. */
 export const blankItem = (p: Partial<ProcessItem> & { level: number }): ProcessItem => ({
   id: "", parentId: null, code: "", name: "", catalogName: "", summary: "", rank: 0, scope: SCOPE.unspecified, scopeReason: "", scopeApproach: "", fitGap: null, gapApproach: null, fitGapReason: "",
-  owner: "", workstreamLead: "", sme: "", complexity: null, priority: null, processType: null, isOwn: false, author: null, catalogStatus: null, products: "",
+  owner: "", workstreamLead: "", sme: "", complexity: null, priority: null, processType: null, isOwn: false, author: null, catalogStatus: null, products: "", softwareSolution: "",
   setHow: null, setBy: "", setOn: null, present: "", workshopName: "", accent: "", comments: "", ...p,
 });
 export const blankRequirement = (p: Partial<Requirement> = {}): Requirement => ({
@@ -169,11 +201,7 @@ export interface ResetPlan { generated: Requirement[]; touched: number; linked: 
 /** How a change was made, for Set how / by / on and the history. */
 export interface How { how: number; workshop?: string; present?: string }
 const DIRECT: How = { how: HOW.direct };
-// fields whose change is written to emph_history: [model field, column, list for labels]
-const ITEM_HISTORY: [keyof ProcessItem, string, ListName | null][] = [["name", "emph_name", null], ["scope", "emph_scope", "scope"], ["fitGap", "emph_fitgapstatus", "fitGapStatus"],
-  ["gapApproach", "emph_gapsolutionapproach", "gapSolutionApproach"], ["products", "emph_products", null], ["owner", "emph_businessprocessowner", null], ["scopeReason", "emph_scopereason", null], ["fitGapReason", "emph_fitgapreason", null]];
-const REQ_HISTORY: [keyof Requirement, string, ListName | null][] = [["description", "emph_description", null], ["fitGap", "emph_fitgapstatus", "fitGapStatus"], ["gapApproach", "emph_gapsolutionapproach", "gapSolutionApproach"],
-  ["priority", "emph_priority", "priority"], ["approval", "emph_approvalstate", "businessApprovalState"], ["itemId", "_emph_item_value", null]];
+const RESTORE: How = { how: HOW.restore };
 
 export class Repository {
   constructor(public g: Gateway, public user = "") {}
@@ -181,15 +209,42 @@ export class Repository {
   private async unlink(table: string, rowId: string, nav: string) {
     try { await this.g.patch(table, rowId, { [nav + "@odata.bind"]: null }); } catch { /* already empty */ }
   }
-  /** One emph_history row per changed field (labels for choices). A failed history write never stops the change. */
-  private async history<T>(table: string, rowId: string, before: T, after: T, fields: [keyof T, string, ListName | null][], how: How) {
-    const show = (v: unknown, list: ListName | null) => (v == null ? "" : list ? labelOf(list, v as number) || String(v) : String(v));
-    for (const [f, column, list] of fields) {
-      const a = show(before[f], list), b = show(after[f], list);
+  /** One emph_history row per changed field (labels for choices), returned for the model. A failed history write never stops the change. */
+  private async history<T>(table: string, rowId: string, before: T, after: T, how: How): Promise<HistoryRow[]> {
+    const out: HistoryRow[] = [];
+    for (const { field, column, list } of HISTORY_FIELDS[table] as HistoryField[]) {
+      const a = historyText((before as any)[field], list).slice(0, 2000), b = historyText((after as any)[field], list).slice(0, 2000);
       if (a === b) continue;
-      await this.g.insert("emph_history", { emph_name: (table + " " + column).slice(0, 200), emph_table: table, emph_rowid: rowId, emph_field: column, emph_oldvalue: a.slice(0, 2000) || null,
-        emph_newvalue: b.slice(0, 2000) || null, emph_how: how.how, emph_by: this.user || null, emph_workshopname: how.workshop || null }).catch(() => undefined);
+      const row: HistoryRow = { id: "", table, rowId, field: column, oldValue: a, newValue: b, how: how.how, by: this.user, workshopName: how.workshop || "", createdOn: new Date().toISOString() };
+      try {
+        row.id = await this.g.insert("emph_history", { emph_name: (table + " " + column).slice(0, 200), emph_table: table, emph_rowid: rowId, emph_field: column, emph_oldvalue: a || null,
+          emph_newvalue: b || null, emph_how: how.how, emph_by: this.user || null, emph_workshopname: how.workshop || null });
+        out.push(row);
+      } catch { /* the change itself stands */ }
     }
+    return out;
+  }
+
+  /** Puts a field back to the value a history row had before; the restore is itself a change, so it writes a new history row. */
+  async restore(m: Model, h: HistoryRow): Promise<Model> {
+    const r = restorePatch(h, m.history);
+    if ("problem" in r) throw new Error(r.problem);
+    if (h.table === "emph_processitem") {
+      const it = m.items.find(x => x.id === h.rowId);
+      if (!it) throw new Error("That process item is gone.");
+      return this.saveItem(m, it, r.patch as Partial<ProcessItem>, RESTORE);
+    }
+    const q = m.requirements.find(x => x.id === h.rowId);
+    if (!q) throw new Error("That requirement is gone.");
+    return this.updateRequirement(m, q, r.patch as Partial<Requirement>, RESTORE);
+  }
+
+  // ---------- settings (the licence price table) ----------
+  async saveSettings(m: Model, settings: WorkspaceSettings): Promise<Model> {
+    const data = { emph_settings: JSON.stringify(settings) };
+    if (m.workspace.id) { await this.g.patch("emph_workspace", m.workspace.id, data); return { ...m, workspace: { ...m.workspace, settings } }; }
+    const wid = await this.g.insert("emph_workspace", { emph_name: "EMPH Process Map", emph_organisation: m.workspace.organisation || null, ...data });
+    return { ...m, workspace: { ...m.workspace, id: wid, settings } };
   }
 
   // ---------- workspace ----------
@@ -200,9 +255,14 @@ export class Repository {
   }
 
   // ---------- process items (levels 1 to 4) ----------
-  /** Saves an item (a new one when it has no id). A Gap needs a solution approach. Scope and fit-gap changes record how, by whom and when. */
+  /**
+   * Saves an item (a new one when it has no id). Scope takes the values of the item's level (level 3 only Not applicable);
+   * fit-gap is set on levels 3 and 4, and a Gap needs a solution approach. Scope and fit-gap changes record how, by whom and when.
+   */
   async saveItem(m: Model, it: ProcessItem, patch: Partial<ProcessItem>, how: How = DIRECT): Promise<Model> {
     const n: ProcessItem = { ...it, ...patch };
+    if (patch.scope !== undefined) { const p = scopeProblem(n.level, n.scope); if (p) throw new Error(p); }
+    if (!fitGapLevel(n.level) && ((patch.fitGap ?? null) !== null || (patch.gapApproach ?? null) !== null)) throw new Error("Fit gap status is set on business processes (level 3) and scenarios (level 4) only.");
     const problem = fitGapProblem(n);
     if (problem && (patch.fitGap !== undefined || patch.gapApproach !== undefined)) throw new Error(problem);
     if (n.scope !== it.scope || n.fitGap !== it.fitGap || n.gapApproach !== it.gapApproach) Object.assign(n, { setHow: how.how, setBy: this.user, setOn: today(), workshopName: how.workshop || "", present: how.present || "" });
@@ -213,35 +273,53 @@ export class Repository {
       return { ...m, items: m.items.concat(n) };
     }
     await this.g.patch("emph_processitem", it.id, data);
-    await this.history("emph_processitem", it.id, it, n, ITEM_HISTORY, how);
-    let model: Model = { ...m, items: m.items.map(x => (x.id === it.id ? n : x)) };
+    const logged = await this.history("emph_processitem", it.id, it, n, how);
+    let model: Model = { ...m, items: m.items.map(x => (x.id === it.id ? n : x)), history: m.history.concat(logged) };
     if (n.scope !== it.scope) model = await this.flagOrigin(model, REQ_ORIGIN.scope, it.id);
     if (n.fitGap !== it.fitGap || n.gapApproach !== it.gapApproach || n.comments !== it.comments) model = await this.flagOrigin(model, REQ_ORIGIN.process, it.id);
     return model;
   }
 
   /**
-   * In or out of scope, as on the map. Putting an item in scope brings its parents in too, and the scenarios below it whose
-   * scope isn't decided yet. Taking it out leaves the items below as they are: they grey out with it.
+   * In or out of scope, as on the map. Levels 1, 2 and 4 go 20 - In scope or 30 - Out of scope; a business process (level 3)
+   * goes 10 - Unspecified (it runs) or 40 - Not applicable. Putting an item in brings the items above it in too; an area that
+   * comes in this way keeps its other undecided business processes out (Not applicable), so the tick means this one.
+   * A business process put in brings its undecided scenarios in. Taking an item out greys the items below; they keep their values.
    */
-  async setScope(m: Model, it: ProcessItem, on: boolean, how: How = DIRECT): Promise<Model> {
-    let model = await this.saveItem(m, it, { scope: on ? SCOPE.in : SCOPE.out }, how);
+  async setScope(m: Model, it: ProcessItem, on: boolean, how: How = DIRECT, reason?: string): Promise<Model> {
+    const level3 = it.level === 3;
+    const value = on ? (level3 ? (isOff(it.scope) ? SCOPE.unspecified : it.scope) : SCOPE.in) : level3 ? SCOPE.na : SCOPE.out;
+    let model = await this.saveItem(m, it, { scope: value, ...(reason !== undefined ? { scopeReason: reason } : {}) }, how);
     if (!on) return model;
-    for (const a of ancestorsOf(model.items, it)) if (a.scope !== SCOPE.in) model = await this.saveItem(model, a, { scope: SCOPE.in }, how);
-    for (const s of descendantsOf(model.items, it.id).filter(x => x.level === 4 && !scopeDecided(x.scope))) model = await this.saveItem(model, s, { scope: SCOPE.in }, how);
+    let child: ProcessItem = it;
+    for (const a of ancestorsOf(model.items, it)) {
+      const cur = model.items.find(x => x.id === a.id) || a;
+      if (cur.level === 3 ? isOff(cur.scope) : cur.scope !== SCOPE.in) {
+        model = await this.saveItem(model, cur, { scope: cur.level === 3 ? SCOPE.unspecified : SCOPE.in }, how);
+        if (cur.level === 2)
+          for (const s of childrenOf(model.items, cur.id).filter(x => x.level === 3 && x.id !== child.id && !scopeDecided(x.scope)))
+            model = await this.saveItem(model, s, { scope: SCOPE.na, scopeReason: s.scopeReason || "Not chosen when the process area came into scope" }, how);
+      }
+      child = cur;
+    }
+    if (level3) for (const s of descendantsOf(model.items, it.id).filter(x => x.level === 4 && !scopeDecided(x.scope))) model = await this.saveItem(model, s, { scope: SCOPE.in }, how);
     return model;
   }
 
-  /** Our own item under `parentId` (level = the parent's + 1): an X-numbered code, Author Project, Catalog status 50 - Custom, in scope. */
-  async addOwnItem(m: Model, parentId: string | null, name: string): Promise<{ model: Model; item: ProcessItem }> {
+  /**
+   * Our own item under `parentId` (level = the parent's + 1): an X-numbered code, Author Project, Catalog status 50 - Custom,
+   * in scope. Our own scenario (level 4) runs on other software: Products "Other" and its Software solutions.
+   */
+  async addOwnItem(m: Model, parentId: string | null, name: string, softwareSolution = ""): Promise<{ model: Model; item: ProcessItem }> {
     const title = name.trim();
     if (!title) throw new Error("A process item needs a name.");
     const parent = m.items.find(x => x.id === parentId);
     const level = parent ? parent.level + 1 : 1;
     if (level > 4) throw new Error("Scenarios (level 4) are the lowest level.");
     const siblings = childrenOf(m.items, parentId);
-    const it = blankItem({ level, parentId, code: nextOwnCode(m.items.map(x => x.code)), name: title, rank: Math.max(0, ...siblings.map(x => x.rank)) + 10, scope: SCOPE.in,
-      isOwn: true, author: AUTHOR.project, catalogStatus: CATALOG_CUSTOM, accent: level === 1 ? "#0D9488" : "" });
+    const it = blankItem({ level, parentId, code: nextOwnCode(m.items.map(x => x.code)), name: title, rank: Math.max(0, ...siblings.map(x => x.rank)) + 10, scope: level === 3 ? SCOPE.unspecified : SCOPE.in,
+      isOwn: true, author: AUTHOR.project, catalogStatus: CATALOG_CUSTOM, accent: level === 1 ? "#0D9488" : "",
+      ...(level === 4 ? { products: labelOf("products", PRODUCT_OTHER), softwareSolution: softwareSolution.trim() } : {}) });
     const model = await this.saveItem(m, it, {});
     return { model, item: model.items[model.items.length - 1] };
   }
@@ -283,8 +361,10 @@ export class Repository {
     await this.g.drop("emph_system", s.id);
     return { ...m, systems: m.systems.filter(x => x.id !== s.id) };
   }
+  /** Saves a role. Base and attach products belong to a Full licence only, so another type clears them. */
   async saveRole(m: Model, r: Role, patch: Partial<Role>): Promise<Model> {
     const n = { ...r, ...patch };
+    if (n.licenceType !== LICENCE.full) { n.baseProduct = null; n.attachProducts = ""; }
     const data = { emph_name: n.name, emph_summary: n.summary || null, emph_rank: n.rank, emph_headcount: n.headcount, emph_responsiblerole: n.responsibleRole ?? null, emph_licencetype: n.licenceType ?? null,
       emph_baseproduct: n.baseProduct ?? null, emph_attachproducts: n.attachProducts || null, emph_licencenote: n.licenceNote || null };
     if (!r.id) { n.id = await this.g.insert("emph_role", data); return { ...m, roles: m.roles.concat(n).sort(byRank) }; }
@@ -349,8 +429,8 @@ export class Repository {
     await this.g.patch("emph_requirement", r.id, data);
     if (!n.evidenceFlowId && r.evidenceFlowId) await this.unlink("emph_requirement", r.id, "emph_EvidenceFlow");
     if (!n.itemId && r.itemId) await this.unlink("emph_requirement", r.id, "emph_Item");
-    await this.history("emph_requirement", r.id, r, n, REQ_HISTORY, how);
-    return { ...m, requirements: m.requirements.map(x => (x.id === r.id ? n : x)) };
+    const logged = await this.history("emph_requirement", r.id, r, n, how);
+    return { ...m, requirements: m.requirements.map(x => (x.id === r.id ? n : x)), history: m.history.concat(logged) };
   }
   async deleteRequirement(m: Model, r: Requirement): Promise<Model> {
     await this.g.drop("emph_requirement", r.id);
@@ -364,24 +444,40 @@ export class Repository {
   }
 
   // ---------- RAID ----------
-  /** A RAID item; a workshop's open points are Action items. */
+  /** A RAID item, starting in its type's first status; a workshop's open points are Action items (open questions marked as a question). */
   async addRaid(m: Model, p: Partial<Raid> & { description: string }): Promise<Model> {
-    const text = p.description.trim();
-    if (!text) throw new Error("A RAID item needs a description.");
-    const r: Raid = { id: "", name: titleOf(text), type: RAID.action, itemId: null, workshopId: null, owner: "", priority: null, targetDate: null, status: RAID_STATUS.open, isQuestion: false, source: "",
-      resolution: "", decisionMaker: "", createdOn: new Date().toISOString(), ...p, description: text };
-    const data: Row = { emph_name: r.name, emph_raidtype: r.type, emph_description: r.description, emph_owner: r.owner || null, emph_priority: r.priority, emph_targetdate: r.targetDate,
-      emph_status: r.status, emph_isquestion: r.isQuestion, emph_sourcetext: r.source || null };
+    const r = blankRaid({ ...p, description: p.description.trim() });
+    if (p.status === undefined) r.status = raidStart(r.type);
+    const problem = raidProblem(r);
+    if (problem) throw new Error(problem);
+    r.name = titleOf(r.description);
+    const data: Row = raidColumns(r);
     if (r.itemId) data["emph_Item@odata.bind"] = ref("emph_processitem", r.itemId);
     if (r.workshopId) data["emph_Workshop@odata.bind"] = ref("emph_workshop", r.workshopId);
+    if (r.signOffId) data["emph_SignOff@odata.bind"] = ref("emph_signoff", r.signOffId);
     r.id = await this.g.insert("emph_raid", data);
     return { ...m, raids: m.raids.concat(r) };
   }
+  /** Saves a RAID item. A new type moves the status to that type's first one when the old status doesn't belong to it. */
   async saveRaid(m: Model, r: Raid, patch: Partial<Raid>): Promise<Model> {
     const n = { ...r, ...patch };
-    await this.g.patch("emph_raid", r.id, { emph_name: titleOf(n.description), emph_description: n.description, emph_owner: n.owner || null, emph_priority: n.priority, emph_targetdate: n.targetDate,
-      emph_status: n.status, emph_isquestion: n.isQuestion, emph_resolution: n.resolution || null, emph_decisionmaker: n.decisionMaker || null });
+    if (patch.type !== undefined && patch.status === undefined && raidProblem({ ...n, description: n.description || "x" })?.startsWith("That status")) n.status = raidStart(n.type);
+    const problem = raidProblem(n);
+    if (problem) throw new Error(problem);
+    n.description = n.description.trim(); n.name = titleOf(n.description);
+    const data: Row = raidColumns(n);
+    if (n.itemId && n.itemId !== r.itemId) data["emph_Item@odata.bind"] = ref("emph_processitem", n.itemId);
+    await this.g.patch("emph_raid", r.id, data);
+    if (!n.itemId && r.itemId) await this.unlink("emph_raid", r.id, "emph_Item");
     return { ...m, raids: m.raids.map(x => (x.id === r.id ? n : x)) };
+  }
+  /** After a sign-off is approved, a change to what it froze can be raised as a Change request (once per frozen item and sign-off). */
+  async raiseChangeRequest(m: Model, s: SignOff, d: Difference): Promise<Model> {
+    const cr = changeRequestFor(d, s);
+    if (m.raids.some(x => x.type === RAID.change && x.signOffId === s.id && x.frozenKey === cr.frozenKey)) throw new Error("A change request for this is already raised.");
+    const itemId = d.item.type === ITEM.scope ? d.item.key : null;
+    return this.addRaid(m, { type: RAID.change, description: cr.description, justification: cr.justification, frozenKey: cr.frozenKey, signOffId: s.id, requestor: this.user,
+      changeRequestType: option("changeRequestType", cr.changeRequestType), itemId: m.items.some(x => x.id === itemId) ? itemId : null });
   }
   async deleteRaid(m: Model, r: Raid): Promise<Model> {
     await this.g.drop("emph_raid", r.id);

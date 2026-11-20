@@ -1,6 +1,8 @@
 // Sign-off export in the browser with no extra library: an Excel workbook, a Word document and a print view for PDF.
-import { ITEM, REQ_ORIGIN_LABEL, DELTA, labelOf, moscowOf } from "./codes";
+import { ITEM, REQ_ORIGIN_LABEL, DELTA, LEVEL_LABEL, labelOf, moscowOf } from "./codes";
+import { inScope, childrenOf, isOff, isActive, softwareOf, RAID_FIELDS } from "./rules";
 import type { FrozenItem } from "./rules";
+import type { Model, ProcessItem, Requirement, Raid } from "./types";
 
 export interface Table { title: string; columns: string[]; rows: string[][] }
 
@@ -99,4 +101,90 @@ export function printHtml(html: string): boolean {
   if (!w) return false;
   w.document.write(html); w.document.close(); w.focus(); w.print();
   return true;
+}
+
+// ---------- Azure Boards import file (as Business Map's W1) ----------
+// Microsoft's ADO template for Dynamics 365 projects: the catalog's work item types End to end, Process area, Process and
+// Scenario, then Requirement and the RAID types, with the field names of Microsoft's catalog workbook (itself an Azure
+// Boards export: "Process sequence ID MS BPC", "Scope MS BPC", ...). Azure Boards > Queries > Import work items reads a CSV:
+// no ID for new items, a tree through the Title 1..n columns (a row is the child of the nearest row above it one Title
+// column to the left), up to 1,000 rows per file. Fields the catalog workbook has no column for go into the HTML Description.
+export const BOARDS_MAX_ROWS = 1000;
+export const BOARDS_HEAD = ["ID", "Work Item Type", "Title 1", "Title 2", "Title 3", "Title 4", "Title 5", "Description", "Process sequence ID MS BPC", "Catalog status MS BPC", "Author MS BPC",
+  "Process type MS BPC", "Products MS BPC", "Software solutions MS BPC", "Scope MS BPC", "Fit gap status MS BPC", "Gap solution approach MS BPC", "Scope approach MS BPC", "Baseline complexity MS BPC",
+  "Business process owner MS BPC", "Workstream lead MS BPC", "Subject matter expert MS BPC", "Priority", "Tags"] as const;
+type BoardsColumn = (typeof BOARDS_HEAD)[number];
+/** Microsoft's work item type of a catalog level. */
+export const LEVEL_TYPE: Record<number, string> = { 1: "End to end", 2: "Process area", 3: "Process", 4: "Scenario" };
+
+const para = (label: string, v: string | null | undefined) => (v ? "<p><strong>" + esc(label) + ":</strong> " + esc(v).replace(/\r?\n/g, "<br>") + "</p>" : "");
+const tagOf = (v: string) => v.replace(/;/g, ",").trim();
+interface BoardsRow { depth: number; values: Partial<Record<BoardsColumn, string>> }
+
+/**
+ * The work items: every process item in scope (an item whose own scope is out or not applicable is listed with its scope,
+ * without what lies below it), each followed by its active requirements and its RAID items; then the requirements and RAID
+ * items on no exported item. Returns rows in BOARDS_HEAD order.
+ */
+export function boardsRows(m: Model): string[][] {
+  const out: BoardsRow[] = [];
+  const org = m.workspace.organisation;
+  const tags = (...t: (string | false | null | undefined)[]) => ["EMPH", org, ...t].filter(Boolean).map(x => tagOf(x as string)).join("; ");
+  const done = new Set<string>();
+  const req = (r: Requirement, depth: number) => {
+    done.add(r.id);
+    out.push({ depth, values: { "Work Item Type": "Requirement", Description: [para("Requirement", r.description), para("Requirement type", labelOf("requirementType", r.type)), para("MoSCoW", moscowOf(r.priority)),
+      para("Business approval state", labelOf("businessApprovalState", r.approval)), para("Estimated complexity", labelOf("estimatedComplexity", r.complexity)), para("Acceptance criteria", r.acceptanceCriteria),
+      para("Requirement mapping", r.mapping), para("Owner", r.owner), para("Raised by", r.raisedBy), para("Source", r.sourceText ? "“" + r.sourceText + "”" + (r.sourceType ? " (" + r.sourceType + ")" : "") : "")].join(""),
+      "Fit gap status MS BPC": labelOf("fitGapStatus", r.fitGap), "Gap solution approach MS BPC": labelOf("gapSolutionApproach", r.gapApproach), "Scope approach MS BPC": r.scopeApproach,
+      "Author MS BPC": labelOf("author", r.author), Priority: labelOf("priority", r.priority), Title: (r.reqId ? r.reqId + " " : "") + r.name } as any });
+  };
+  const raid = (x: Raid, depth: number) => {
+    done.add(x.id);
+    const own = (RAID_FIELDS[x.type] || []).map(f => para(f.label, f.list ? labelOf(f.list, x[f.key] as number) : x[f.key] == null ? "" : String(x[f.key]))).join("");
+    out.push({ depth, values: { "Work Item Type": labelOf("raidType", x.type), Priority: labelOf("priority", x.priority), Tags: tags(x.isQuestion && "Open question"),
+      Description: [para("Description", x.description), para("Status", labelOf("raidStatus", x.status)), para("Owner", x.owner), para("Target date", x.targetDate), own, para("Heard", x.source)].join(""),
+      Title: x.name } as any });
+  };
+  const item = (it: ProcessItem, depth: number) => {
+    const on = inScope(m.items, it);
+    out.push({ depth, values: { "Work Item Type": LEVEL_TYPE[it.level], Title: it.name, "Process sequence ID MS BPC": it.code, "Catalog status MS BPC": labelOf("catalogStatus", it.catalogStatus),
+      "Author MS BPC": labelOf("author", it.author), "Process type MS BPC": labelOf("processType", it.processType), "Products MS BPC": softwareOf({ products: it.products }).join("; "),
+      "Software solutions MS BPC": it.softwareSolution, "Scope MS BPC": labelOf("scope", it.scope), "Fit gap status MS BPC": it.level >= 3 ? labelOf("fitGapStatus", it.fitGap) : "",
+      "Gap solution approach MS BPC": it.level >= 3 ? labelOf("gapSolutionApproach", it.gapApproach) : "", "Scope approach MS BPC": it.scopeApproach, "Baseline complexity MS BPC": labelOf("baselineComplexity", it.complexity),
+      "Business process owner MS BPC": it.owner, "Workstream lead MS BPC": it.workstreamLead, "Subject matter expert MS BPC": it.sme, Priority: labelOf("priority", it.priority),
+      Description: [esc(it.summary) ? "<p>" + esc(it.summary) + "</p>" : "", it.catalogName && it.catalogName !== it.name ? para("Microsoft name", it.catalogName) : "", para("Scope reason", it.scopeReason),
+        para("Fit gap rationale", it.fitGapReason)].join(""), Tags: tags(it.isOwn && "Our own", LEVEL_LABEL[it.level]) } as any });
+    if (!on) return;
+    m.requirements.filter(r => r.itemId === it.id && isActive(r)).forEach(r => req(r, depth + 1));
+    m.raids.filter(x => x.itemId === it.id).forEach(x => raid(x, depth + 1));
+    childrenOf(m.items, it.id).sort((a, b) => a.rank - b.rank).filter(c => inScope(m.items, c) || (isOff(c.scope) && c.level > 1)).forEach(c => item(c, depth + 1));
+  };
+  m.items.filter(x => x.level === 1 && (inScope(m.items, x) || isOff(x.scope))).sort((a, b) => a.rank - b.rank).forEach(e => item(e, 0));
+  m.requirements.filter(r => isActive(r) && !done.has(r.id)).forEach(r => req(r, 0));
+  m.raids.filter(x => !done.has(x.id)).forEach(x => raid(x, 0));
+  return out.map(r => BOARDS_HEAD.map(h => {
+    if (h.startsWith("Title ")) return Number(h.slice(6)) === Math.min(r.depth, 4) + 1 ? String((r.values as any).Title || "").replace(/\s+/g, " ").trim().slice(0, 255) : "";
+    if (h === "Tags") return r.values.Tags ?? tags();
+    return String(r.values[h] ?? "");
+  }));
+}
+
+/** A CSV cell: always quoted, quotes doubled. */
+const cell = (v: string) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+/**
+ * The import files: header plus at most `max` rows each, UTF-8 with a byte order mark, CRLF lines. A file starts at an
+ * end-to-end process (Title 1) where it can, so each tree arrives whole; one bigger than a file is cut where it must be.
+ */
+export function boardsFiles(rows: string[][], max = BOARDS_MAX_ROWS): string[] {
+  const t1 = BOARDS_HEAD.indexOf("Title 1");
+  const groups: string[][][] = [];
+  for (const r of rows) { if (r[t1] || !groups.length) groups.push([]); groups[groups.length - 1].push(r); }
+  const files: string[][][] = [[]];
+  for (const g of groups) {
+    const cur = files[files.length - 1];
+    if (cur.length && cur.length + g.length > max) files.push([]);
+    for (const r of g) { if (files[files.length - 1].length >= max) files.push([]); files[files.length - 1].push(r); }
+  }
+  return files.map(part => "﻿" + [BOARDS_HEAD as readonly string[], ...part].map(r => r.map(cell).join(",")).join("\r\n") + "\r\n");
 }

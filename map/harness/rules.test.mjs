@@ -72,11 +72,16 @@ test("sample-data.js uses the same lists as codes.ts", () => {
 });
 
 test("scope greys the children: an item counts as in scope only when every parent is", () => {
-  const items = [node("e", 1, null), node("a", 2, "e", { scope: C.SCOPE.out }), node("p", 3, "a"), node("s1", 4, "p"), node("b", 2, "e"), node("q", 3, "b"), node("r", 3, "b", { scope: C.SCOPE.unspecified })];
+  const items = [node("e", 1, null), node("a", 2, "e", { scope: C.SCOPE.out }), node("p", 3, "a"), node("s1", 4, "p"), node("b", 2, "e"), node("q", 3, "b"), node("r", 3, "b", { scope: C.SCOPE.unspecified }),
+    node("n", 3, "b", { scope: C.SCOPE.na }), node("s2", 4, "n"), node("s3", 4, "r", { scope: C.SCOPE.unspecified }), node("c", 2, "e", { scope: C.SCOPE.unspecified }), node("t", 3, "c")];
   const by = id => items.find(x => x.id === id);
   assert.ok(R.inScope(items, by("e"))); assert.ok(R.inScope(items, by("q")));
   assert.ok(!R.inScope(items, by("a"))); assert.ok(!R.inScope(items, by("p"))); assert.ok(!R.inScope(items, by("s1"))); // under an area out of scope
-  assert.ok(!R.inScope(items, by("r"))); // 10 - Unspecified is not in scope
+  assert.ok(R.inScope(items, by("r"))); // decision 1: a business process takes no scope of its own, 10 - Unspecified runs
+  assert.ok(!R.inScope(items, by("n")) && !R.inScope(items, by("s2"))); // 40 - Not applicable greys its scenarios
+  assert.ok(!R.inScope(items, by("s3"))); // a scenario needs 20 - In scope (its software is chosen)
+  assert.ok(!R.inScope(items, by("t"))); // an area not decided keeps its processes out, without greying them as off
+  assert.equal(R.offAbove(items, by("s1")).id, "a"); assert.equal(R.offAbove(items, by("s2")).id, "n"); assert.equal(R.offAbove(items, by("t")), undefined);
   assert.deepEqual(R.ancestorsOf(items, by("s1")).map(x => x.id), ["p", "a", "e"]);
   assert.equal(R.levelUp(items, by("s1"), 2).id, "a");
   assert.deepEqual(R.descendantsOf(items, "a").map(x => x.id), ["p", "s1"]);
@@ -382,4 +387,141 @@ test("a choice's loop back gets a stacked dot right of it; a plain step's loop b
   assert.ok(loop && loop.stacked); assert.equal(loop.x, 400 + 100 + 18); assert.equal(loop.y, 0 + 20 + 2 * 40); assert.equal(loop.label, "No");
   assert.ok(!list.some(x => x.from === "P400" && x.to === "P200"));
   assert.ok(list.some(x => x.from === "P300" && x.to === "P400" && !x.stacked));
+});
+
+test("scope per level: level 3 takes only 40 - Not applicable, fit-gap only levels 3 and 4", () => {
+  assert.deepEqual(R.scopeChoices(3), [C.SCOPE.unspecified, C.SCOPE.na]);
+  assert.deepEqual(R.scopeChoices(1), [C.SCOPE.unspecified, C.SCOPE.in, C.SCOPE.out, C.SCOPE.na]); assert.deepEqual(R.scopeChoices(4), R.scopeChoices(2));
+  assert.match(R.scopeProblem(3, C.SCOPE.in), /level 3/); assert.match(R.scopeProblem(3, C.SCOPE.out), /Not applicable/);
+  assert.equal(R.scopeProblem(3, C.SCOPE.na), null); assert.equal(R.scopeProblem(2, C.SCOPE.out), null); assert.equal(R.scopeProblem(4, 582100009), "Scope must be one of Microsoft's four values.");
+  assert.ok(!R.fitGapLevel(1) && !R.fitGapLevel(2) && R.fitGapLevel(3) && R.fitGapLevel(4));
+  assert.ok(R.isOff(C.SCOPE.out) && R.isOff(C.SCOPE.na) && !R.isOff(C.SCOPE.unspecified) && !R.isOff(null));
+});
+
+test("own scenarios on other software read their Software solutions up; a process's fit reads up from its scenarios", () => {
+  const items = [node("e", 1, null), node("a", 2, "e"), node("p", 3, "a", { scope: C.SCOPE.unspecified }),
+    node("s1", 4, "p", { products: "Finance", fitGap: C.FIT_GAP.fit }), node("s2", 4, "p", { products: "Other", softwareSolution: "SAP S/4HANA", fitGap: C.FIT_GAP.fit }),
+    node("s3", 4, "p", { products: "Sales", scope: C.SCOPE.out, fitGap: C.FIT_GAP.gap })];
+  const by = id => items.find(x => x.id === id);
+  assert.deepEqual(R.softwareOf(by("s2")), ["SAP S/4HANA"]); assert.deepEqual(R.softwareOf({ products: "Finance, Other" }), ["Finance", "Other"]);
+  assert.deepEqual(R.productsOf(items, by("a")), ["Finance", "SAP S/4HANA"]); assert.deepEqual(R.productsOf(items, by("e")), ["Finance", "SAP S/4HANA"]);
+  assert.equal(R.fitFromScenarios(items, by("p")), C.FIT_GAP.fit); // the out-of-scope Gap doesn't count
+  const gap = items.map(x => (x.id === "s1" ? { ...x, fitGap: C.FIT_GAP.gap } : x));
+  assert.equal(R.fitFromScenarios(gap, gap.find(x => x.id === "p")), C.FIT_GAP.gap);
+  const unrated = items.map(x => (x.id === "s1" ? { ...x, fitGap: null } : x));
+  assert.equal(R.fitFromScenarios(unrated, unrated.find(x => x.id === "p")), null);
+});
+
+const raid = p => ({ id: "x" + ++n, name: "", type: C.RAID.risk, description: "d", itemId: null, workshopId: null, owner: "", priority: null, targetDate: null, status: C.RAID_STATUS.open, isQuestion: false,
+  source: "", resolution: "", decisionMaker: "", createdOn: "2026-11-20T10:00:00Z", probability: null, ...p });
+test("RAID: statuses per type, a decided decision needs its maker, each type its own fields", () => {
+  assert.deepEqual(R.raidStatuses(C.RAID.decision), [C.RAID_STATUS.proposed, C.RAID_STATUS.decided, C.RAID_STATUS.withdrawn]);
+  assert.deepEqual(R.raidStatuses(C.RAID.change), R.raidStatuses(C.RAID.decision));
+  assert.deepEqual(R.raidStatuses(C.RAID.action), [C.RAID_STATUS.open, C.RAID_STATUS.progress, C.RAID_STATUS.closed]);
+  assert.equal(R.raidStart(C.RAID.change), C.RAID_STATUS.proposed); assert.equal(R.raidStart(C.RAID.issue), C.RAID_STATUS.open);
+  assert.ok(R.raidOpen(C.RAID_STATUS.proposed) && R.raidOpen(C.RAID_STATUS.progress) && !R.raidOpen(C.RAID_STATUS.decided) && !R.raidOpen(C.RAID_STATUS.closed));
+  assert.equal(R.raidProblem(raid({ description: " " })), "A RAID item needs a description.");
+  assert.match(R.raidProblem(raid({ type: C.RAID.decision, status: C.RAID_STATUS.open })), /not one of a Decision/);
+  assert.match(R.raidProblem(raid({ type: C.RAID.decision, status: C.RAID_STATUS.decided })), /decision maker/);
+  assert.equal(R.raidProblem(raid({ type: C.RAID.decision, status: C.RAID_STATUS.decided, decisionMaker: "Board" })), null);
+  assert.match(R.raidProblem(raid({ probability: 140 })), /0 to 100/);
+  const keys = t => R.RAID_FIELDS[t].map(f => f.key);
+  assert.ok(keys(C.RAID.risk).includes("riskResponse") && keys(C.RAID.risk).includes("contingencyPlan"));
+  assert.ok(keys(C.RAID.change).includes("changeRequestType") && keys(C.RAID.change).includes("justification"));
+  assert.ok(keys(C.RAID.issue).includes("issueType") && keys(C.RAID.action).includes("responsibleParty"));
+  for (const t of Object.values(C.RAID)) for (const f of R.RAID_FIELDS[t]) if (f.kind === "choice") assert.ok(C.listOf(f.list).length, f.key);
+});
+test("RAID filter: by type and status, open first, then by target date", () => {
+  const list = [raid({ id: "a", status: C.RAID_STATUS.closed }), raid({ id: "b", targetDate: "2026-12-01" }), raid({ id: "c", targetDate: "2026-11-25" }),
+    raid({ id: "d", type: C.RAID.decision, status: C.RAID_STATUS.proposed }), raid({ id: "e", type: C.RAID.decision, status: C.RAID_STATUS.decided })];
+  assert.deepEqual(R.raidFilter(list, null, "all").map(x => x.id), ["c", "b", "d", "a", "e"]);
+  assert.deepEqual(R.raidFilter(list, C.RAID.risk, "open").map(x => x.id), ["c", "b"]);
+  assert.deepEqual(R.raidFilter(list, null, "closed").map(x => x.id), ["a", "e"]);
+  assert.deepEqual(R.raidFilter(list, C.RAID.decision, C.RAID_STATUS.decided).map(x => x.id), ["e"]);
+});
+test("a change after an approved sign-off becomes a change request with old and new values", () => {
+  const before = { type: C.ITEM.scope, key: "i1", name: "80.20.010 Invoice", description: "", snapshot: { scope: "x", fitGap: null } };
+  const cr = R.changeRequestFor({ kind: "changed", item: { ...before, snapshot: { scope: C.SCOPE.na, fitGap: C.FIT_GAP.fit, inScope: false } }, fields: ["scope", "fitGap", "inScope"], before: { ...before, snapshot: { scope: C.SCOPE.unspecified, fitGap: null, inScope: true } } }, { version: 2 });
+  assert.equal(cr.description, "Change after sign-off v2: Scope 80.20.010 Invoice");
+  assert.equal(cr.justification, "scope: 10 - Unspecified → 40 - Not applicable\nfitGap: empty → Fit\ninScope: yes → no");
+  assert.equal(cr.frozenKey, C.ITEM.scope + ":i1"); assert.equal(cr.changeRequestType, "Scope Change");
+  assert.ok(C.option("changeRequestType", cr.changeRequestType) != null);
+  const added = R.changeRequestFor({ kind: "added", item: { type: C.ITEM.requirement, key: "r9", name: "RQ-9", description: "", snapshot: {} } }, { version: 1 });
+  assert.equal(added.justification, "Added since the sign-off."); assert.equal(added.changeRequestType, "Design Change");
+});
+
+const hist = p => ({ id: "h" + ++n, table: "emph_processitem", rowId: "i1", field: "emph_scope", oldValue: "", newValue: "", how: C.HOW.direct, by: "", workshopName: "", createdOn: "2026-11-20T10:00:00.000Z", ...p });
+test("restore: a choice by its label, text as it was, a Gap with the approach changed with it", () => {
+  assert.deepEqual(R.restorePatch(hist({ oldValue: "30 - Out of scope", newValue: "20 - In scope" }), []), { patch: { scope: C.SCOPE.out } });
+  assert.deepEqual(R.restorePatch(hist({ field: "emph_scope", oldValue: "" }), []), { patch: { scope: null } });
+  assert.deepEqual(R.restorePatch(hist({ field: "emph_businessprocessowner", oldValue: "Ana" }), []), { patch: { owner: "Ana" } });
+  assert.deepEqual(R.restorePatch(hist({ table: "emph_requirement", field: "_emph_item_value", oldValue: "i7" }), []), { patch: { itemId: "i7" } });
+  assert.match(R.restorePatch(hist({ oldValue: "25 - Maybe" }), []).problem, /not one of the choices/);
+  assert.match(R.restorePatch(hist({ field: "emph_rank" }), []).problem, /can't be restored/);
+  const g = hist({ field: "emph_fitgapstatus", oldValue: "Gap", newValue: "Fit", createdOn: "2026-11-20T10:00:00.400Z" });
+  const twin = hist({ field: "emph_gapsolutionapproach", oldValue: "30 - Power Platform", newValue: "", createdOn: "2026-11-20T10:00:00.900Z" });
+  assert.deepEqual(R.restorePatch(g, [g, twin]), { patch: { fitGap: C.FIT_GAP.gap, gapApproach: C.option("gapSolutionApproach", "30 - Power Platform") } });
+  assert.deepEqual(R.historyOf([hist({ id: "1" }), hist({ id: "2", createdOn: "2026-11-21" }), hist({ id: "3", rowId: "i2" })], "emph_processitem", "i1").map(x => x.id), ["2", "1"]);
+  assert.equal(R.historyText(C.SCOPE.na, "scope"), "40 - Not applicable"); assert.equal(R.historyText(null, null), "");
+  for (const fs of Object.values(R.HISTORY_FIELDS)) for (const f of fs) if (f.list) assert.ok(C.listOf(f.list).length, f.column);
+});
+
+// made-up prices for the tests only
+const price = (product, kind, value, validFrom = "2026-01-01") => ({ product, kind, price: value, currency: "EUR", validFrom, source: "test" });
+test("licence suggestion: Full with the highest priced base, Team Members for reading, None outside Dynamics 365", () => {
+  const prices = [price("Field Service", "Base", 50), price("Finance", "Base", 90), price("Finance", "Base", 120, "2027-01-01"), price("Field Service", "Attach", 20)];
+  const s = R.suggestLicence(["Field Service", "Finance", "Teams"], [], prices);
+  assert.equal(s.type, "Full"); assert.equal(s.base, "Finance"); assert.deepEqual(s.attach, ["Field Service"]); assert.match(s.why, /base Finance \(120 EUR/);
+  assert.equal(R.suggestLicence(["Sales", "Finance"], [], []).base, "Finance"); // no prices: by name
+  assert.equal(R.suggestLicence([], ["Sales"], []).type, "Team Members");
+  assert.equal(R.suggestLicence(["Teams", "Power BI"], [], []).type, "None");
+  assert.equal(R.suggestLicence(["Sales"], [], [], true).type, "Device");
+  assert.equal(R.priceOf(prices, "Finance", "Base", "2026-06-30").price, 90); assert.equal(R.priceOf(prices, "Finance", "Base").price, 120);
+  assert.equal(R.priceOf([price("", "Team Members", 8)], "", "Team Members").price, 8); assert.equal(R.priceOf([price("", "Base", 8)], "Sales", "Base"), null);
+  assert.deepEqual(R.licenceProblems({ type: "Full", base: null, attach: "" }), ["A full user needs a base product (the highest priced app)."]);
+  assert.deepEqual(R.licenceProblems({ type: "Team Members", base: null, attach: "Sales" }), ["Attach products need a full user with a base licence."]);
+  assert.deepEqual(R.licenceProblems({ type: "Full", base: "Sales", attach: "Sales; Field Service" }), ["The base product is not attached again."]);
+});
+test("licence per role from its scenarios, and the summary per licence type with a monthly estimate", () => {
+  const items = [node("e", 1, null), node("a", 2, "e"), node("p", 3, "a", { scope: C.SCOPE.unspecified }), node("s1", 4, "p", { products: "Field Service" }), node("s2", 4, "p", { products: "Sales", scope: C.SCOPE.out }),
+    node("q", 3, "a", { scope: C.SCOPE.na }), node("s3", 4, "q", { products: "Finance" })];
+  const links = [{ itemId: "p", roleId: "r1" }, { itemId: "q", roleId: "r1" }, { itemId: "s3", roleId: "r2" }];
+  assert.deepEqual(R.roleProducts(items, links, "r1"), ["Field Service"]); assert.deepEqual(R.roleProducts(items, links, "r2"), []);
+  const prices = [price("Field Service", "Base", 50), price("Finance", "Attach", 30), price("", "Team Members", 8)];
+  const sum = R.licenceSummary([{ headcount: 10, type: "Full", base: "Field Service", attach: "Finance" }, { headcount: 5, type: "Team Members", base: null, attach: "" },
+    { headcount: 2, type: "None", base: null, attach: "" }, { headcount: 3, type: null, base: null, attach: "" }], prices);
+  assert.deepEqual(sum.products, { "Field Service": { base: 10, attach: 0 }, Finance: { base: 0, attach: 10 } });
+  assert.deepEqual(sum.totals, { Full: 10, "Team Members": 5, "Operations - Activity": 0, Device: 0, None: 2, open: 3 });
+  assert.equal(sum.monthly, 10 * 50 + 10 * 30 + 5 * 8); assert.equal(sum.currency, "EUR"); assert.equal(sum.complete, false); // 3 people not decided
+  assert.equal(R.licenceSummary([{ headcount: 1, type: "Device", base: null, attach: "" }]).monthly, null);
+});
+
+test("Azure Boards import file: the tree through Title columns, Microsoft's fields, requirements and RAID under their item", () => {
+  const it = (id, level, parentId, p = {}) => ({ id, level, parentId, code: id, name: "Item " + id, catalogName: "Item " + id, summary: "", rank: 0, scope: C.SCOPE.in, scopeReason: "", scopeApproach: "",
+    fitGap: null, gapApproach: null, fitGapReason: "", owner: "", workstreamLead: "", sme: "", complexity: null, priority: null, processType: null, isOwn: false, author: C.AUTHOR.microsoft, catalogStatus: null,
+    products: "", softwareSolution: "", setHow: null, setBy: "", setOn: null, present: "", workshopName: "", accent: "", comments: "", ...p });
+  const items = [it("80", 1, null), it("80.20", 2, "80"), it("80.20.010", 3, "80.20", { scope: C.SCOPE.unspecified, fitGap: C.FIT_GAP.gap, gapApproach: C.option("gapSolutionApproach", "30 - Power Platform"), owner: "Ana" }),
+    it("80.20.010.100", 4, "80.20.010", { products: "Project Operations" }), it("80.20.010.200", 4, "80.20.010", { scope: C.SCOPE.out, products: "Sales" }),
+    it("80.20.020", 3, "80.20", { scope: C.SCOPE.na, scopeReason: "We don't do it" }), it("80.20.020.100", 4, "80.20.020"), it("90", 1, null, { scope: C.SCOPE.unspecified }), it("90.10", 2, "90")];
+  const m = { workspace: { id: null, organisation: "Harbourview; Test", settings: { prices: [] } }, items, requirements: [req({ id: "r1", reqId: "RQ-00001", name: "Approve \"big\" orders", description: "Approve <big> orders", itemId: "80.20.010.100", fitGap: C.FIT_GAP.fit }),
+    req({ id: "r2", reqId: "RQ-00002", itemId: null, closedReason: "Duplicate" }), req({ id: "r3", reqId: "RQ-00003", name: "Loose", itemId: null })],
+    raids: [raid({ id: "k1", name: "Data late", itemId: "80.20", riskResponse: C.option("riskResponse", "Mitigate") }), raid({ id: "k2", name: "Who signs?", type: C.RAID.action, isQuestion: true })] };
+  const rows = D.boardsRows(m);
+  const col = h => D.BOARDS_HEAD.indexOf(h);
+  const titleAt = r => [1, 2, 3, 4, 5].findIndex(k => r[col("Title " + k)]) + 1;
+  assert.deepEqual(rows.map(r => r[col("Work Item Type")] + "@" + titleAt(r)), ["End to end@1", "Process area@2", "Risk@3", "Process@3", "Scenario@4", "Requirement@5", "Scenario@4", "Process@3", "Requirement@1", "Action item@1"]);
+  const p = rows[3];
+  assert.equal(p[col("Process sequence ID MS BPC")], "80.20.010"); assert.equal(p[col("Fit gap status MS BPC")], "Gap"); assert.equal(p[col("Gap solution approach MS BPC")], "30 - Power Platform");
+  assert.equal(p[col("Business process owner MS BPC")], "Ana"); assert.equal(p[col("Author MS BPC")], "Microsoft"); assert.equal(p[col("Scope MS BPC")], "10 - Unspecified");
+  assert.equal(rows[7][col("Scope MS BPC")], "40 - Not applicable"); assert.match(rows[7][col("Description")], /Scope reason:<\/strong> We don&#39;t do it|Scope reason:<\/strong> We don't do it/);
+  assert.equal(rows[0][col("Fit gap status MS BPC")], ""); // no fit-gap on an end-to-end process
+  assert.equal(rows[5][col("Title 5")], "RQ-00001 Approve \"big\" orders"); assert.match(rows[5][col("Description")], /Approve &lt;big&gt; orders/);
+  assert.match(rows[2][col("Description")], /Risk response:<\/strong> Mitigate/);
+  assert.equal(rows[0][col("Tags")], "EMPH; Harbourview, Test; End-to-end process"); assert.match(rows[9][col("Tags")], /Open question$/);
+  assert.ok(!rows.some(r => r.join("|").includes("RQ-00002"))); // closed requirements stay out
+  const files = D.boardsFiles(rows);
+  assert.equal(files.length, 1); assert.ok(files[0].startsWith("﻿\"ID\",\"Work Item Type\",\"Title 1\"")); assert.ok(files[0].endsWith("\r\n"));
+  assert.ok(files[0].includes('"RQ-00001 Approve ""big"" orders"'));
+  const split = D.boardsFiles(rows, 8); // the first end-to-end tree has 8 rows: the rest starts a new file
+  assert.equal(split.length, 2); assert.equal(split[0].split("\r\n").length - 2, 8); assert.match(split[1].split("\r\n")[1], /"Requirement","RQ-00003 Loose"/);
 });

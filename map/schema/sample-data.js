@@ -138,7 +138,7 @@ window.EMPH_LOAD = async (catalog, S, add, say = () => {}, flows = null, allFlow
     products: ['Agent 365', 'Azure', 'Business Central', 'Commerce', 'Contact Center', 'Microsoft Copilot Studio', 'Customer Insights', 'Customer Insights Data', 'Customer Insights Journey', 'Customer Service', 'Customer Voice', 'Field Service', 'Finance', 'Fraud Protection', 'Guides', 'Human Resources', 'Microsoft 365', 'Microsoft Cloud for Sustainability', 'Other', 'Power Apps', 'Power Automate', 'Power BI', 'Power Pages', 'Project', 'Project Operations', 'Remote Assist', 'Sales', 'Sales Copilot', 'SharePoint', 'Supply Chain Management', 'Teams'],
     systemDecision: ['Keep', 'Migrate', 'Retire'],
     licenceType: ['Full', 'Team Members', 'Operations - Activity', 'Device', 'None'],
-    setHow: ['Workshop', 'Direct', 'Migration', 'Proposal'],
+    setHow: ['Workshop', 'Direct', 'Migration', 'Proposal', 'Restore'],
     requirementOrigin: ['Captured', 'Flow change', 'Configuration decision', 'Scope change', 'Process decision'],
     businessApprovalState: ['New', 'Ready for review', 'In review', 'Approved', 'Rejected'],
   };
@@ -171,7 +171,7 @@ window.EMPH_LOAD = async (catalog, S, add, say = () => {}, flows = null, allFlow
         emph_author: O('author', 'Microsoft'), emph_summary: a.summary || null, ...(aUsed ? migrated : {}) });
       for (const [pi, p] of a.processes.entries()) {
         const pick = chosen.get(p.code), [, owner, now] = pick || [];
-        const pid = procs[p.code] = await item(3, aid, { emph_name: p.name, emph_catalogname: p.name, emph_catalogcode: p.code, emph_rank: (pi + 1) * 10, emph_scope: O('scope', pick ? '20 - In scope' : '10 - Unspecified'),
+        const pid = procs[p.code] = await item(3, aid, { emph_name: p.name, emph_catalogname: p.name, emph_catalogcode: p.code, emph_rank: (pi + 1) * 10, emph_scope: O('scope', pick || !aUsed ? '10 - Unspecified' : '40 - Not applicable'),
           emph_author: O('author', 'Microsoft'), emph_processtype: LISTS.processType.includes(p.type) ? O('processType', p.type) : null, emph_products: p.products || null, emph_summary: p.summary || null,
           emph_businessprocessowner: owner || null, ...(pick ? migrated : {}) });
         if (pick) { await roleOn(pid, owner); if (now) (systemsIn[now] = systemsIn[now] || new Set()).add(aid); }
@@ -182,7 +182,7 @@ window.EMPH_LOAD = async (catalog, S, add, say = () => {}, flows = null, allFlow
         count += 1 + (p.scenarios || []).length;
       }
       for (const [k, [, name, owner, now, products, fitGap, approach]] of (ownBy.get(a.code) || []).entries()) {
-        const pid = procs[name] = await item(3, aid, { emph_name: name, emph_catalogcode: 'X' + String(k + 1).padStart(3, '0'), emph_rank: 9000 + k, emph_scope: O('scope', '20 - In scope'),
+        const pid = procs[name] = await item(3, aid, { emph_name: name, emph_catalogcode: 'X' + String(k + 1).padStart(3, '0'), emph_rank: 9000 + k, emph_scope: O('scope', '10 - Unspecified'),
           emph_isown: true, emph_author: O('author', 'Project'), emph_catalogstatus: O('catalogStatus', '50 - Custom'), emph_summary: 'Our own process.', emph_products: products || null,
           emph_businessprocessowner: owner || null, emph_fitgapstatus: O('fitGapStatus', fitGap), emph_gapsolutionapproach: O('gapSolutionApproach', approach), ...migrated });
         await roleOn(pid, owner);

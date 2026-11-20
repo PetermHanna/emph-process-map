@@ -3,7 +3,12 @@
 // (end-to-end process > process area > business process > scenario). Choice fields hold the option value (codes.ts).
 import type { SessionState } from "./session";
 
-export interface Workspace { id: string | null; organisation: string }
+/** A dated list price (per user or device per month) the person enters in Settings, with where it comes from. */
+export interface LicencePrice { product: string; kind: PriceKind; price: number; currency: string; validFrom: string; source: string }
+export type PriceKind = "Base" | "Attach" | "Team Members" | "Operations - Activity" | "Device";
+/** Settings kept as JSON on the workspace row (emph_settings). */
+export interface WorkspaceSettings { prices: LicencePrice[] }
+export interface Workspace { id: string | null; organisation: string; settings: WorkspaceSettings }
 
 /** A level 1-4 item of the catalog, or our own (Author Project, Catalog status 50 - Custom). */
 export interface ProcessItem {
@@ -17,6 +22,8 @@ export interface ProcessItem {
   isOwn: boolean; author: number | null; catalogStatus: number | null;
   /** Products (comma separated, Microsoft's names); on a scenario it is the software that runs it */
   products: string;
+  /** Software solutions: the software of our own scenario when Products is "Other" (SAP S/4HANA, DATEV) */
+  softwareSolution: string;
   setHow: number | null; setBy: string; setOn: string | null; present: string; workshopName: string;
   /** level 1 only: the colour on the map */
   accent: string; comments: string;
@@ -65,7 +72,14 @@ export interface Requirement {
 export interface Raid {
   id: string; name: string; type: number; description: string; itemId: string | null; workshopId: string | null; owner: string; priority: number | null; targetDate: string | null;
   status: number; isQuestion: boolean; source: string; resolution: string; decisionMaker: string; createdOn: string;
+  /** Risk */ riskImpactAssessment: string; triggers: string; contingencyPlan: string; probability: number | null; impactSeverity: number | null; riskCategory: number | null; riskResponse: number | null;
+  /** Issue and Decision */ impact: string; issueType: number | null; severity: number | null; reportedBy: string;
+  /** Action item */ responsibleParty: number | null; responsibleRole: number | null;
+  /** Change request */ justification: string; impactAssessment: string; alternativeSolution: string; changeRequestType: number | null; requestor: string;
+  /** the approved sign-off a change request changes, and the frozen item (type:key) */ signOffId: string | null; frozenKey: string;
 }
+/** One changed value (emph_history, insert only). Values are as shown: labels for choices, ids for lookups. */
+export interface HistoryRow { id: string; table: string; rowId: string; field: string; oldValue: string; newValue: string; how: number | null; by: string; workshopName: string; createdOn: string }
 export interface Workshop {
   id: string; name: string; heldOn: string | null; facilitator: string; participants: string; minutes: string; phase: number; status: number; itemId: string | null;
   msType: number | null; sbdPhase: number | null; kind: number | null; order: number | null; units: string; childTasks: string;
@@ -79,5 +93,5 @@ export interface Model {
   items: ProcessItem[]; systems: CurrentSystem[]; roles: Role[]; itemRoles: ItemRole[];
   flows: ProcessFlow[]; decisions: ConfigDecision[];
   requirements: Requirement[]; raids: Raid[]; workshops: Workshop[]; signOffs: SignOff[];
-  comments: Comment[];
+  comments: Comment[]; history: HistoryRow[];
 }
