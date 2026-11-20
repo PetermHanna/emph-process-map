@@ -2,7 +2,7 @@
 import * as React from "react";
 import {
   OverlayDrawer, DrawerHeader, DrawerHeaderTitle, DrawerBody, Button, Spinner, Field, Input, Textarea, Dropdown, Option, OptionGroup,
-  Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent, DialogActions, TabList, Tab, Tooltip,
+  Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent, DialogActions, TabList, Tab, Tooltip, ToggleButton,
 } from "@fluentui/react-components";
 import { Dismiss24Regular, Add16Regular, Delete16Regular, ArrowUp16Regular, ArrowDown16Regular, CheckmarkCircle20Regular, ArrowReset20Regular, Edit20Regular, Play20Regular } from "@fluentui/react-icons";
 import { C, useLook } from "../look";
@@ -15,6 +15,7 @@ import { SHAPE_LABEL, FLOW_STATE, REQ_ORIGIN } from "../../domain/codes";
 import { flowDeltas, unreachable, covers, nextActivityCode, FlowDelta } from "../../domain/rules";
 import { loadActivities, flowsOf, Repository, ResetPlan } from "../../domain/repository";
 import { ActivityNotes } from "../pages/WorkshopParts";
+import { readDrawings, writeDrawing, emptyDrawing, undoLast, Drawing } from "../../domain/drawing";
 import type { Model, ProcessItem, Activity } from "../../domain/types";
 
 const DELTA_TONE: Record<number, "ok" | "warn" | "bad"> = { [CHANGE.added]: "ok", [CHANGE.changed]: "warn", [CHANGE.removed]: "bad" };
@@ -22,8 +23,13 @@ const DELTA_TEXT: Record<number, string> = { [CHANGE.added]: "Added", [CHANGE.ch
 
 /** A sentence from a workshop transcript that describes a change to the flow; it becomes an activity's rationale. */
 export interface FlowNote { text: string; onUsed: (code: string, name: string) => void }
+/** Drawing on the flow in a workshop (Business Map N1): kept on the workshop row, per flow. */
+export interface FlowDrawingCtx { workshopName: string; raw: string; save: (raw: string) => Promise<void> }
 
-export function FlowStudio({ model, repo, apply, process: p, onClose, note }: { model: Model; repo: Repository; apply: Apply; process: ProcessItem; onClose: () => void; note?: FlowNote | null }) {
+/** focus: the step to select when the flow opens (a requirement's step). drawing: set when opened from a workshop. */
+export function FlowStudio({ model, repo, apply, process: p, onClose, note, focus, drawing }: {
+  model: Model; repo: Repository; apply: Apply; process: ProcessItem; onClose: () => void; note?: FlowNote | null; focus?: string | null; drawing?: FlowDrawingCtx | null;
+}) {
   const l = useLook();
   const { reference, ours } = flowsOf(model, p.id);
   const [view, setView] = React.useState<"ours" | "reference">("ours");
@@ -45,6 +51,7 @@ export function FlowStudio({ model, repo, apply, process: p, onClose, note }: { 
       const o = ours ? await loadActivities(repo.g, ours.id) : null;
       if (!live) return;
       setRefActs(r); setActs(o ? o.map(toStep) : null);
+      if (focus) { if (!o || !o.some(a => a.code === focus)) { if (r.some(a => a.code === focus)) setView("reference"); } setSel(focus); }
     })().catch(e => setProblem(String(e?.message || e)));
     return () => { live = false; };
   }, [reference?.id, ours?.id]);
@@ -134,6 +141,12 @@ export function FlowStudio({ model, repo, apply, process: p, onClose, note }: { 
   });
   const askReset = () => run(async () => setResetting(await repo.resetPlan(model, ours!, (acts || []).map(toActivity), refActs)));
 
+  // the workshop's drawing on the flow shown: kept per flow on the workshop row
+  const shownFlow = view === "reference" ? reference : ours;
+  const [drawMode, setDrawMode] = React.useState<"pen" | "comment" | null>(null);
+  const [drawRaw, setDrawRaw] = React.useState(drawing?.raw || "");
+  const pic: Drawing = (shownFlow && readDrawings(drawRaw)[shownFlow.id]) || emptyDrawing();
+  const keepDrawing = (d: Drawing) => { if (!shownFlow || !drawing) return; try { const raw = writeDrawing(drawRaw, shownFlow.id, d); setDrawRaw(raw); drawing.save(raw).catch(e => setProblem(String(e?.message || e))); } catch (e: any) { setProblem(e?.message || String(e)); } };
   const playable = view === "reference" ? (refActs.length ? reference : undefined) : (ours && acts?.length ? ours : undefined);
   const counts = (acts || []).reduce<Record<number, number>>((a, x) => { a[x.change] = (a[x.change] || 0) + 1; return a; }, {});
   const capturedReqs = model.requirements.filter(r => r.origin === REQ_ORIGIN.captured && (r.itemId === p.id || !r.itemId));
@@ -156,8 +169,9 @@ export function FlowStudio({ model, repo, apply, process: p, onClose, note }: { 
           {view === "ours" && ours?.state === FLOW_STATE.confirmed && <Button icon={<Edit20Regular />} disabled={busy} onClick={() => run(() => apply(m => repo.setFlowState(m, ours, FLOW_STATE.draft)))}>Reopen</Button>}
           {view === "ours" && ours?.referenceId && <Button appearance="subtle" icon={<ArrowReset20Regular />} disabled={busy} onClick={askReset}>Back to reference</Button>}
           {playable && (guide
-            ? <Button icon={<Play20Regular />} disabled={busy} onClick={() => playInGuide(playable.id)} data-emph="flow-play" title={"Opens a new tab and plays this flow over the live app (guide " + guide + ")"}>Play in the guide</Button>
+            ? <Button icon={<Play20Regular />} disabled={busy} onClick={() => playInGuide(playable.id, playable.id === (view === "ours" ? ours?.id : reference?.id) ? sel || undefined : undefined)} data-emph="flow-play" title={"Opens a new tab and shows this flow over the live app in the guide (guide " + guide + ")" + (sel ? ", from the selected step" : "")}>Play in the guide{sel ? " from here" : ""}</Button>
             : <Button appearance="subtle" icon={<Play20Regular />} onClick={() => setGuideHint(true)} data-emph="flow-play-hint">Play in the guide</Button>)}
+          {drawing && shownFlow && <ToggleButton icon={<Edit20Regular />} checked={!!drawMode} data-emph="flow-draw" onClick={() => setDrawMode(m => (m ? null : "pen"))} title={"Draw and comment on the flow; kept with " + drawing.workshopName}>Draw</ToggleButton>}
           {view === "reference" && reference?.sourceLink && <a href={reference.sourceLink} target="_blank" rel="noreferrer">Source on Microsoft Learn</a>}
         </div>
       </DrawerHeader>
@@ -167,6 +181,15 @@ export function FlowStudio({ model, repo, apply, process: p, onClose, note }: { 
           <div className={l.card} data-emph="flow-note" style={{ marginBottom: 12, borderLeft: "3px solid " + C.railActive }}>
             <div style={{ fontStyle: "italic" }}>{note.text}</div>
             <div className={l.muted} style={{ fontSize: 12, marginTop: 4 }}>{editable ? "Select the activity this is about, change it if you like, then use the sentence as its rationale." : !ours ? "Adapt the reference first, then select the activity this is about." : "Reopen our process to use this sentence as a rationale."}</div>
+          </div>
+        )}
+        {drawMode && (
+          <div className={l.row} data-emph="flow-draw-tools" style={{ marginBottom: 8 }}>
+            <ToggleButton size="small" checked={drawMode === "pen"} data-emph="flow-draw-pen" onClick={() => setDrawMode("pen")}>Pen</ToggleButton>
+            <ToggleButton size="small" checked={drawMode === "comment"} data-emph="flow-draw-comment" onClick={() => setDrawMode("comment")}>Comment</ToggleButton>
+            <Button size="small" disabled={!pic.strokes.length && !pic.comments.length} onClick={() => keepDrawing(undoLast(pic))}>Undo</Button>
+            <Button size="small" appearance="subtle" disabled={!pic.strokes.length && !pic.comments.length} onClick={() => { if (window.confirm("Remove every line and comment drawn on this flow in " + drawing!.workshopName + "?")) keepDrawing(emptyDrawing()); }}>Clear</Button>
+            <span className={l.muted} style={{ fontSize: 12 }}>{drawMode === "pen" ? "Draw on the flow." : "Click where the comment goes."} {pic.strokes.length} lines, {pic.comments.length} comments, kept with {drawing!.workshopName}. Each belongs to the step it is on.</span>
           </div>
         )}
         {view === "ours" && !ours && (
@@ -184,7 +207,8 @@ export function FlowStudio({ model, repo, apply, process: p, onClose, note }: { 
             <div>
               <FlowCanvas key={view + (ours?.id || "")} steps={shown.filter(x => x.change !== CHANGE.removed)} selected={sel} colour={C.railActive} editable={editable}
                 onSelect={code => setSel(code)} onPlace={placed} newStep={() => ({ code: nextActivityCode(acts || []), sort: Math.max(0, ...(acts || []).map(x => x.sort)) + 10, flowId: ours!.id })}
-                onRefuse={setProblem} onUndo={editable ? undo : undefined} canUndo={history.length > 0 && !busy} roles={model.roles.map(r => r.name)} />
+                onRefuse={setProblem} onUndo={editable ? undo : undefined} canUndo={history.length > 0 && !busy} roles={model.roles.map(r => r.name)}
+                drawing={drawing ? pic : undefined} drawMode={drawMode} onDrawing={keepDrawing} drawBy={repo.user} />
               {view === "ours" && (acts || []).some(x => x.change === CHANGE.removed) && (
                 <div className={l.row} style={{ marginTop: 8 }}><span className={l.muted}>Dropped:</span>{(acts || []).filter(x => x.change === CHANGE.removed).map(x => <span key={x.code} style={{ cursor: "pointer", textDecoration: "line-through" }} onClick={() => setSel(x.code)}><Pill text={x.name} tone="bad" /></span>)}</div>
               )}

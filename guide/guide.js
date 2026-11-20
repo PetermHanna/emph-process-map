@@ -7,7 +7,7 @@
   const IS_CE = location.pathname.toLowerCase() === "/main.aspx";
   if (!IS_FO && !IS_CE) return;
   window.__emphGuide = true;
-  const VERSION = "1.0.0";
+  const VERSION = "1.1.0";
   document.documentElement.setAttribute("data-emph-guide", VERSION); // lets the Process Map see that the guide is installed
   // Extension storage is shared by Dynamics 365 and Finance and Supply Chain tabs; page storage is the fallback when injected for testing.
   const EXT = !!(window.chrome && chrome.storage && chrome.storage.local && chrome.runtime && chrome.runtime.id);
@@ -21,7 +21,7 @@
   let ORG = IS_CE ? location.origin : null, FO = IS_FO ? location.origin : null;
   // The guide opens only in a tab where someone opened it, and when it moves itself to another page or site. New tabs just show the small Guide button.
   const tabOn = { get: () => { try { return sessionStorage.getItem("emphGuideOn") === "1"; } catch { return false; } }, set: v => { try { v ? sessionStorage.setItem("emphGuideOn", "1") : sessionStorage.removeItem("emphGuideOn"); } catch { /* ignore */ } } };
-  const save = () => { tabOn.set(st.open); const v = ({ handoff: st.handoff || 0, flowId: st.flow?.id || null, code: st.code, mode: st.mode, pos: st.pos, mins: st.mins, tuck: !!st.tuck, min: st.min, open: st.open, drawer: st.map, focus: st.focus, done: st.done, run: st.run, voice: st.voice, voiceName: st.voiceName, speed: st.speed, auto: !!st.autoReload, runNo: st.runNo || null });
+  const save = () => { tabOn.set(st.open); const v = ({ handoff: st.handoff || 0, flowId: st.flow?.id || null, code: st.code, mode: st.mode, pos: st.pos, mins: st.mins, tuck: !!st.tuck, min: st.min, open: st.open, drawer: st.map, focus: st.focus, done: st.done, run: st.run, voice: st.voice, voiceName: st.voiceName, speed: st.speed, auto: !!st.autoReload, runNo: st.runNo || null, m14: true });
     try { localStorage.setItem(KEY, JSON.stringify(v)); } catch { /* ignore */ }
     if (EXT) chrome.storage.local.set({ [KEY]: v }).catch(() => {}); };
   // Dataverse calls: same origin on Dynamics 365 pages; from Finance and Supply Chain through the extension's background worker.
@@ -54,7 +54,9 @@
       if (o.emphLaunch && Date.now() - o.emphLaunch.at < 120000) { launch = o.emphLaunch; chrome.storage.local.remove("emphLaunch"); }
     }
     if (!EXT && IS_CE) try { const l = JSON.parse(localStorage.getItem("emphLaunch") || "null"); if (l && Date.now() - l.at < 120000) { localStorage.removeItem("emphLaunch"); launch = l; } } catch { /* ignore */ }
-    if (qp && /^[0-9a-f-]{36}$/i.test(qp)) launch = { flowId: qp };
+    // ?emphguide=<flow id>&emphstep=<step code>: open that flow at that step (the Process Map's Play from a selected step or a workshop's flow walk)
+    const qs = new URLSearchParams(location.search).get("emphstep");
+    if (qp && /^[0-9a-f-]{36}$/i.test(qp)) launch = { flowId: qp, code: qs && /^[\w.-]{1,30}$/.test(qs) ? qs : (launch && launch.flowId === qp ? launch.code : null) };
     main(saved, launch);
   };
   // The Process Map's "Start guide" button raises this event; the new tab picks the request up from extension storage.
@@ -67,12 +69,15 @@
   boot();
 
   function main(saved, launch) {
+  // inside main: boot() can call main before the code after it has run (outside the extension there is no await first)
+  const RUNS = { guide: "Guide only (workshop)", check: "Training: autopilot with checkpoints", full: "Training: full autopilot" }, RUNS_OK = /^(guide|check|full)$/;
   if (window.speechSynthesis) speechSynthesis.addEventListener("voiceschanged", () => { if (st && st.open && !st.focus && !st.edit) render(); });
   st = { flow: null, steps: [], code: saved.code || null, mode: saved.mode || "demo", pos: saved.pos || {}, mins: saved.mins || {}, tuck: !!saved.tuck, min: !!saved.min, open: !!saved.open && (tabOn.get() || !!saved.auto || !!launch || Date.now() - (saved.handoff || 0) < 120000), resume: saved.flowId ? { id: saved.flowId, code: saved.code } : null,
     runNo: saved.runNo || null, edit: false, picking: false, results: [], err: "", done: Array.isArray(saved.done) ? saved.done : [], map: !!saved.drawer, focus: !!saved.focus, since: Date.now(), sig: null };
-  st.run = saved.run || "narrated"; st.voice = saved.voice !== false; st.voiceName = saved.voiceName || ""; st.speed = saved.speed || 1;
-  const RUNS = { narrated: "Narrated", check: "Autopilot: checkpoints", full: "Autopilot: full" };
-  const NEXT_AFTER = 6000; // ms before the Next button shows on a guided step
+  st.run = saved.run || "guide"; st.voice = saved.voice === true; st.voiceName = saved.voiceName || ""; st.speed = saved.speed || 1;
+  // 0.14.0: the default is the guidance layer for workshops: the guide shows the step and where to act, the facilitator does every action and speaks.
+  // Autopilot is for training only. Older saved settings start once on Guide only, with the voice off.
+  if (!saved.m14 || !RUNS_OK.test(st.run)) { st.run = "guide"; st.voice = false; }
 
   // ---------- host + shadow DOM ----------
   const host = document.createElement("div");
@@ -115,7 +120,7 @@
     .menu label{display:block;font-size:11px;color:#616161;margin-bottom:2px}
     .body{overflow:auto;padding:4px 14px 12px;display:flex;flex-direction:column;gap:10px}
     .row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-    .acts{display:flex;gap:8px;align-items:center;margin-top:2px}
+    .acts{display:flex;gap:8px;align-items:center;margin-top:2px;flex-wrap:wrap}
     .acts .grow{flex:1}
     input,textarea{width:100%;border:1px solid #d1d1d1;border-radius:8px;padding:6px 8px;font-size:12.5px}
     textarea{resize:vertical;min-height:54px}
@@ -210,7 +215,10 @@
       <select id="proc" title="Process" style="width:100%"><option value="">Choose a process…</option>${present.map(k => `<option value="${k}" ${st.proc === k ? "selected" : ""}>${esc((k + " " + procName(k)).trim())}</option>`).join("")}</select>
       <input id="q" placeholder="Or search all flows, e.g. opportunity" value="${esc(st.q || "")}"/><div class="list" id="flist">${flowListHtml()}</div>`;
   }
+  // Only the flow asked for last opens: a slower answer for a flow clicked earlier is dropped.
+  let openSeq = 0;
   async function openFlow(id, code, keep) {
+    const seq = ++openSeq;
     const cols = "emph_flowactivityid,emph_activitycode,emph_name,emph_shape,emph_lane,emph_links,emph_summary,emph_rank,emph_delta,emph_screentarget,emph_screenpath,emph_instruction,emph_narration,emph_completion,emph_nextaction,emph_samplevalue";
     const q = c => api(`emph_flowactivities?$select=${c}&$filter=_emph_processflow_value eq ${id}&$orderby=emph_rank`);
     // the fingerprint column is optional: older Process Map versions run without self-healing
@@ -220,9 +228,11 @@
       try { s = await q(cols + ",emph_screensignature"); st.hasFp = true; } catch { s = await q(cols); st.hasFp = false; }
       cacheFlow(id, f, s);
     } catch (e) {
+      if (seq !== openSeq) return;
       const c = await cachedFlow(id); if (!c) throw e;
       f = c.f; s = c.rows; st.hasFp = true; st.err = "Using the copy of this flow saved earlier (Dataverse not reachable from here).";
     }
+    if (seq !== openSeq) return;
     st.flow = { id: f.emph_processflowid, name: f.emph_name, kind: f.emph_flowtype, source: f.emph_sourcelink || "" };
     loadStages(f.emph_catalogcode).then(render).catch(() => { st.stages = null; }); // only decoration: a failure must not stop the flow
     st.steps = s.value.filter(x => x.emph_delta !== 582100003).map(x => ({ id: x.emph_flowactivityid, code: x.emph_activitycode, name: x.emph_name, type: x.emph_shape, func: x.emph_lane || "", next: parseNext(x.emph_links), desc: x.emph_summary || "",
@@ -242,7 +252,11 @@
 
   // ---------- navigation through the flow ----------
   const active = () => document.visibilityState === "visible";
-  function reset() { st.since = Date.now(); st.touched = false; st.scrolled = null; st.foundFor = st.bridgeFor = null; tlog("enter"); setTimeout(onStep, 0); }
+  // noAuto: after Back, Next or a jump the step waits for the facilitator; a "done when" rule that is already true must not move it on by itself
+  function reset() { st.since = Date.now(); st.touched = false; st.scrolled = null; st.foundFor = st.bridgeFor = null; st.noAuto = !!st.moving; st.moving = false; tlog("enter"); setTimeout(onStep, 0); }
+  // A move by the facilitator (Back, Next, a step in the flow drawer). While autopilot runs, it pauses first, so nothing acts on the step left behind.
+  function move(fn) { if (ap.on) holdAuto(); st.moving = true; st.lastHow = null; ap.resumeAt = null; fn(); }
+  function jumpTo(code) { if (!st.flow || !st.steps.some(x => x.code === code) || code === st.code) { st.moving = false; return; } if (st.code) st.done.push(st.flow.id + "|" + st.code); st.code = code; reset(); save(); render(); }
   // "Continue with" stitches flows together: "85.45.200:P400", or per decision answer "Yes=85.45.300:P400; No=85.45.200:P1000".
   function contFor(s, label) {
     if (!s?.cont) return null;
@@ -257,13 +271,13 @@
     await openFlow(r.value[0].emph_processflowid, code, true);
   }
   function go(code, label) {
-    const s = cur(); tlog("done", { to: code, how: st.how || "next", label: label || "" }); st.lastHow = st.how; st.how = null; if (st.flow && st.code) st.done.push(st.flow.id + "|" + st.code);
+    const s = cur(); tlog("done", { to: code, how: st.how || "next", label: label || "" }); st.lastHow = st.how; st.how = null; ap.resumeAt = null; if (st.flow && st.code) st.done.push(st.flow.id + "|" + st.code);
     const c = contFor(s, label);
     if (c) { cross(c).catch(e => { st.err = e.message; render(); }); return; }
     st.code = code; reset(); save(); render();
   }
   function back() {
-    const p = st.done.pop(); if (!p) return; const [fid, code] = p.includes("|") ? p.split("|") : [st.flow.id, p];
+    const p = st.done.pop(); if (!p) { st.moving = false; return; } const [fid, code] = p.includes("|") ? p.split("|") : [st.flow.id, p];
     if (fid !== st.flow.id) { openFlow(fid, code, true).catch(e => { st.err = e.message; render(); }); return; }
     st.code = code; reset(); save(); render();
   }
@@ -315,11 +329,11 @@
       const req = { pageType: pt, entityName: u.searchParams.get("etn") };
       if (pt === "entityrecord" && u.searchParams.get("id")) req.entityId = u.searchParams.get("id");
       if (pt === "entitylist" && u.searchParams.get("viewid")) { req.viewId = u.searchParams.get("viewid"); req.viewType = "savedquery"; }
-      const id = ++navSeq, t0 = Date.now();
+      const id = ++navSeq, t0 = Date.now(), runTok = ap.runner;
       // navigateTo's promise can settle late (it follows the form, not the navigation): the address bar decides
       const arrived = () => { const h = new URLSearchParams(location.search); return h.get("pagetype") === pt && (h.get("etn") || "").toLowerCase() === (req.entityName || "").toLowerCase() && (!req.entityId || (h.get("id") || "").toLowerCase().includes(req.entityId.toLowerCase())); };
       let done = false;
-      const fin = (ok, why) => { if (done) return; done = true; window.removeEventListener("message", on); clearTimeout(t); clearInterval(poll); tlog("softNav", { ok, ms: Date.now() - t0, why }); if (!ok) location.href = url; res(ok ? "soft" : "reload"); };
+      const fin = (ok, why) => { if (done) return; done = true; window.removeEventListener("message", on); clearTimeout(t); clearInterval(poll); tlog("softNav", { ok, ms: Date.now() - t0, why }); if (!ok && !stale(runTok)) location.href = url; res(ok ? "soft" : "reload"); };
       const on = e => { if (e.source === window && e.data && e.data.type === "emph-nav-done" && e.data.id === id && !e.data.ok) fin(false, e.data.error); };
       window.addEventListener("message", on);
       const poll = setInterval(() => { if (arrived()) fin(true); }, 150);
@@ -366,11 +380,11 @@
     if (isSelected(r)) return true;
     const parts = rowParts(r), pick = sel => parts.map(x => x.querySelector(sel)).find(Boolean);
     const c = IS_FO ? r.querySelector("input") : pick('input[aria-label^="select or deselect" i],[role=checkbox],input[type=checkbox],button[aria-label*="Select all values in a row"],button[aria-label*="select" i],[class*="rowbtn"],[class*="row-select"]') || pick("[role=gridcell]") || r;
-    c.click(); await new Promise(z => setTimeout(z, 700));
+    c.click(); await wait(700);
     if (!isSelected(r)) { // some grids only react to the whole pointer sequence
       const b = (c.getBoundingClientRect().height ? c : c.closest("[role=gridcell]") || c).getBoundingClientRect(), o = { bubbles: true, cancelable: true, composed: true, view: window, button: 0, clientX: b.left + b.width / 2, clientY: b.top + b.height / 2 };
       ["pointerdown", "mousedown", "pointerup", "mouseup", "click"].forEach(t => c.dispatchEvent(t.startsWith("pointer") ? new PointerEvent(t, { ...o, pointerId: 1 }) : new MouseEvent(t, o)));
-      await new Promise(z => setTimeout(z, 1200));
+      await wait(1200);
     }
     tlog("select", { ok: isSelected(r) });
     return true;
@@ -428,9 +442,8 @@
     let h = `<div class="menu" id="menu">`;
     if (inFlow) {
       h += `<button class="mi" id="change">Choose another flow</button>`;
-      h += `<div><label>Mode</label><span class="seg"><button data-mode="demo" class="${st.mode === "demo" ? "on" : ""}">Demo</button><button data-mode="train" class="${st.mode === "train" ? "on" : ""}">Training</button></span></div>`;
-      h += `<div><label>How it runs</label><select id="run">${Object.entries(RUNS).map(([k, v]) => `<option value="${k}" ${st.run === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>`;
-      if (st.run !== "narrated") h += `<div><label>Speed</label><select id="speed">${[0.75, 1, 1.5].map(v => `<option value="${v}" ${st.speed == v ? "selected" : ""}>${v}x</option>`).join("")}</select></div>`;
+      h += `<div><label>Mode</label><select id="run">${Object.entries(RUNS).map(([k, v]) => `<option value="${k}" ${st.run === k ? "selected" : ""}>${v}</option>`).join("")}</select></div>`;
+      if (st.run !== "guide") h += `<div><label>Speed</label><select id="speed">${[0.75, 1, 1.5].map(v => `<option value="${v}" ${st.speed == v ? "selected" : ""}>${v}x</option>`).join("")}</select></div>`;
       if (st.voice) h += `<div><label>Voice</label><select id="vname">${voices().filter(v => v.lang.startsWith("en")).map(v => `<option value="${esc(v.name)}" ${bestVoice() && bestVoice().name === v.name ? "selected" : ""}>${esc(v.name.replace(/^Microsoft |Online \(Natural\) - |\s*\(.*?\)/g, "").slice(0, 28))}</option>`).join("")}</select></div>`;
       h += `<button class="mi" id="edit">${st.edit ? "Done editing" : "Edit this step"}</button><button class="mi" id="focus">Hide this card</button>`;
     }
@@ -461,16 +474,17 @@
       const said = s.instruction || (!s.selector && s.type !== T.start && s.type !== T.end ? explainFallback(s) : "");
       if (said) h += `<div class="do">${esc(said)}</div>`;
       if (s.talk) h += `<ul class="say">${points(s.talk).map(x => `<li>${esc(x)}</li>`).join("")}</ul>`;
-      // Back, then one main button: Stop while autopilot runs; otherwise Play, and Next once the step is done
-      h += `<div class="acts">${st.done.length && !ap.on ? `<button class="btn" id="back">Back</button>` : ""}`;
-      const canNext = s.type !== T.end && (s.next.length > 1 || nextReady(s));
-      if (ap.on) h += `<button class="btn p grow" id="play">■ Stop</button>`;
+      // Back and Next are always there, also while autopilot runs (moving pauses it on the new step).
+      // Guide only: Next is the main button. Training: Play, then Pause while it runs, Resume once paused, Stop to end the run.
+      if (ap.held && !ap.on) h += `<div class="muted">Autopilot is paused. Resume goes on from this step; Back and Next move without acting.</div>`;
+      h += `<div class="acts">${st.done.length ? `<button class="btn" id="back">Back</button>` : ""}`;
+      const canNext = s.type !== T.end, train = st.run !== "guide";
+      if (ap.on) h += ap.paused && ap.canContinue ? `<button class="btn p grow" id="continue">▶ Continue</button>` : `<button class="btn p grow" id="pause">❚❚ Pause</button>`;
       else if (s.type === T.end && s.cont) h += `<button class="btn p grow" id="cont">Continue: ${esc(s.cont.split(":")[0])}</button>`;
       else if (s.type === T.end) h += `<button class="btn p grow" id="restart">Start again</button>`;
-      else {
-        if (st.run !== "narrated") h += `<button class="btn p grow" id="play">▶ Play</button>`;
-        if (canNext) s.next.forEach(l => { h += `<button class="btn${st.run === "narrated" ? " p grow" : ""}" data-next="${esc(l.to)}">${esc(l.label || "Next")}</button>`; });
-      }
+      else if (train) h += `<button class="btn p grow" id="play">▶ ${ap.held ? "Resume" : "Play"}</button>`;
+      if (canNext) s.next.forEach(l => { h += `<button class="btn${!train && !ap.on ? " p grow" : ""}" data-next="${esc(l.to)}">${esc(l.label || "Next")}</button>`; });
+      if (ap.on || ap.held) h += `<button class="btn" id="stop" title="End the autopilot run">■ Stop</button>`;
       h += `</div></div>`;
       if (st.edit) h += `<div class="card"><div class="lbl">What to do</div><input id="e-ins" value="${esc(s.instruction)}"/>
             <div class="lbl">Key points (one per line, keep them short)</div><textarea id="e-talk">${esc(s.talk)}</textarea>
@@ -584,35 +598,37 @@
     const $ = s => ui.querySelector(s);
     if ($("#more")) $("#more").onclick = () => { st.menu = !st.menu; render(); };
     if ($("#menu")) $("#menu").addEventListener("click", e => { if (e.target.closest("button")) st.menu = false; }, true);
-    if ($("#x")) $("#x").onclick = () => { st.open = false; save(); render(); };
+    if ($("#x")) $("#x").onclick = () => { if (ap.on || ap.held) stopAuto(); st.open = false; save(); render(); };
     if ($("#unfocus")) $("#unfocus").onclick = () => { st.focus = false; save(); render(); };
     if ($("#focus")) $("#focus").onclick = () => { st.focus = true; save(); render(); };
     if ($("#run")) $("#run").onchange = e => { st.run = e.target.value; stopAuto(); save(); render(); };
     if ($("#vname")) $("#vname").onchange = e => { st.voiceName = e.target.value; save(); say("This is the selected voice.", { now: true }); };
     if ($("#voice")) $("#voice").onclick = () => { st.voice = !st.voice; if (!st.voice) hush(); save(); render(); };
-    if ($("#play")) $("#play").onclick = () => { ap.on ? stopAuto() : startAuto(); };
+    if ($("#play")) $("#play").onclick = () => { if (ap.on) return; const was = ap.held; startAuto(was); };
+    if ($("#pause")) $("#pause").onclick = () => holdAuto();
+    if ($("#continue")) $("#continue").onclick = () => { if (ap.resume && ap.canContinue) ap.resume(); };
+    if ($("#stop")) $("#stop").onclick = () => stopAuto();
     if ($("#speed")) $("#speed").onchange = e => { st.speed = +e.target.value; save(); };
     if ($("#fix")) $("#fix").onclick = async () => { const s = cur(), el = st.healedEl; if (!el) return; s.selector = selectorFor(el); s.fp = fingerprint(actOf(el)); try { await saveStep(s, {}); st.err = ""; } catch (e) { st.err = "Fix not saved: " + e.message; } render(); };
     if ($("#map")) $("#map").onclick = () => { st.map = !st.map; save(); render(); };
                 if ($("#tuck")) $("#tuck").onclick = () => { st.tuck = true; save(); render(); };
     if ($("#untuck")) $("#untuck").onclick = () => { if (justMoved) return; st.tuck = false; save(); render(); };
     ui.querySelectorAll("#home").forEach(b => b.onclick = goHome);
-        ui.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => { st.mode = b.dataset.mode; save(); render(); });
-    const wireFlows = () => ui.querySelectorAll("[data-flow]").forEach(b => b.onclick = () => { stopAuto(); st.pickFlow = false; st.err = ""; introSeen.delete(b.dataset.flow); openFlow(b.dataset.flow).catch(e => { st.err = e.message; render(); }); });
+    const wireFlows = () => ui.querySelectorAll("[data-flow]").forEach(b => b.onclick = () => { endRun(); st.pickFlow = false; introSeen.delete(b.dataset.flow); openFlow(b.dataset.flow).catch(e => { st.err = e.message; render(); }); });
     const q = $("#q"); if (q) { q.oninput = () => { st.q = q.value; $("#flist").innerHTML = flowListHtml(); wireFlows(); }; }
     if ($("#proc")) $("#proc").onchange = e => { st.proc = e.target.value; st.q = ""; if (q) q.value = ""; $("#flist").innerHTML = flowListHtml(); wireFlows(); };
     wireFlows();
     if ($("#pick-back")) $("#pick-back").onclick = () => { st.pickFlow = false; render(); };
-    if ($("#pick-resume")) $("#pick-resume").onclick = () => { const r = st.resume; st.resume = null; openFlow(r.id, r.code, true).catch(e => { st.err = e.message; render(); }); };
-    const showPicker = () => { stopAuto(); closeIntro(); st.pickFlow = true; st.edit = false; const c = cur(); if (c) st.proc = st.proc || procOf({ emph_name: st.flow.name }); searchFlows().then(render).catch(e => { st.err = e.message; render(); }); render(); };
+    if ($("#pick-resume")) $("#pick-resume").onclick = () => { const r = st.resume; st.resume = null; endRun(); openFlow(r.id, r.code, true).catch(e => { st.err = e.message; render(); }); };
+    const showPicker = () => { endRun(); st.pickFlow = true; st.edit = false; const c = cur(); if (c) st.proc = st.proc || procOf({ emph_name: st.flow.name }); searchFlows().then(render).catch(e => { st.err = e.message; render(); }); render(); };
     ui.querySelectorAll("#change,#change2").forEach(b => b.onclick = showPicker);
     // Exit: out of the flow, no highlight left on the page; the guide stays open on the list of flows.
-    ui.querySelectorAll("#exit").forEach(b => b.onclick = () => { stopAuto(); closeIntro(); st.resume = st.flow ? { id: st.flow.id, code: st.code } : null; st.proc = st.flow ? procOf({ emph_name: st.flow.name }) : ""; st.flow = null; st.steps = []; st.code = null; st.pickFlow = false; st.focus = false; st.edit = false; st.map = false; ov.innerHTML = ""; targetRect = null; save(); searchFlows().then(render).catch(e => { st.err = e.message; render(); }); render(); });
-    ui.querySelectorAll("[data-next]").forEach(b => b.onclick = () => go(b.dataset.next, b.textContent));
-    ui.querySelectorAll("svg [data-code]").forEach(g => g.addEventListener("click", () => { st.code = g.getAttribute("data-code"); reset(); save(); render(); }));
-    ui.querySelectorAll("[data-stage]").forEach(b => b.onclick = () => { if (st.flow && b.dataset.stage === st.flow.id) return; stopAuto(); st.err = ""; introSeen.delete(b.dataset.stage); openFlow(b.dataset.stage, null, true).catch(e => { st.err = e.message; render(); }); });
-    if ($("#back")) $("#back").onclick = back;
-    if ($("#restart")) $("#restart").onclick = () => openFlow(st.flow.id);
+    ui.querySelectorAll("#exit").forEach(b => b.onclick = () => { endRun(); openSeq++; st.resume = st.flow ? { id: st.flow.id, code: st.code } : null; st.proc = st.flow ? procOf({ emph_name: st.flow.name }) : ""; st.flow = null; st.steps = []; st.code = null; st.pickFlow = false; st.focus = false; st.edit = false; st.map = false; ov.innerHTML = ""; targetRect = null; save(); searchFlows().then(render).catch(e => { st.err = e.message; render(); }); render(); });
+    ui.querySelectorAll("[data-next]").forEach(b => b.onclick = () => move(() => go(b.dataset.next, b.textContent)));
+    ui.querySelectorAll("svg [data-code]").forEach(g => g.addEventListener("click", () => move(() => jumpTo(g.getAttribute("data-code")))));
+    ui.querySelectorAll("[data-stage]").forEach(b => b.onclick = () => { if (st.flow && b.dataset.stage === st.flow.id) return; endRun(); introSeen.delete(b.dataset.stage); openFlow(b.dataset.stage, null, true).catch(e => { st.err = e.message; render(); }); });
+    if ($("#back")) $("#back").onclick = () => move(back);
+    if ($("#restart")) $("#restart").onclick = () => { endRun(); openFlow(st.flow.id).catch(e => { st.err = e.message; render(); }); };
     if ($("#cont")) $("#cont").onclick = () => go(null);
     if ($("#goto")) $("#goto").onclick = () => { const u = pageUrl(cur()); if (u) softNav(u); };
     if ($("#edit")) $("#edit").onclick = () => { st.edit = !st.edit; render(); };
@@ -682,7 +698,7 @@
     Object.assign(healCache, { key, at: Date.now(), res }); return res;
   }
   function findEl(s) { const e = target(); if (e) return { el: e, healed: false }; const h = heal(s); return h ? { el: h.el, healed: true } : null; }
-  const nextReady = s => !s.selector || !findEl(s) || Date.now() - st.since > NEXT_AFTER;
+  const nextReady = () => true; // 0.14.0: the facilitator is in control, Next never waits
   // Buttons, links, menu and side-menu items are done on click; anything else (fields, grids) is done when its content changes.
   const isAction = el => !!el && (/^(BUTTON|A)$/.test(el.tagName) || /^(button|link|menuitem|treeitem|tab|option)$/.test(el.getAttribute("role") || ""));
 
@@ -725,7 +741,7 @@
     const movedTarget = !!r !== !!targetRect || (r && (Math.abs(r.left - targetRect.left) > 4 || Math.abs(r.top - targetRect.top) > 4));
     targetRect = r || null; if (movedTarget && !dragging) layout();
     if (el && st.scrolled !== st.code + !!br) { st.scrolled = st.code + !!br; if (r.top < 0 || r.bottom > window.innerHeight) el.scrollIntoView({ block: "center", behavior: "smooth" }); }
-    const ready = nextReady(s), key = [st.code, st.focus, ready, !!el, !!br, text, st.mode, healed].join("|");
+    const ready = nextReady(s), key = [st.code, st.focus, ready, !!el, !!br, text, healed].join("|");
     if (key !== ovKey) {
       ovKey = key;
       let h = el ? `<div class="hl${healed ? " heal" : ""}"></div>` : "";
@@ -737,9 +753,9 @@
       const $ = q => ov.querySelector(q), open = () => { st.focus = false; save(); render(); };
       if ($("#f-open")) $("#f-open").onclick = open;
       if ($("#f-panel")) $("#f-panel").onclick = open;
-      if ($("#f-restart")) $("#f-restart").onclick = () => openFlow(st.flow.id);
+      if ($("#f-restart")) $("#f-restart").onclick = () => { endRun(); openFlow(st.flow.id).catch(e => { st.err = e.message; render(); }); };
       if ($("#f-cont")) $("#f-cont").onclick = () => go(null);
-      ov.querySelectorAll("[data-fnext]").forEach(b => b.onclick = () => go(b.dataset.fnext, b.textContent));
+      ov.querySelectorAll("[data-fnext]").forEach(b => b.onclick = () => move(() => go(b.dataset.fnext, b.textContent)));
     }
     const hl = ov.querySelector(".hl"), tip = ov.querySelector(".tip"), fi = ov.querySelector(".fi"), fc = ov.querySelector(".fc");
     if (hl && r) Object.assign(hl.style, { left: r.left - 4 + "px", top: r.top - 4 + "px", width: r.width + 8 + "px", height: r.height + 8 + "px" });
@@ -755,6 +771,7 @@
   function checkDone() {
     const s = cur(); if (!s || s.next.length !== 1 || s.type === T.end || st.edit || st.picking) return;
     if (s.doneWhen) {
+      if (st.noAuto && !st.touched) return; // the facilitator moved here: wait for them, even if the rule is already true
       const filled = s.doneWhen.startsWith("filled:"), el = q1(filled ? s.doneWhen.slice(7) : s.doneWhen);
       if (el && (!filled || [...el.querySelectorAll("input,textarea,select")].some(i => i.value && i.value !== "---"))) { st.how = st.how || "doneWhen"; return go(s.next[0].to); }
       return;
@@ -784,17 +801,13 @@
     if (!st.open || !st.flow || host.contains(e.target) || !e.isTrusted && !ap.on) return;
     const s = cur(), el = primary();
     if (ap.on) return; // autopilot moves on by itself once its own click has finished
-    if (s && el && el.contains(e.target) && isAction(el) && s.next.length === 1) { const here = st.code; tlog("click", { auto: !e.isTrusted }); const sel0 = alts(s.selector)[0] || "", saving = SAVES.test(sel0), slow = SLOW.test(sel0), before = location.href;
-      (async () => { await new Promise(r => setTimeout(r, 1200)); if (saving || slow) await waitSaving(() => errorShown() || location.href !== before || !el.isConnected || (slow && infoDialog())); if (st.code !== here) return; const err = errorShown(); if (err) { tlog("error", { text: err }); caption("Problem", err); return; } st.how = e.isTrusted ? "click" : "autoclick"; go(s.next[0].to); })(); }
+    if (s && el && el.contains(e.target) && isAction(el) && s.next.length === 1) { const here = st.flow.id + "|" + st.code, gone = () => !st.flow || st.flow.id + "|" + st.code !== here || ap.on; tlog("click", { auto: !e.isTrusted }); const sel0 = alts(s.selector)[0] || "", saving = SAVES.test(sel0), slow = SLOW.test(sel0), before = location.href;
+      (async () => { await new Promise(r => setTimeout(r, 1200)); if (saving || slow) await waitSaving(() => errorShown() || location.href !== before || !el.isConnected || (slow && infoDialog()), gone); if (gone()) return; const err = errorShown(); if (err) { tlog("error", { text: err }); caption("Problem", err); return; } st.how = e.isTrusted ? "click" : "autoclick"; go(s.next[0].to); })(); }
   };
   document.addEventListener("click", onDocClick, true); FRAME_EVENTS.push(["click", onDocClick]);
-  const touch = e => { const el = primary(); if (el && el.contains(e.target)) st.touched = true; };
+  const touch = e => { if (e.isTrusted && !host.contains(e.target)) st.noAuto = false; const el = primary(); if (el && el.contains(e.target)) st.touched = true; };
   document.addEventListener("input", touch, true); document.addEventListener("change", touch, true); FRAME_EVENTS.push(["input", touch], ["change", touch]);
-  // Interacting with the page shrinks the guide to one icon at the control.
-  document.addEventListener("pointerdown", e => {
-    if (!st.open || !st.flow || st.picking || st.edit || st.pickFlow || st.focus || ap.on || host.contains(e.target)) return;
-    st.focus = true; save(); render();
-  }, true);
+  // 0.14.0: clicking the page no longer shrinks the guide to one icon; the window docks away from the control and Back and Next stay in reach. "Hide this card" still does it.
   document.addEventListener("keydown", e => { if (e.key !== "Escape") return; if (st.picking) { st.picking = false; render(); } else if (st.focus) { st.focus = false; save(); render(); } }, true);
 
   // A stable CSS selector for a clicked element: prefer data-id, then aria-label, then id.
@@ -824,9 +837,14 @@
 
   // ---------- narration and autopilot ----------
   // Voice: the browser's built-in Web Speech API (no service, no cost). Captions always show; voice can be switched off.
-  const ap = { on: false, paused: false, resume: null, token: 0, cap: null };
+  // runner: the token of the autopilot loop that is running now. Every wait inside it checks that token, so a run that was paused, stopped
+  // or replaced by another flow ends at its next wait instead of typing, clicking or reloading the page for the step it left.
+  const ap = { on: false, paused: false, resume: null, token: 0, cap: null, runner: null, loop: null, waits: new Set(), held: false, canContinue: true, resumeAt: null };
+  class Stopped extends Error { constructor() { super("stopped"); } }
+  const stale = t => t != null && (t !== ap.token || !ap.on);
+  const wait = ms => { const t = ap.runner; return new Promise((res, rej) => { const end = Date.now() + ms; const tick = () => { if (stale(t)) return rej(new Stopped()); const left = end - Date.now(); if (left <= 0) return res(); setTimeout(tick, Math.min(200, left)); }; tick(); }); };
   let lastSpoken = "";
-  const sleep = ms => new Promise(r => setTimeout(r, ms / (st.speed || 1)));
+  const sleep = ms => wait(ms / (st.speed || 1));
   function caption(kind, text, buttons) {
     ap.cap = text ? { kind, text, buttons: buttons || [] } : null; drawCap();
   }
@@ -892,8 +910,11 @@
   const introSeen = new Set();
   function closeIntro() { const n = root.getElementById("intro"); if (n) n.remove(); ui.style.visibility = ""; if (ap.introTimer) { clearInterval(ap.introTimer); ap.introTimer = null; } }
   function showIntro(s) {
-    return new Promise(res => {
+    const runTok = ap.runner;
+    return new Promise((res, rej) => {
       closeIntro();
+      // inside an autopilot run, a pause, stop or flow change ends the intro wait
+      if (runTok != null) { if (stale(runTok)) return rej(new Stopped()); const abort = () => rej(new Stopped()); ap.waits.add(abort); }
       const steps = st.steps.filter(x => x.type !== T.start && x.type !== T.end);
       const n = document.createElement("div"); n.id = "intro"; n.className = "intro"; n.dataset.part = "intro";
       const what = s.instruction || s.desc || `This flow has ${steps.length} steps. Each one is explained as we go.`;
@@ -901,13 +922,15 @@
         ${s.talk ? `<ul>${points(s.talk).map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
         <div class="lbl">What you will see (${steps.length} steps)</div><ol${steps.length > 8 ? ' style="columns:2;column-gap:24px"' : ""}>${steps.map(x => `<li>${esc(x.name)}</li>`).join("")}</ol>
         ${st.flow.source ? `<a href="${esc(st.flow.source)}" target="_blank" rel="noreferrer">Microsoft's description of this process</a>` : ""}
-        <div class="acts"><button class="btn p" id="intro-go">Continue${ap.on ? " (Space)" : ""}</button><button class="btn" id="intro-other">Other flows</button>${ap.on && st.run === "full" ? `<button class="btn" id="intro-hold">Stay here</button>` : ""}${ap.on ? `<button class="btn" id="intro-stop">Stop</button>` : ""}</div>`;
+        <div class="acts">${st.done.length ? `<button class="btn" id="intro-back">Back</button>` : ""}<button class="btn p" id="intro-go">Continue${ap.on ? " (Space)" : ""}</button><button class="btn" id="intro-other">Other flows</button>${ap.on && st.run === "full" ? `<button class="btn" id="intro-hold">Stay here</button>` : ""}${ap.on ? `<button class="btn" id="intro-stop">Stop</button>` : ""}</div>`;
       root.appendChild(n); ui.style.visibility = "hidden"; ov.innerHTML = ""; ovKey = ""; caption(null); layout(); // the card would only repeat the intro
       const done = (v, auto) => { const was = ap.resume; closeIntro(); ap.paused = false; ap.resume = null; if (!auto) hush(); res(v); return was; };
       n.querySelector("#intro-go").onclick = () => done(true);
-      n.querySelector("#intro-other").onclick = () => { done(false); stopAuto(); st.pickFlow = true; searchFlows().then(render).catch(e => { st.err = e.message; render(); }); render(); };
+      n.querySelector("#intro-other").onclick = () => { done(false); endRun(); st.pickFlow = true; searchFlows().then(render).catch(e => { st.err = e.message; render(); }); render(); };
+      const ib = n.querySelector("#intro-back"); if (ib) ib.onclick = () => { done(false); move(back); };
       ap.paused = true; ap.resume = () => done(true);
       const stop = n.querySelector("#intro-stop"); if (stop) stop.onclick = () => { done(false); stopAuto(); };
+      if (runTok != null) ap.canContinue = true;
       const hold = n.querySelector("#intro-hold");
       tlog("intro", { words: wordsIn(what + " " + s.talk) });
       const line = say([st.flow.name.replace(/^[\d.]+\s*/, ""), what, ...points(s.talk)].join(". "));
@@ -924,12 +947,11 @@
     const s = cur(); if (!st.open || !s || !st.flow || !active()) return;
     closeIntro();
     if (s.type === T.start && !ap.on && !introSeen.has(st.flow.id)) { introSeen.add(st.flow.id); showIntro(s).then(v => { if (v && cur() === s && s.next[0]) go(s.next[0].to); }); return; }
-    if (st.run === "narrated") {
-      caption(s.name, s.instruction || s.desc || "", []);
+    if (st.run === "guide") { // the card shows the step; the voice reads it only when switched on
       const key = st.flow.id + s.code; if (key !== lastSpoken) { lastSpoken = key; say(spoken(s), { now: !st.lastHow || st.lastHow === "next" }); }
     }
   }
-  const waitFor = async (fn, ms = 15000) => { const end = Date.now() + ms; while (Date.now() < end) { const v = fn(); if (v) return v; await new Promise(r => setTimeout(r, 300)); } return null; };
+  const waitFor = async (fn, ms = 15000) => { const t = ap.runner, end = Date.now() + ms; while (Date.now() < end) { if (stale(t)) throw new Stopped(); const v = fn(); if (v) return v; await new Promise(r => setTimeout(r, 300)); } if (stale(t)) throw new Stopped(); return null; };
   const visible = e => e && e.getBoundingClientRect().width ? e : null;
   // Long Dynamics saves (close as won ~17 s, project ~14 s): show a running caption and say it once, so the screen never sits silent.
   const SAVE_MAX = 45000; // a contract line took 40 s in the lab
@@ -938,12 +960,15 @@
   const infoDialog = () => [...document.querySelectorAll('[role=dialog],[role=alertdialog]')].some(x => x.getBoundingClientRect().width && x.querySelector('[data-id="okButton"],[data-id="confirmButton"]'));
   // a plain Save stays on the form: the form's own status says when it is done (the top-most form, a dialog can sit on another form)
   const formSaved = () => { const h = [...document.querySelectorAll('[data-id="header_saveStatus"]')].filter(visible).pop(); return !!h && /saved/i.test(h.innerText) && !/unsaved|saving/i.test(h.innerText); };
-  async function waitSaving(fn) {
-    const t0 = Date.now(); let said = false;
+  // left: the facilitator moved on (another step or flow) while waiting for their own click, so stop showing the wait
+  async function waitSaving(fn, left) {
+    const t0 = Date.now(); let said = false, r = null;
     const tick = setInterval(() => { const n = Math.round((Date.now() - t0) / 1000); if (n < 2) return;
       caption("Waiting", `Dynamics is saving (${n} s)`);
       if (!said && n >= 3) { said = true; if (!(window.speechSynthesis && speechSynthesis.speaking)) say("Dynamics is saving."); } }, 1000);
-    const r = await waitFor(fn, SAVE_MAX); clearInterval(tick); tlog("saved", { ms: Date.now() - t0, ok: !!r }); return r;
+    try { r = await waitFor(() => (left && left() ? "left" : fn()), SAVE_MAX); }
+    finally { clearInterval(tick); if (ap.cap && ap.cap.kind === "Waiting") caption(null); }
+    tlog("saved", { ms: Date.now() - t0, ok: !!r }); return r === "left" ? null : r;
   }
   // Type into a Dynamics field container (React inputs need the native setter plus input/change events).
   // Demo value tokens: {today} = today's date, {n} = a short run number so each demo record is new.
@@ -960,12 +985,12 @@
   async function foPick(box, text) {
     const inp = box.querySelector("input"); if (!inp) return false;
     const option = () => [...document.querySelectorAll('[role=option],li')].filter(o => o.getBoundingClientRect().width && o.textContent.trim().toLowerCase() === text.toLowerCase() && !o.closest('[role=tab],[role=tablist]') && !o.querySelector('[role=tab]')).pop(); // the open list comes last; a tab can carry the same word
-    inp.focus(); await new Promise(r => setTimeout(r, 300));
+    inp.focus(); await wait(300);
     inp.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", code: "ArrowDown", keyCode: 40, altKey: true, bubbles: true }));
     let o = await waitFor(option, 1500);
     if (!o) { const b = [...box.querySelectorAll('button,[role=button]')].pop(); if (b) b.click(); o = await waitFor(option, 2000); }
     if (!o) return false;
-    o.click(); await new Promise(r => setTimeout(r, 1500)); await waitFor(() => !foBusy() && !document.querySelector(".processing") ? "idle" : null, 8000); await new Promise(r => setTimeout(r, 1500)); return true;
+    o.click(); await wait(1500); await waitFor(() => !foBusy() && !document.querySelector(".processing") ? "idle" : null, 8000); await wait(1500); return true;
   }
   // The newest sales invoice in this company, so a payment can be matched to the invoice just posted
   async function lastInvoice() {
@@ -990,10 +1015,11 @@
     await post("msdyn_PssCreateV1", { OperationSetId, Entity: { "@odata.type": "Microsoft.Dynamics.CRM.msdyn_projecttask", msdyn_projecttaskid: crypto.randomUUID(), msdyn_subject: subject, msdyn_LinkStatus: 192350000, "msdyn_project@odata.bind": `msdyn_projects(${projectId})`, "msdyn_projectbucket@odata.bind": `msdyn_projectbuckets(${bucket.msdyn_projectbucketid})` } });
     await post("msdyn_ExecuteOperationSetV1", { OperationSetId });
     const t0 = Date.now();
-    while (Date.now() - t0 < 120000) { caption("Waiting", `Project Operations is adding the task (${Math.round((Date.now() - t0) / 1000)} s)`); if (await exists()) return true; await new Promise(r => setTimeout(r, 3000)); }
+    while (Date.now() - t0 < 120000) { caption("Waiting", `Project Operations is adding the task (${Math.round((Date.now() - t0) / 1000)} s)`); if (await exists()) return true; await wait(3000); }
     return false;
   }
   async function typeInto(box, value, force) {
+    const runTok = ap.runner; // a pause or stop ends the typing at the next letter
     if (/^pick:/i.test(value)) return foPick(box, tokens(value.slice(5).trim()));
     if (/\{lastinvoice\}/i.test(value)) value = value.replace(/\{lastinvoice\}/ig, await lastInvoice());
     value = tokens(value, (box.querySelector("input[placeholder]") || {}).placeholder);
@@ -1006,7 +1032,7 @@
       if (!opt) return false; opt.click(); return true;
     }
     // overwriting a lookup: remove the record that is in it first
-    if (force) { const del = box.querySelector('[data-id*="selected_tag_delete"],button[aria-label^="Delete"]'); if (del) { del.click(); await waitFor(() => !box.querySelector('[data-id*="selected_tag"]') && box.querySelector("input:not([type=hidden])"), 3000); await new Promise(r => setTimeout(r, 300)); } }
+    if (force) { const del = box.querySelector('[data-id*="selected_tag_delete"],button[aria-label^="Delete"]'); if (del) { del.click(); await waitFor(() => !box.querySelector('[data-id*="selected_tag"]') && box.querySelector("input:not([type=hidden])"), 3000); await wait(300); } }
     let inp = box.matches("input,textarea") ? box : box.querySelector("input:not([type=hidden]),textarea");
     if (!inp) { box.click(); inp = await waitFor(() => box.querySelector("input:not([type=hidden]),textarea"), 3000); }
     if (!inp) return false;
@@ -1017,18 +1043,18 @@
     const proto = inp.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
     const set = Object.getOwnPropertyDescriptor(proto, "value").set;
     let typed = ""; if (force) { set.call(inp, ""); inp.dispatchEvent(new Event("input", { bubbles: true })); }
-    for (const ch of String(value)) { typed += ch; set.call(inp, typed); inp.dispatchEvent(new Event("input", { bubbles: true })); await new Promise(r => setTimeout(r, 55)); } // slow enough to follow
+    for (const ch of String(value)) { if (stale(runTok)) throw new Stopped(); typed += ch; set.call(inp, typed); inp.dispatchEvent(new Event("input", { bubbles: true })); await new Promise(r => setTimeout(r, 55)); } // slow enough to follow
     // lookups: pick the first search result
     const field = (box.getAttribute("data-id") || "").replace(/-FieldSectionItemContainer$/, "").replace(/^header_process_/, "").replace(/\..*$/, ""); // a field in the stage bar has a longer id
     if (field && /LookupResults/.test(inp.getAttribute("data-id") || "") && inp.getAttribute("aria-autocomplete") === "list") {
       const li = await waitFor(() => visible(document.querySelector(`[data-id$="LookupResultsDropdown_${field}_tab"] li[role=treeitem]`)), 15000);
-      if (li) { li.click(); await new Promise(r => setTimeout(r, 400)); return true; }
+      if (li) { li.click(); await wait(400); return true; }
       set.call(inp, ""); inp.dispatchEvent(new Event("input", { bubbles: true })); inp.blur(); tlog("lookupEmpty", { field }); return false; // no match: nothing was picked
     }
     // date, time and duration pickers commit on Enter
     if (!IS_FO && inp.getAttribute("role") === "combobox") inp.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true }));
     inp.dispatchEvent(new Event("change", { bubbles: true })); inp.blur(); inp.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
-    if (IS_FO) { await new Promise(r => setTimeout(r, 1500)); await waitFor(() => !foBusy() && !document.querySelector(".processing") ? "idle" : null, 8000); await new Promise(r => setTimeout(r, 1000)); } // Finance answers a field after a moment, and an item's defaults would overwrite the next field
+    if (IS_FO) { await wait(1500); await waitFor(() => !foBusy() && !document.querySelector(".processing") ? "idle" : null, 8000); await wait(1000); } // Finance answers a field after a moment, and an item's defaults would overwrite the next field
     return true;
   }
   // An error Dynamics shows after a click (business process error, required fields): the step is not done.
@@ -1064,20 +1090,48 @@
     return false;
   }
   const RISKY = /SystemDefinedSaveButton|Delete|Post|Confirm|closeAsWon|ActivateQuote|\.Save\b|nextButtonContainer|MarkAsWon|MarkAsLost|\.Assign\b|Disqualify|Qualify/i;
-  function pauseFor(text, buttons) {
+  // The autopilot waits for the presenter. A pause, stop or flow change ends the wait (the run unwinds) instead of leaving it hanging.
+  // choice: the buttons are a decision, so a plain Continue (or Space) has no answer to give.
+  function pauseFor(text, buttons, choice) {
+    const t = ap.runner; if (stale(t)) return Promise.reject(new Stopped());
     tlog("pause", { text: String(text).slice(0, 80) }); const t0 = Date.now();
-    return new Promise(res => { ap.paused = true; ap.resume = v => { tlog("resume", { ms: Date.now() - t0 }); ap.paused = false; ap.resume = null; res(v); };
-      caption("Your turn", text, buttons || [{ label: "Continue (Space)", fn: () => ap.resume && ap.resume() }, { label: "Stop", fn: stopAuto }]); });
+    return new Promise((res, rej) => { const abort = () => rej(new Stopped()); ap.waits.add(abort);
+      ap.paused = true; ap.canContinue = !choice; ap.resume = v => { tlog("resume", { ms: Date.now() - t0 }); ap.waits.delete(abort); ap.paused = false; ap.resume = null; ap.canContinue = true; caption(null); render(); res(v); };
+      caption("Your turn", text, buttons || [{ label: "Continue (Space)", fn: () => ap.resume && ap.resume() }, { label: "Stop", fn: () => stopAuto() }]); render(); });
   }
   function persistAuto(v) { st.autoReload = v; save(); }
-  function startAuto(resume) { if (!st.flow) return; const atStart = (c => !!c && (c.type === T.start || st.steps.some(x => x.type === T.start && x.next.some(l => l.to === c.code))))(cur()); if (!st.runNo || (resume !== true && atStart)) st.runNo = runNo(); tlog("autoStart", { run: st.run }); ap.clicked = new Set(); persistAuto(false); ap.on = true; ap.token++; st.focus = false; st.min = false; save(); render(); runAuto(ap.token).catch(e => { caption("Stopped", e.message); ap.on = false; render(); }); }
-  function stopAuto() { closeIntro(); if (st.autoReload) persistAuto(false); ap.on = false; ap.token++; ap.paused = false; ap.resume = null; hush(); caption(null); render(); }
+  // resume: go on from this step in the same run (same run number, the clicks done so far are remembered so nothing is clicked twice unasked)
+  function startAuto(resume) {
+    if (!st.flow || ap.on) return;
+    const atStart = (c => !!c && (c.type === T.start || st.steps.some(x => x.type === T.start && x.next.some(l => l.to === c.code))))(cur());
+    if (!st.runNo || (resume !== true && atStart)) st.runNo = runNo();
+    tlog("autoStart", { run: st.run, resume: resume === true });
+    if (resume !== true || !ap.clicked) ap.clicked = new Set();
+    ap.resumeAt = resume === true && st.flow ? st.flow.id + st.code : null;
+    ap.held = false; persistAuto(false); ap.on = true; const tok = ++ap.token; st.focus = false; st.min = false; st.err = ""; save(); render();
+    // the loop that was stopped may still be unwinding: the new one starts once it has (or after 8 s at most)
+    const prev = ap.loop || Promise.resolve();
+    ap.loop = Promise.race([prev, new Promise(r => setTimeout(r, 8000))]).then(() => { if (tok !== ap.token || !ap.on) return; ap.runner = tok; return runAuto(tok); })
+      .catch(e => { if (e instanceof Stopped || tok !== ap.token) return; tlog("autoError", { text: String(e.message).slice(0, 120) }); ap.on = false; caption("Stopped", e.message); render(); })
+      .finally(() => { if (ap.runner === tok) ap.runner = null; if (tok === ap.token && ap.on) { ap.on = false; render(); } });
+  }
+  // hold: Pause. The run ends where it is and the step stays; Resume goes on from the step on screen.
+  function stopAuto(hold) {
+    closeIntro(); if (st.autoReload) persistAuto(false);
+    const was = ap.on; ap.on = false; ap.token++; ap.paused = false; ap.resume = null; ap.canContinue = true; ap.filling = null;
+    for (const f of [...ap.waits]) f(); ap.waits.clear();
+    ap.held = hold === true && (was || ap.held); if (!ap.held) ap.resumeAt = null;
+    tlog(ap.held ? "autoPause" : "autoStop"); hush(); caption(null); render();
+  }
+  const holdAuto = () => stopAuto(true);
+  // Leaving the flow (another flow, a stage, Exit, Start again): nothing of the old run may act afterwards.
+  function endRun() { stopAuto(); ap.held = false; ap.clicked = new Set(); ap.resumeAt = null; st.err = ""; st.edit = false; st.picking = false; st.focus = false; st.menu = false; ov.innerHTML = ""; ovKey = ""; targetRect = null; }
   async function runAuto(tok) {
     const alive = () => ap.on && tok === ap.token;
     while (alive()) {
       const s = cur(); if (!s) break; const here0 = st.flow.id + s.code, t0 = Date.now();
       // Explain first, then act; and stay on the step long enough to read it, voice or no voice.
-      const dwell = async () => { const rest = t0 + readMs(s) - Date.now(); if (rest > 0) await new Promise(r => setTimeout(r, rest)); };
+      const dwell = async () => { const rest = t0 + readMs(s) - Date.now(); if (rest > 0) await wait(rest); };
       if (s.type === T.start) {
         const go_ = await showIntro(s); if (!alive() || !go_) return;
         if (s.next[0]) { st.how = "intro"; go(s.next[0].to); } await sleep(500); continue;
@@ -1099,7 +1153,7 @@
       // decisions: full autopilot takes the demo answer (or the first); checkpoints let the presenter answer
       if (s.next.length > 1) {
         let pick = s.next.find(l => (l.label || "").toLowerCase() === demo.toLowerCase()) || s.next[0];
-        if (st.run === "check") pick = await pauseFor(`Decide: ${s.name}`, s.next.map(l => ({ label: l.label || "Next", fn: () => ap.resume && ap.resume(l) })).concat([{ label: "Stop", fn: stopAuto }]));
+        if (st.run === "check") pick = await pauseFor(`Decide: ${s.name}`, s.next.map(l => ({ label: l.label || "Next", fn: () => ap.resume && ap.resume(l) })).concat([{ label: "Stop", fn: () => stopAuto() }]), true);
         if (!alive() || !pick) return; await dwell(); if (!alive()) return;
         caption("Answer", `${s.name}: ${pick.label || "next"}`); await sleep(1800); if (!alive()) return; st.how = "auto"; go(pick.to, pick.label); await sleep(800); continue;
       }
@@ -1117,7 +1171,7 @@
         else if (pg.canGo) { caption("Now", `Opening ${pg.what}`); persistAuto(true); await sleep(600); const u = pageUrl(s); if (u) await softNav(u); }
         else if (br) { caption("Now", br.text); await sleep(900); br.el.click(); }
         const t0 = Date.now(), tick = setInterval(() => caption("Waiting", `Dynamics is loading ${pg.what} (${Math.round((Date.now() - t0) / 1000)} s)`), 1000);
-        const reached = await waitFor(() => pageState(s).ok, 45000); clearInterval(tick); tlog("reached", { ms: Date.now() - t0, ok: !!reached }); if (reached) persistAuto(false); if (!alive()) return;
+        let reached; try { reached = await waitFor(() => pageState(s).ok, 45000); } finally { clearInterval(tick); } tlog("reached", { ms: Date.now() - t0, ok: !!reached }); if (reached) persistAuto(false); if (!alive()) return;
         if (!reached) { await pauseFor(`Open ${pg.what} by hand, then Continue.`); if (!alive()) return; if (!pageState(s).ok) { stopAuto(); return; } }
         await sleep(1500);
       }
@@ -1143,7 +1197,7 @@
       if (demo) {
         const lines = demo.split(/\r?\n/).filter(Boolean), unfilled = [];
         ap.filling = here;
-        if (/\{lastwo\}/i.test(demo)) lastWo = await lastWorkOrder();
+        if (/\{lastwo\}/i.test(demo)) { lastWo = await lastWorkOrder(); if (!alive()) return; }
         for (const ln of lines) {
           if (/^newtask:/i.test(ln.trim())) {
             const subject = tokens(ln.trim().slice(8).trim()), project = new URL(s.page, location.origin).searchParams.get("id");
@@ -1157,8 +1211,12 @@
           const m = ln.match(/^([\w.|$-]+?)(!?)=(.*)$/); const box = m ? fieldBox(m[1]) : el; const val = m ? m[3] : ln, force = !!(m && m[2]);
           if (!box) continue;
           caption("Typing", tokens(val)); tlog("type", { chars: String(val).length });
-          const typedResult = await typeInto(box, val, force);
-          if (typedResult === "filled") { await pauseFor(`A field already has a value, so autopilot will not overwrite it (${m ? m[1] : s.name}). Check you are on a new demo record, then Continue.`); if (!alive()) return; }
+          let typedResult = await typeInto(box, val, force);
+          // resumed after a pause on this step: what was typed before stays, a value cut off in the middle is typed again in full
+          if (typedResult === "filled" && ap.resumeAt === here) { const inp = box.matches("input,textarea") ? box : box.querySelector("input:not([type=hidden]),textarea"), want = tokens(val, (box.querySelector("input[placeholder]") || {}).placeholder);
+            if (inp && inp.value !== want && want.startsWith(inp.value)) { tlog("retypeOnResume", { field: m ? m[1] : "" }); typedResult = await typeInto(box, val, true); } else tlog("filledOnResume", { field: m ? m[1] : "" }); }
+          if (typedResult === "filled" && ap.resumeAt === here) { /* typed before the pause */ }
+          else if (typedResult === "filled") { await pauseFor(`A field already has a value, so autopilot will not overwrite it (${m ? m[1] : s.name}). Check you are on a new demo record, then Continue.`); if (!alive()) return; }
           else if (typedResult === false) unfilled.push({ box, name: m ? m[1] : s.name, val });
           await sleep(1000);
           if (!alive()) return;
@@ -1177,7 +1235,12 @@
         if (st.run === "check" && RISKY.test(first)) { await pauseFor(`Next: ${s.instruction || s.name}. Continue to let autopilot click it.`); if (!alive()) return; }
         caption("Clicking", s.instruction || s.name); await sleep(/^wait$/im.test(demo) ? 7000 : 1800); await dwell(); if (!alive()) return; // the highlight shows what is about to be clicked
         // a flow that loops must never post the same document twice without someone looking
-        if (ap.clicked && ap.clicked.has(here)) { tlog("repeatStop"); await pauseFor(`The flow came back to "${s.name}", which already ran. Stop here, or Continue to do it again.`, [{ label: "Stop", fn: stopAuto }, { label: "Do it again", fn: () => ap.resume && ap.resume() }]); if (!alive()) return; }
+        if (ap.clicked && ap.clicked.has(here)) {
+          tlog("repeatStop");
+          const again = await pauseFor(`Autopilot already clicked "${s.name}" in this run. Click it again, or skip to the next step?`, [{ label: "Skip it", fn: () => ap.resume && ap.resume("skip") }, { label: "Click again", fn: () => ap.resume && ap.resume("again") }, { label: "Stop", fn: () => stopAuto() }], true);
+          if (!alive()) return;
+          if (again === "skip") { if (st.flow.id + st.code === here) { st.how = "skip"; go(s.next[0]?.to); } await sleep(800); continue; }
+        }
         (ap.clicked = ap.clicked || new Set()).add(here);
         const barBefore = foBar();
         el.click(); tlog("autoClick");
@@ -1196,16 +1259,16 @@
     }
   }
   document.addEventListener("keydown", e => {
-    if (e.code === "Space" && ap.paused && ap.resume && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName || "")) { e.preventDefault(); ap.resume(); }
+    if (e.code === "Space" && ap.paused && ap.resume && ap.canContinue && !/INPUT|TEXTAREA/.test(document.activeElement?.tagName || "")) { e.preventDefault(); ap.resume(); }
   }, true);
 
   // ---------- start ----------
   render();
   if (launch) { st.open = true; st.focus = false; st.done = []; save(); openFlow(launch.flowId, launch.code || null).catch(e => { st.err = e.message; render(); }); }
-  else if (saved.flowId && st.open) openFlow(saved.flowId, saved.code, true).then(() => { if (saved.auto && st.run !== "narrated") { persistAuto(false); setTimeout(() => startAuto(true), 2500); } }).catch(e => { st.err = e.message; render(); });
+  else if (saved.flowId && st.open) openFlow(saved.flowId, saved.code, true).then(() => { if (saved.auto && st.run !== "guide") { persistAuto(false); setTimeout(() => startAuto(true), 2500); } }).catch(e => { st.err = e.message; render(); });
   if (EXT) chrome.storage.onChanged.addListener((ch, area) => {
     // a "Start guide" click in another tab while this tab is open on the target page
-    if (area === "local" && ch.emphLaunch && ch.emphLaunch.newValue && document.visibilityState === "visible" && !IS_CE) { const l = ch.emphLaunch.newValue; chrome.storage.local.remove("emphLaunch"); st.open = true; st.done = []; openFlow(l.flowId, l.code || null).catch(e => { st.err = e.message; render(); }); }
+    if (area === "local" && ch.emphLaunch && ch.emphLaunch.newValue && document.visibilityState === "visible" && !IS_CE) { const l = ch.emphLaunch.newValue; chrome.storage.local.remove("emphLaunch"); endRun(); st.open = true; st.done = []; openFlow(l.flowId, l.code || null).catch(e => { st.err = e.message; render(); }); }
   });
   }
 })();

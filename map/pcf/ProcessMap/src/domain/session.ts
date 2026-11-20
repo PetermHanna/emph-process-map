@@ -487,14 +487,14 @@ export function reviewOf(text: string, entry: ReviewEntry | undefined, used: str
  * open point: its record is removed, so only while the workshop is open and, for a requirement, not once a sign-off holds it.
  * A flow change or a licence was saved on the flow or the role and stays.
  */
-export function undoRule(r: LineReview, ctx: { closed: boolean; signedOff: boolean }): { can: boolean; reason: string } {
+export function undoRule(r: LineReview, ctx: { closed: boolean; /** the requirement is approved (Business approval state) */ signedOff: boolean }): { can: boolean; reason: string } {
   if (r.status === "todo") return { can: false, reason: "" };
   if (ctx.closed) return { can: false, reason: "The workshop is closed." };
   if (r.status === "rejected") return { can: true, reason: "" };
   if (r.type === "flow") return { can: false, reason: "A flow change can't be undone here: change it in the flow." };
   if (r.type === "licence") return { can: false, reason: "A licence can't be undone here: change it on the role in Settings." };
   if (r.legacy) return { can: false, reason: "Kept before line reviews: change it where it was saved." };
-  if ((r.type === "req" || r.type === "rule") && ctx.signedOff) return { can: false, reason: "This requirement is in a sign-off, so it stays." };
+  if ((r.type === "req" || r.type === "rule") && ctx.signedOff) return { can: false, reason: "This requirement is approved, so it stays: change it on the Requirements page." };
   return { can: true, reason: "" };
 }
 

@@ -1,6 +1,7 @@
 // The guide (Chrome or Edge extension in guide/) marks the Dynamics 365 page with data-emph-guide="<version>".
 // Playing a flow: leave the id on the page and raise "emph-guide-start" (the extension stores the request), then open a new
-// tab with ?emphguide=<id>, which the guide also reads on its own. The new tab plays the flow over the live app.
+// tab with ?emphguide=<id> (and &emphstep=<code> to start at a step), which the guide also reads on its own. The new tab plays the flow over the live app;
+// the guide starts in its default "Guide only (workshop)" mode: it shows the step and the facilitator does every action.
 import * as React from "react";
 
 const docs = (): Document[] => {
@@ -24,11 +25,12 @@ export function useGuide(): string | null {
   return v;
 }
 
-export function guideUrl(flowId: string, loc: { origin: string; pathname: string; search: string } = location): string {
+export function guideUrl(flowId: string, loc: { origin: string; pathname: string; search: string } = location, code?: string | null): string {
   const app = new URLSearchParams(loc.search).get("appid");
   const q = new URLSearchParams();
   if (app) q.set("appid", app);
   q.set("emphguide", flowId);
+  if (code) q.set("emphstep", code);
   return loc.origin + "/main.aspx?" + q.toString();
 }
 
@@ -39,5 +41,5 @@ export function playInGuide(flowId: string, code?: string): void {
   }
   let loc: Location = location;
   try { if (window.top && window.top.location.origin === location.origin) loc = window.top.location; } catch { /* keep ours */ }
-  window.open(guideUrl(flowId, loc), "_blank", "noopener");
+  window.open(guideUrl(flowId, loc, code), "_blank", "noopener");
 }

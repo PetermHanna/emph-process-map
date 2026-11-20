@@ -6,7 +6,7 @@
 // choice's properties. Microsoft reference flows are read-only.
 import * as React from "react";
 import {
-  ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, Position, MarkerType, useReactFlow, useNodesInitialized, applyNodeChanges,
+  ReactFlow, ReactFlowProvider, Background, Controls, MiniMap, Handle, Position, MarkerType, useReactFlow, useNodesInitialized, applyNodeChanges, ViewportPortal,
   type Node, type Edge, type NodeProps, type NodeChange,
 } from "@xyflow/react";
 import { tokens, Button, Menu, MenuTrigger, MenuPopover, MenuList, MenuItem, Tag } from "@fluentui/react-components";
@@ -14,6 +14,7 @@ import { Add16Regular } from "@fluentui/react-icons";
 import { FlowStep, STEP_TYPE, CHANGE } from "./shape";
 import { XYFLOW_CSS } from "./xyflowcss";
 import { Slot, Placed, slots as slotsOf, pickSlot, cutOff, place } from "./placement";
+import { Drawing, Pt, Box, makeStroke, makeComment, pathOf, COLOURS } from "../../domain/drawing";
 
 const W = 168, H = 62, COL = 214, LANE = 112, ROW = 86, HEAD = 128;
 /** A step moved less than this was not really moved: it snaps back and nothing changes. */
@@ -134,9 +135,11 @@ interface Props {
   onUndo?: () => void; canUndo?: boolean;
   /** the predefined roles a new swimlane can be added for */
   roles?: string[];
+  /** a workshop's drawing on this flow (lines and comments in flow coordinates), and whether the pen or comment tool is on */
+  drawing?: Drawing; drawMode?: "pen" | "comment" | null; onDrawing?: (d: Drawing) => void; drawBy?: string;
 }
 
-function Canvas({ steps, selected, colour, editable, onSelect, onPlace, newStep, onRefuse, extraLanes }: Props & { extraLanes: string[] }) {
+function Canvas({ steps, selected, colour, editable, onSelect, onPlace, newStep, onRefuse, extraLanes, drawing, drawMode, onDrawing, drawBy }: Props & { extraLanes: string[] }) {
   const rf = useReactFlow();
   const lay = React.useMemo(() => swimlaneLayout(steps, extraLanes), [steps, extraLanes]);
   const laneColour = (f: string) => LANE_COLOURS[Math.max(0, lay.lanes.indexOf(f || "")) % LANE_COLOURS.length];
@@ -236,8 +239,17 @@ function Canvas({ steps, selected, colour, editable, onSelect, onPlace, newStep,
   const flowPoint = (e: React.DragEvent) => rf.screenToFlowPosition({ x: e.clientX, y: e.clientY });
   const paletteType = (e: React.DragEvent) => { const t = e.dataTransfer.types.includes(DRAG_TYPE) ? Number(e.dataTransfer.getData(DRAG_TYPE) || (window as any).__emphDragType) : NaN; return isNaN(t) ? null : t; };
 
+  // drawing on the flow: points in flow coordinates, so the drawing stays on its steps when the view pans or zooms
+  const boxes: Box[] = React.useMemo(() => steps.filter(s => lay.pos.has(s.code)).map(s => ({ code: s.code, x: lay.pos.get(s.code)!.x, y: lay.pos.get(s.code)!.y, w: W, h: H })), [steps, lay]);
+  const [live, setLive] = React.useState<Pt[] | null>(null);
+  const liveRef = React.useRef<Pt[] | null>(null);
+  const [pending, setPending] = React.useState<{ x: number; y: number; sx: number; sy: number } | null>(null);
+  const [note, setNote] = React.useState("");
+  const flowAt = (e: React.PointerEvent): Pt => { const p = rf.screenToFlowPosition({ x: e.clientX, y: e.clientY }); return [p.x, p.y]; };
+  const addNote = () => { if (pending && drawing && onDrawing) { const c = makeComment(pending.x, pending.y, note, boxes, drawBy); if (c) onDrawing({ ...drawing, comments: drawing.comments.concat(c) }); } setPending(null); setNote(""); };
+
   return (
-    <div ref={wrap} style={{ width: "100%", height: "100%" }}
+    <div ref={wrap} style={{ width: "100%", height: "100%", position: "relative" }}
       onDragOver={e => { const t = paletteType(e); if (t == null || !editable) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; const p = flowPoint(e); hover(p.x, p.y, null, t); }}
       onDragLeave={e => { if (!(e.currentTarget as HTMLElement).contains(e.relatedTarget as any)) setDrag(null); }}
       onDrop={e => { const t = paletteType(e); if (t == null || !editable) return; e.preventDefault(); const p = flowPoint(e); finish({ type: t }, p.x, p.y); }}>
@@ -254,7 +266,37 @@ function Canvas({ steps, selected, colour, editable, onSelect, onPlace, newStep,
         <Background gap={18} color="#EDEDED" />
         <Controls showInteractive={false} position="bottom-left" fitViewOptions={{ padding: 0.08, duration: 300 }} />
         <MiniMap pannable zoomable position="bottom-right" nodeColor={n => (n.type === "lane" || n.type === "slot" ? "transparent" : (n.data as StepData)?.laneColour || "#ccc")} style={{ width: 150, height: 90 }} />
+        {drawing && (
+          <ViewportPortal>
+            <svg data-emph="flow-drawing" width={1} height={1} style={{ position: "absolute", left: 0, top: 0, overflow: "visible", pointerEvents: "none", zIndex: 6 }}>
+              {drawing.strokes.map(s => <path key={s.id} d={pathOf(s.pts)} fill="none" stroke={s.colour} strokeWidth={s.size} strokeLinecap="round" strokeLinejoin="round" opacity={0.9} />)}
+              {live && <path d={pathOf(live)} fill="none" stroke={COLOURS[0]} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" opacity={0.7} />}
+            </svg>
+            {drawing.comments.map((c, i) => (
+              <div key={c.id} data-emph="flow-drawing-comment" style={{ position: "absolute", left: c.x, top: c.y, transform: "translate(-11px,-11px)", display: "flex", gap: 4, alignItems: "flex-start", pointerEvents: "none", zIndex: 7 }}>
+                <span style={{ width: 22, height: 22, borderRadius: 11, background: COLOURS[0], color: "#fff", fontSize: 12, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span>
+                <span style={{ background: "rgba(255,244,206,.96)", border: "1px solid #E5C365", borderRadius: 6, padding: "2px 6px", fontSize: 11, maxWidth: 200, color: "#242424" }}>{c.text}</span>
+              </div>
+            ))}
+          </ViewportPortal>
+        )}
       </ReactFlow>
+      {drawing && drawMode && (
+        <div data-emph="flow-draw-layer" style={{ position: "absolute", inset: 0, zIndex: 8, cursor: drawMode === "pen" ? "crosshair" : "copy", touchAction: "none" }}
+          onPointerDown={e => {
+            if (e.button !== 0) return;
+            if (drawMode === "comment") { const p = flowAt(e), r = wrap.current!.getBoundingClientRect(); setPending({ x: p[0], y: p[1], sx: e.clientX - r.left, sy: e.clientY - r.top }); setNote(""); return; }
+            try { (e.target as Element).setPointerCapture?.(e.pointerId); } catch { /* a pointer the browser no longer tracks */ } liveRef.current = [flowAt(e)]; setLive(liveRef.current);
+          }}
+          onPointerMove={e => { if (!liveRef.current) return; liveRef.current = liveRef.current.concat([flowAt(e)]); setLive(liveRef.current); }}
+          onPointerUp={() => { const pts = liveRef.current; liveRef.current = null; setLive(null); if (pts && onDrawing) { const s = makeStroke(pts, COLOURS[0], 3, boxes, drawBy); if (s) onDrawing({ ...drawing, strokes: drawing.strokes.concat(s) }); } }} />
+      )}
+      {pending && (
+        <div data-emph="flow-draw-note" style={{ position: "absolute", left: Math.min(pending.sx, (wrap.current?.clientWidth || 600) - 250), top: pending.sy, width: 240, zIndex: 9, background: "#FFF4CE", border: "1px solid #E5C365", borderRadius: 6, padding: 6, display: "flex", flexDirection: "column", gap: 4, boxShadow: "0 4px 12px rgba(0,0,0,.2)" }}>
+          <textarea data-emph="flow-draw-note-text" autoFocus rows={2} value={note} onChange={e => setNote(e.target.value)} placeholder="What is this?" style={{ width: "100%", boxSizing: "border-box", fontFamily: "inherit", fontSize: 12 }} />
+          <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}><Button size="small" onClick={() => setPending(null)}>Cancel</Button><Button size="small" appearance="primary" data-emph="flow-draw-note-add" disabled={!note.trim()} onClick={addNote}>Add</Button></div>
+        </div>
+      )}
     </div>
   );
 }

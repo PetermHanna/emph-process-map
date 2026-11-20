@@ -193,15 +193,94 @@
     // a screenshot, with a canvas standing in for the screen picker
     const md = navigator.mediaDevices, real = md.getDisplayMedia;
     md.getDisplayMedia = async () => { const c = document.createElement("canvas"); c.width = 640; c.height = 360; const g = c.getContext("2d"); g.fillStyle = "#0D9488"; g.fillRect(0, 0, 640, 360); const st = c.captureStream(5); setInterval(() => g.fillRect(0, 0, 1, 1), 50); return st; };
-    try { q('[data-emph="screenshot"]').click(); await until(() => rows("annotation").length > 0, 6000); } finally { md.getDisplayMedia = real; }
+    try { q('[data-emph="screenshot"]').click(); await until(() => q('[data-emph="shot-canvas"]'), 6000); } finally { md.getDisplayMedia = real; }
+    const pe = (el, type, x, y) => { const r = el.getBoundingClientRect(); el.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, buttons: type === "pointerup" ? 0 : 1, pointerId: 5, clientX: r.left + r.width * x, clientY: r.top + r.height * y })); };
+    const cv = q('[data-emph="shot-canvas"]');
+    pe(cv, "pointerdown", 0.1, 0.1); for (let k = 2; k <= 6; k++) { pe(cv, "pointermove", 0.1 * k, 0.1 * k); await wait(20); } pe(cv, "pointerup", 0.6, 0.6); await wait(100);
+    q('[data-emph="shot-comment"]').click(); await wait(100);
+    pe(q('[data-emph="shot-canvas"]'), "pointerdown", 0.5, 0.3); await wait(150);
+    const ct = await until(() => q('[data-emph="shot-comment-text"] textarea') || q('textarea[data-emph="shot-comment-text"]'));
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(ct, "Wrong price list here"); ct.dispatchEvent(new Event("input", { bubbles: true })); await wait(100);
+    q('[data-emph="shot-comment-add"]').click(); await wait(100);
+    q('[data-emph="shot-save"]').click();
+    await until(() => rows("annotation").length > 0, 6000);
     const note = rows("annotation")[0];
     if (note.mimetype !== "image/jpeg" || !note.documentbody || note._objectid_value !== ws().emph_workshopid) throw new Error("note fields");
+    if (!/--- marks ---/.test(note.notetext || "") || !/Wrong price list here/.test(note.notetext)) throw new Error("marks not in the note: " + note.notetext);
+    if (JSON.parse(note.notetext.split("--- marks ---\n")[1]).strokes.length !== 1) throw new Error("the line is not in the marks: " + note.notetext);
     (await until(() => q('[data-emph="screenshots"] button'))).click();
     await until(() => document.querySelector('img[src^="data:image/jpeg;base64,"]'));
     button(/^Close$/)?.click(); await wait(200);
     const usedNow = (q('[data-emph="transcript-stats"]').innerText.match(/(\d+) used/) || [])[1];
     if (usedNow !== "5") throw new Error("used " + usedNow);
-    return "agenda " + total.replace(/^· /, "").toLowerCase() + "; 6 lines, 5 used (requirement, licence, comment, open point, requirement on step " + act.emph_activitycode + "), screenshot " + Math.round(note.documentbody.length * 0.75 / 1024) + " KB";
+    return "agenda " + total.replace(/^· /, "").toLowerCase() + "; 6 lines, 5 used (requirement, licence, comment, open point, requirement on step " + act.emph_activitycode + "), screenshot " + Math.round(note.documentbody.length * 0.75 / 1024) + " KB with a line and a comment";
+  }
+  // Slice 4, on the workshop transcript() left open: a line marked not relevant and back, edited and kept as a business rule,
+  // undone; the read-back answers; the meeting request; a drawing on the flow kept with the workshop; the close checks.
+  async function review() {
+    const ws = () => rows("emph_workshop")[rows("emph_workshop").length - 1];
+    const sw = [...document.querySelectorAll('[data-emph="transcript"] label')].find(x => /^All lines/.test(x.innerText.trim()));
+    if (sw && !sw.closest(".fui-Switch").querySelector("input").checked) { sw.click(); await wait(250); }
+    const line = () => q('[data-line="4"]');
+    if (!/Suggested:/.test(line().innerText)) throw new Error("no suggested type: " + line().innerText);
+    line().querySelector('[data-emph="line-reject"]').click();
+    await until(() => line().dataset.status === "rejected" && /Not relevant/.test(line().innerText));
+    await until(() => Object.values(JSON.parse(ws().emph_sessiondata).review || {}).some(r => r.status === "rejected"));
+    line().querySelector('[data-emph="line-undo"]').click();
+    await until(() => line().dataset.status === "todo");
+    line().querySelector('[data-emph="line-edit"]').click();
+    const ta = await until(() => line().querySelector('textarea'));
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(ta, "Thirty technicians and eight foremen book time daily."); ta.dispatchEvent(new Event("input", { bubbles: true })); await wait(150);
+    line().querySelector('[data-emph="line-rule"]').click();
+    await until(() => /Business rule/.test(q('[data-emph="capture-type"]')?.innerText || ""));
+    const box = q('[data-emph="capture"] textarea');
+    if (!/book time daily/.test(box.value)) throw new Error("edited words not in the capture box: " + box.value);
+    [...q('[data-emph="capture"]').querySelectorAll("button")].find(b => b.innerText.trim() === "Capture").click();
+    const rule = await until(() => rows("emph_requirement").find(r => /book time daily/.test(r.emph_description || "")));
+    if (rule.emph_requirementtype !== 582100006 || !/^\[0:05\] Carl Site: Thirty technicians plus eight foremen\.$/.test(rule.emph_sourcetext)) throw new Error("rule fields " + rule.emph_requirementtype + " " + rule.emph_sourcetext);
+    await until(() => line().dataset.status === "accepted" && q('[data-line="4"] [data-emph="line-undo"]'));
+    q('[data-line="4"] [data-emph="line-undo"]').click();
+    await until(() => !rows("emph_requirement").some(r => r === rule || r.emph_requirementid === rule.emph_requirementid) && line().dataset.status === "todo");
+    // the read-back: answer two lines, name who confirmed
+    button(/^4\. Conclusion$/).click();
+    const rb = await until(() => document.querySelectorAll('[data-emph="read-back-line"]').length >= 2 && document.querySelectorAll('[data-emph="read-back-line"]'));
+    rb[0].querySelector('[data-emph="read-back-confirmed"]').click(); await wait(250);
+    q('[data-emph="read-back-line"]:nth-of-type(2) [data-emph="read-back-changed"]')?.click() || document.querySelectorAll('[data-emph="read-back-line"]')[1].querySelector('[data-emph="read-back-changed"]').click();
+    await until(() => Object.keys(JSON.parse(ws().emph_sessiondata).readBack?.marks || {}).length === 2);
+    const by = q('input[data-emph="read-back-by"]') || q('[data-emph="read-back-by"] input');
+    by.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(by, "Ana Field, office lead"); by.dispatchEvent(new Event("input", { bubbles: true })); by.blur(); by.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    await until(() => JSON.parse(ws().emph_sessiondata).readBack?.confirmedBy === "Ana Field, office lead");
+    const counts = q('[data-emph="read-back-counts"]').innerText;
+    // Close lists what is still missing and keeps the answers on requirements for their history
+    button(/^5\. Close$/).click();
+    const checks = (await until(() => q('[data-emph="close-checks"]'))).innerText;
+    if (!/not answered yet/.test(checks) || !/to review/.test(checks)) throw new Error("close checks: " + checks);
+    // the meeting request in Prepare: Teams link with subject, attendees and agenda
+    button(/^1\. Prepare$/).click();
+    (await until(() => q('[data-emph="meeting-request"]'))).click();
+    await until(() => q('[data-emph="meeting-form"]'));
+    const subject = (q('input[data-emph="meeting-subject"]') || q('[data-emph="meeting-subject"] input')).value;
+    const opened = []; const realOpen = window.open; window.open = u => { opened.push(u); return null; };
+    try { q('[data-emph="meeting-open"]').click(); await wait(150); } finally { window.open = realOpen; }
+    const u = new URL(opened[0] || "https://x/");
+    if (u.pathname !== "/l/meeting/new" || !/process workshop/.test(u.searchParams.get("subject") || "") || !/^1\. /.test(u.searchParams.get("content") || "")) throw new Error("meeting link: " + opened[0]);
+    button(/^Cancel$/)?.click(); document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })); await wait(250);
+    if (q('[data-emph="meeting-form"]')) { q('[data-emph="meeting-form"]').closest('[role="dialog"]')?.querySelector("button")?.click(); await wait(200); }
+    // a line drawn on our process in the flow studio is kept with the workshop, on the step it is on
+    button(/^2\. Run the agenda$/).click(); await wait(300);
+    q('[data-emph="tool-tab"][data-tab="flow"]')?.click(); await wait(300);
+    (await until(() => button(/^Open the flow studio$/))).click();
+    (await until(() => q('[data-emph="flow-draw"]'))).click();
+    const layer = await until(() => q('[data-emph="flow-draw-layer"]'));
+    const node = await until(() => q('.react-flow__node-step'));
+    const nr = node.getBoundingClientRect(), lr = layer.getBoundingClientRect();
+    const pt = (type, dx) => layer.dispatchEvent(new PointerEvent(type, { bubbles: true, button: 0, buttons: type === "pointerup" ? 0 : 1, pointerId: 6, clientX: nr.left + 10 + dx, clientY: nr.top + nr.height / 2 }));
+    if (nr.left < lr.left || nr.top < lr.top) throw new Error("step not on the canvas");
+    pt("pointerdown", 0); for (let k = 1; k <= 6; k++) { pt("pointermove", k * 12); await wait(20); } pt("pointerup", 72);
+    const drawn = await until(() => { try { const d = JSON.parse(ws().emph_drawings || "{}"); const f = Object.values(d)[0]; return f && f.strokes.length && f; } catch { return null; } });
+    if (!drawn.strokes[0].step) throw new Error("the line is not on a step");
+    button(/^Close$/) ? q('[aria-label="Close"]').click() : null; await wait(300);
+    return "line not relevant and back, kept as a business rule (edited) and undone; read back " + counts.replace(/^· /, "") + "; close checks shown; Teams link " + u.searchParams.get("subject") + "; a line drawn on step " + drawn.strokes[0].step;
   }
   // Requirements: MoSCoW stores Microsoft's priority; Gap waits for a gap solution approach
   async function fitGap() {
@@ -480,7 +559,7 @@
     if (back.emph_scope !== written[0].before.scope || back.emph_sethow !== 582100004) throw new Error("undo: " + back.emph_scope + " how " + back.emph_sethow);
     return items + " conclusion items agreed, Close wrote " + written.length + " (" + written.map(x => x.label).join("; ").slice(0, 120) + "), How Workshop, history, child task ticked; next: " + next + "; undo restored";
   }
-  const ALL = { pages, mainMap, processAndFlow, guide, capture, fitGap, signOff, workshop, transcript, systems, raid, history, changeRequest, licences, boards, board, storyline, quickTrack, close };
+  const ALL = { pages, mainMap, processAndFlow, guide, capture, fitGap, signOff, workshop, transcript, review, systems, raid, history, changeRequest, licences, boards, board, storyline, quickTrack, close };
   window.__tests = {
     ...ALL,
     async all() { const r = {}; for (const [k, f] of Object.entries(ALL)) { try { r[k] = await f(); } catch (e) { r[k] = "FAIL " + (f.step ? "at step " + f.step + ": " : "") + e.message; } } return r; },

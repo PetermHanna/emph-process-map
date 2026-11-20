@@ -1,5 +1,6 @@
 // The requirements register (Microsoft's Requirement work item): capture, filter, rate and approve.
 // MoSCoW is shown, Microsoft's priority is stored (Must = 1, Should = 2, Could = 3, Won't = 4).
+import { FlowLink } from "./FlowLink";
 import * as React from "react";
 import { Button, Field, Input, Textarea, Switch, OverlayDrawer, DrawerHeader, DrawerHeaderTitle, DrawerBody } from "@fluentui/react-components";
 import { Dismiss24Regular, Delete16Regular, ArrowDownload16Regular } from "@fluentui/react-icons";
@@ -22,7 +23,8 @@ const itemChoices = (m: Model, current: string | null) =>
   m.items.filter(x => (x.level >= 3 && effectiveScope(m, x)) || x.id === current).map(x => ({ id: x.id, name: itemLabel(x) }));
 
 /** A line from a meeting transcript to capture: it fills the box, and is kept as the requirement's source text. */
-export interface CaptureFrom { key: string; text: string; who: string; sourceText: string; itemId?: string | null; activityId?: string | null; activityName?: string }
+/** type: the requirement type to give it (Business rule for a line kept as a rule). */
+export interface CaptureFrom { key: string; text: string; who: string; sourceText: string; itemId?: string | null; activityId?: string | null; activityName?: string; type?: number | null }
 
 export function Capture({ model, repo, apply, itemId, workshopId, onCaptured, from, onDropFrom }: { model: Model; repo: Repository; apply: Apply; itemId?: string | null; workshopId?: string | null; onCaptured?: (r: Requirement) => void; from?: CaptureFrom | null; onDropFrom?: () => void }) {
   const [text, setText] = React.useState("");
@@ -32,7 +34,7 @@ export function Capture({ model, repo, apply, itemId, workshopId, onCaptured, fr
   const [act, setAct] = React.useState<{ id: string; name: string } | null>(null); // the flow step it was said on
   React.useEffect(() => { if (from) { setText(from.text); setWho(from.who); if (from.itemId) setPid(from.itemId); setAct(from.activityId ? { id: from.activityId, name: from.activityName || "" } : null); } else setAct(null); }, [from?.key]);
   const go = () => apply(async m => {
-    const r = await repo.addRequirement(m, text, { itemId: pid, workshopId: workshopId || null, raisedBy: who.trim(), sourceText: from?.sourceText || "", sourceType: from ? "Workshop transcript" : workshopId ? "Workshop" : "", activityId: act?.id ?? null });
+    const r = await repo.addRequirement(m, text, { itemId: pid, workshopId: workshopId || null, raisedBy: who.trim(), sourceText: from?.sourceText || "", sourceType: from ? "Workshop transcript" : workshopId ? "Workshop" : "", activityId: act?.id ?? null, ...(from?.type != null ? { type: from.type } : {}) });
     setText(""); setWho(""); setAct(null); onCaptured?.(r.requirement);
     return r.model;
   });
@@ -45,6 +47,7 @@ export function Capture({ model, repo, apply, itemId, workshopId, onCaptured, fr
           <Button size="small" appearance="transparent" onClick={() => { setText(""); setWho(""); setAct(null); onDropFrom?.(); }}>Don't keep</Button>
         </div>
       )}
+      {from?.type != null && <div data-emph="capture-type" style={{ fontSize: 12 }}>Kept as: <b>{labelOf("requirementType", from.type)}</b></div>}
       {act && (
         <div data-emph="capture-step" style={{ fontSize: 12, display: "flex", gap: 8, alignItems: "center" }}>
           <span>On flow step: <b>{act.name}</b></span>
@@ -72,7 +75,7 @@ export function RequirementList({ model, repo, apply, rows, hideItem, openId }: 
         <tbody>{rows.map(r => (
           <tr key={r.id} className={l.tr} onClick={() => setOpen(r.id)} style={{ opacity: isActive(r) ? 1 : 0.55 }}>
             <td className={l.code}>{r.reqId}</td>
-            <td>{r.name} {r.review && <Pill text="Review" tone="warn" />}</td>
+            <td>{r.name} {r.review && <Pill text="Review" tone="warn" />}{r.activityId && <div><FlowLink model={model} repo={repo} apply={apply} r={r} /></div>}</td>
             {!hideItem && <td className={l.muted}>{iname(r.itemId)}</td>}
             <td>{moscowOf(r.priority)}</td>
             <td>{r.fitGap != null && <Pill text={labelOf("fitGapStatus", r.fitGap) + (r.fitGap === FIT_GAP.gap && r.gapApproach != null ? ": " + labelOf("gapSolutionApproach", r.gapApproach).replace(/^\d+ - /, "") : "")} tone={fitTone(r.fitGap)} />}</td>
@@ -96,6 +99,7 @@ function RequirementEditor({ r, model, repo, apply, onClose }: { r: Requirement;
       <DrawerBody>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }} data-emph="requirement-editor">
           <div className={l.row}><Pill text={REQ_ORIGIN_LABEL[r.origin] || ""} tone="info" />{r.review && <Pill text="Needs review" tone="warn" />}{flow && <Pill text={"Evidence: " + flow.name} />}</div>
+          <FlowLink model={model} repo={repo} apply={apply} r={r} />
           <Field label="Description"><Edit multiline value={r.description} onSave={v => v.trim() && save({ description: v })} /></Field>
           <div className={l.fields}>
             <Field label="Process item"><Pick value={r.itemId} items={itemChoices(model, r.itemId)} onChange={v => save({ itemId: v })} /></Field>

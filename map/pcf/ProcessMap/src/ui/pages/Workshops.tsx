@@ -6,8 +6,8 @@ import { ChevronLeft20Regular, ChevronRight20Regular, Delete16Regular, Screensho
 import { C, useLook } from "../look";
 import { PageProps, Pill, Pick, Choice, ListChoice, FitGapPick, Edit, AddBox, Empty } from "../kit";
 import type { Nav } from "../Shell";
-import { SESSION, LICENCE_LABEL, HOW, RAID, RAID_STATUS, SYSTEM, FIT_GAP, labelOf } from "../../domain/codes";
-import { visit, summaryLines, sourceLine, parseTranscript, usedLines, processKeyOf, activityCodeOf } from "../../domain/session";
+import { SESSION, LICENCE_LABEL, HOW, RAID, RAID_STATUS, SYSTEM, FIT_GAP, APPROVAL, labelOf, option } from "../../domain/codes";
+import { visit, readBackItems, transcriptDecisions, sourceLine, usedLines, processKeyOf, activityCodeOf, reviewOf, undoRule, withReview, isFacilitator, reviewCounts, ReviewType, PrepSection } from "../../domain/session";
 import { isActive, levelUp, isOff } from "../../domain/rules";
 import { childItems, effectiveScope, flowsOf, itemsAt, loadActivities, How } from "../../domain/repository";
 import {
@@ -17,7 +17,10 @@ import {
 import type { Workshop, ProcessItem, Screenshot, Activity, Model, CurrentSystem } from "../../domain/types";
 import { DecisionRow } from "./Processes";
 import { Capture, RequirementList, CaptureFrom } from "./Requirements";
-import { TranscriptPanel, LineUse, Line, grabScreen } from "./Transcript";
+import { TranscriptPanel, LineUse, Line, LineState, grabScreen, linesOf } from "./Transcript";
+import { ShotAnnotate, burnIn } from "./ShotAnnotate";
+import { MeetingRequest } from "./WorkshopMeeting";
+import { noteWithMarks, marksOf, shotText, readDrawings } from "../../domain/drawing";
 import { FacilitatorAgenda, FlowWalk, LicenceDialog } from "./WorkshopParts";
 import { BoardTool } from "./WorkshopBoard";
 import { StoryTool } from "./WorkshopStory";
@@ -90,12 +93,14 @@ function Runner({ w, model, repo, apply, onBack, onOpen }: PageProps & { w: Work
   const l = useLook();
   const [studio, setStudio] = React.useState(false);
   const [showTranscript, setShowTranscript] = React.useState(false);
-  const [from, setFrom] = React.useState<(CaptureFrom & { i: number }) | null>(null);
-  const [flowNote, setFlowNote] = React.useState<{ text: string; i: number } | null>(null);
-  const [mark, setMark] = React.useState<{ i: number; as: string } | null>(null);
+  const [from, setFrom] = React.useState<(CaptureFrom & { line: string; as: ReviewType }) | null>(null);
+  const [flowNote, setFlowNote] = React.useState<{ text: string; line: string } | null>(null);
+  /** a line kept: its quoted line, what it became, and its review type */
+  const [mark, setMark] = React.useState<{ line: string; as: string; type: ReviewType } | null>(null);
+  const [shot, setShot] = React.useState<{ jpeg: string; subject: string } | null>(null);
   const [shots, setShots] = React.useState<Screenshot[]>([]);
   const [shooting, setShooting] = React.useState(false);
-  const [image, setImage] = React.useState<{ subject: string; src: string } | null>(null);
+  const [image, setImage] = React.useState<{ subject: string; src: string; note?: string } | null>(null);
   const [problem, setProblem] = React.useState<string | null>(null);
   const [walkActs, setWalkActs] = React.useState<Activity[] | null>(null);
   const [licenceFor, setLicenceFor] = React.useState<Line | null>(null);
@@ -134,25 +139,53 @@ function Runner({ w, model, repo, apply, onBack, onOpen }: PageProps & { w: Work
     loadActivities(repo.g, ours.id).then(a => { if (live) setWalkActs(a); }).catch(() => live && setWalkActs([]));
     return () => { live = false; };
   }, [ours?.id, studio, walkTick]);
-  const transcript = React.useMemo(() => parseTranscript(w.transcript), [w.transcript]);
+  const transcript = React.useMemo(() => linesOf(w.transcript), [w.transcript]);
   const used = usedLines(transcript, model.requirements, openPoints, w.session.captured || {}, model.comments.filter(c => c.workshopId === w.id));
+  // each line's review: kept on the session by its quoted line; a line used before reviews were kept counts as accepted
+  const reqOfLine = (line: string) => model.requirements.find(r => r.workshopId === w.id && r.sourceText === line);
+  const states = new Map<number, LineState>(transcript.map((u, i) => {
+    const line = sourceLine(u), entry = w.session.review?.[line];
+    const r = reviewOf(u.text, entry, used.get(i) || "", isFacilitator(u.speaker, w.facilitator));
+    const req = reqOfLine(line);
+    return [i, { r, undo: undoRule(r, { closed, signedOff: !!req && req.approval === APPROVAL.approved }), text: entry?.text }];
+  }));
+  const review = reviewCounts(Array.from(states.values()).map(x => x.r));
+  const keep = (line: string, as: string, type: ReviewType, text?: string) => saveSession(s => withReview({ ...s, captured: { ...(s.captured || {}), [line]: as } }, line, { status: "accepted", type, ...(text ? { text } : {}) }));
+  const actions = {
+    reject: (u: Line) => saveSession(s => withReview(s, sourceLine(u), { ...(s.review?.[sourceLine(u)] || {}), status: "rejected" })),
+    undo: (u: Line) => apply(async m => {
+      const line = sourceLine(u), st = states.get(u.i);
+      let model = m;
+      if (st?.r.status === "accepted") {
+        const req = model.requirements.find(r => r.workshopId === w.id && r.sourceText === line), com = model.comments.find(c => c.workshopId === w.id && c.source === line), op = model.raids.find(r => r.workshopId === w.id && r.source === line);
+        if ((st.r.type === "req" || st.r.type === "rule") && req) model = await repo.deleteRequirement(model, req);
+        else if (st.r.type === "comment" && com) model = await repo.deleteComment(model, com);
+        else if (st.r.type === "open" && op) model = await repo.deleteRaid(model, op);
+      }
+      const cur = fresh(model), captured = { ...(cur.session.captured || {}) };
+      delete captured[line];
+      return repo.saveWorkshop(model, cur, { session: withReview({ ...cur.session, captured }, line, null) });
+    }),
+  };
   const captured = model.requirements.filter(r => r.workshopId === w.id && isActive(r));
   React.useEffect(() => { repo.screenshots(w).then(setShots).catch(() => setShots([])); }, [w.id]);
   React.useEffect(() => {
     if (!mark) return;
-    const { i, as } = mark;
-    saveSession(s => ({ ...s, captured: { ...(s.captured || {}), [String(i)]: as } }));
+    keep(mark.line, mark.as, mark.type);
     setMark(null);
   }, [mark]);
-  const useLine = (u: Line, use: LineUse) => {
-    if (used.has(u.i)) return;
+  /** Accept a line as one type, with its words as they are or as edited. The quoted line stays the source. */
+  const useLine = (u: Line, use: LineUse, words = u.text) => {
+    if (used.has(u.i) || states.get(u.i)?.r.status === "accepted") return;
+    const line = sourceLine(u), edited = words !== u.text ? words : undefined;
     const processId = processKeyOf(u.key) || proc?.id || current?.id || null, code = activityCodeOf(u.key);
     const act = code && processId === proc?.id ? (walkActs || []).find(a => a.code === code) || null : null;
-    if (use === "open") { apply(m => repo.addRaid(m, { type: RAID.action, description: u.text, source: sourceLine(u), workshopId: w.id, itemId: processId, isQuestion: /\?\s*$/.test(u.text) })); return; }
-    if (use === "comment") { apply(m => repo.addComment(m, { itemId: processId, activityId: act?.id ?? null, activityCode: act ? code : "", workshopId: w.id, author: u.speaker, text: u.text, source: sourceLine(u) })); return; }
-    if (use === "flow") { setFlowNote({ text: sourceLine(u), i: u.i }); setStudio(true); return; }
+    if (use === "open") { apply(m => repo.addRaid(m, { type: RAID.action, description: words, source: line, workshopId: w.id, itemId: processId, isQuestion: /\?\s*$/.test(words) })).then(() => keep(line, "Open point", "open", edited)); return; }
+    if (use === "comment") { apply(m => repo.addComment(m, { itemId: processId, activityId: act?.id ?? null, activityCode: act ? code : "", workshopId: w.id, author: u.speaker, text: words, source: line })).then(() => keep(line, "Comment", "comment", edited)); return; }
+    if (use === "flow") { setFlowNote({ text: edited ? (u.at != null ? line.slice(0, line.indexOf("]") + 2) : "") + (u.speaker ? u.speaker + ": " : "") + words : line, line }); setStudio(true); return; }
     if (use === "licence") { setLicenceFor(u); return; }
-    setFrom({ key: u.i + ":" + Date.now(), i: u.i, text: u.text, who: u.speaker, sourceText: sourceLine(u), itemId: processId, activityId: act?.id ?? null, activityName: act?.name || "" });
+    setFrom({ key: u.i + ":" + Date.now(), line, as: use === "rule" ? "rule" : "req", text: words, who: u.speaker, sourceText: line, itemId: processId, activityId: act?.id ?? null, activityName: act?.name || "",
+      type: use === "rule" ? option("requirementType", "Business rule") : null });
     if (step !== 1) save({ phase: 1 });
   };
   const screenshot = async () => {
@@ -160,15 +193,16 @@ function Runner({ w, model, repo, apply, onBack, onOpen }: PageProps & { w: Work
     try {
       const jpeg = await grabScreen();
       const about = proc ? proc.name : line ? line.text : w.name;
-      if (jpeg) { const shot = await repo.addScreenshot(w, "Screenshot: " + w.name + " · " + about, jpeg); setShots(xs => [shot, ...xs]); }
+      if (jpeg) setShot({ jpeg, subject: "Screenshot: " + w.name + " · " + about }); // marked up (or skipped) before it is kept
     } catch (e: any) { setProblem("The screenshot didn't work: " + (e?.message || e)); }
     finally { setShooting(false); }
   };
   const visitedItems = Array.from(new Set(w.session.visits.map(v => processKeyOf(v.key)))).map(id => model.items.find(x => x.id === id)).filter(Boolean) as ProcessItem[];
-  const lines = summaryLines(captured.map(r => ({ reqId: r.reqId, description: r.description, owner: r.owner, mapping: r.mapping, approvedBy: r.approvedBy })),
-    visitedItems.filter(p => p.level === 3).map(p => ({ name: p.name, visited: true, decisions: [p.fitGap != null ? labelOf("fitGapStatus", p.fitGap) + (p.gapApproach != null ? " (" + labelOf("gapSolutionApproach", p.gapApproach) + ")" : "") : "",
+  const readBack = readBackItems(captured.map(r => ({ id: r.id, reqId: r.reqId, description: r.description, owner: r.owner, mapping: r.mapping, approvedBy: r.approvedBy, said: r.raisedBy, where: model.items.find(x => x.id === r.itemId)?.name || "" })),
+    visitedItems.filter(p => p.level === 3).map(p => ({ id: p.id, name: p.name, visited: true, decisions: [p.fitGap != null ? labelOf("fitGapStatus", p.fitGap) + (p.gapApproach != null ? " (" + labelOf("gapSolutionApproach", p.gapApproach) + ")" : "") : "",
       ...systemsFor(model, p).filter(s => s.decision != null).map(s => s.name + ": " + labelOf("systemDecision", s.decision))].filter(Boolean) })),
-    openPoints.map(r => ({ text: r.description, owner: r.owner, due: r.targetDate || "", done: r.status === RAID_STATUS.closed, source: r.source })));
+    openPoints.map(r => ({ text: r.description, owner: r.owner, due: r.targetDate || "", done: r.status === RAID_STATUS.closed, source: r.source })), transcriptDecisions(w.session.captured));
+  const openList = openPoints.map(r => ({ text: r.description, owner: r.owner, due: r.targetDate || "", done: r.status === RAID_STATUS.closed, source: r.source }));
   const name = (id: string) => { const x = model.items.find(i => i.id === id); return x ? (x.code ? x.code + " " : "") + x.name : id; };
   const conclusion = conclusionItems(run, cards, { name, scopeLabel: v => labelOf("scope", v), fitLabel: f => labelOf("fitGapStatus", f.fitGap) + (f.approach != null && f.fitGap === FIT_GAP.gap ? " (" + labelOf("gapSolutionApproach", f.approach) + ")" : "") });
   /** Next / Previous: Next ticks the line it leaves; Next on the last line goes on to Analyse. A process line is a visit (the transcript lands there). */
@@ -211,8 +245,8 @@ function Runner({ w, model, repo, apply, onBack, onOpen }: PageProps & { w: Work
         <div className={l.row} style={{ fontSize: 12 }} data-emph="screenshots">
           <span className={l.muted}>Screenshots:</span>
           {shots.slice(0, 6).map(x => (
-            <Button key={x.id} size="small" appearance="subtle" onClick={async () => { try { setImage({ subject: x.subject, src: await repo.screenshotImage(x.id) }); } catch (e: any) { setProblem(String(e?.message || e)); } }}>
-              {x.subject.replace(/^Screenshot: /, "").replace(w.name + " · ", "")} {x.createdOn ? new Date(x.createdOn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
+            <Button key={x.id} size="small" appearance="subtle" onClick={async () => { try { setImage({ subject: x.subject, src: await repo.screenshotImage(x.id), note: x.note }); } catch (e: any) { setProblem(String(e?.message || e)); } }}>
+              {x.subject.replace(/^Screenshot: /, "").replace(w.name + " · ", "")} {x.createdOn ? new Date(x.createdOn).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}{x.note && marksOf(x.note).comments.length ? " (" + marksOf(x.note).comments.length + " comments)" : ""}
             </Button>
           ))}
         </div>
@@ -243,6 +277,14 @@ function Runner({ w, model, repo, apply, onBack, onOpen }: PageProps & { w: Work
           {closed && step !== 4 && <div style={{ color: C.warn }}>This workshop is closed. Reopen it in Close to change anything.</div>}
           <fieldset disabled={closed && step !== 4} style={{ border: 0, padding: 0, margin: 0, minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
             {step === 0 && <Prepare model={model} repo={repo} apply={apply} w={w} run={run} tpl={tpl} e2e={e2e} processes={processes} save={save} saveRun={saveRun} note={note} setNote={setNote} />}
+            {step === 0 && kind !== "discovery" && run.agenda.length > 0 && (
+              <div className={l.row} data-emph="prepare-meeting">
+                <MeetingRequest w={w} organisation={model.workspace.organisation} what={[tpl ? tpl.title : e2e ? e2e.name : w.name]} lines={run.agenda.map(a => ({ text: a.text }))}
+                  sections={[{ title: tpl ? tpl.title : w.name, who: tpl ? tpl.stakeholders.map(s => s.role) : [], systems: e2e ? model.systems.filter(s => childItems(model, e2e.id).some(a => a.id === s.itemId)).map(s => s.name) : [], target: [],
+                    questions: questionsOf(tpl).map(q => q.text).slice(0, 25), flow: "" } as PrepSection]} />
+                <span className={l.muted} style={{ fontSize: 12 }}>A Teams meeting with this agenda, and a prep pack to attach.</span>
+              </div>
+            )}
             {step === 1 && line && <>
               <div className={l.row} style={{ justifyContent: "space-between" }}>
                 <b data-emph="line-title">{line.text}</b>
@@ -258,28 +300,32 @@ function Runner({ w, model, repo, apply, onBack, onOpen }: PageProps & { w: Work
             {step === 1 && (
               <div data-emph="capture-area">
                 <Capture model={model} repo={repo} apply={apply} itemId={proc?.id ?? null} workshopId={w.id} from={from} onDropFrom={() => setFrom(null)}
-                  onCaptured={r => { if (from) { setMark({ i: from.i, as: r.reqId || "requirement" }); setFrom(null); } }} />
+                  onCaptured={r => { if (from) { setMark({ line: from.line, as: r.reqId || "requirement", type: from.as }); setFrom(null); } }} />
               </div>
             )}
-            {step === 2 && <Analyse w={w} run={run} model={model} shots={shots} transcriptLines={transcript.length} used={used.size} captured={captured.length} openPoints={openPoints.length} />}
-            {step === 3 && <Conclusion model={model} repo={repo} apply={apply} w={w} run={run} onRun={saveRun} items={conclusion} lines={lines} closed={closed} />}
-            {step === 4 && <Close model={model} repo={repo} apply={apply} w={w} run={run} items={conclusion} cards={cards} closed={closed} how={how} onPlanned={onOpen} />}
+            {step === 2 && <Analyse w={w} run={run} model={model} shots={shots} transcriptLines={transcript.length} used={review.accepted} todo={review.todo} rejected={review.rejected} captured={captured.length} openPoints={openPoints.length} />}
+            {step === 3 && <Conclusion model={model} repo={repo} apply={apply} w={w} run={run} onRun={saveRun} items={conclusion} readBack={readBack} onSession={saveSession} closed={closed} />}
+            {step === 4 && <Close model={model} repo={repo} apply={apply} w={w} run={run} items={conclusion} cards={cards} closed={closed} how={how} onPlanned={onOpen} readBack={readBack} openList={openList} transcriptTodo={review.todo} />}
           </fieldset>
         </div>
-        {showTranscript && <TranscriptPanel w={w} agenda={visitedItems} current={current} closed={closed} save={save} saveSession={saveSession} used={used} onUse={useLine} />}
+        {showTranscript && <TranscriptPanel w={w} agenda={visitedItems} current={current} closed={closed} save={save} saveSession={saveSession} used={used} onUse={useLine} states={states} actions={actions} />}
       </div>
       {studio && proc && <FlowStudio model={model} repo={repo} apply={apply} process={proc} onClose={() => { setStudio(false); setFlowNote(null); }}
-        note={flowNote ? { text: flowNote.text, onUsed: (_code, nm) => { setMark({ i: flowNote.i, as: "Flow change: " + nm }); setFlowNote(null); } } : null} />}
+        drawing={closed ? null : { workshopName: w.name, raw: w.drawings, save: raw => save({ drawings: raw }) }}
+        note={flowNote ? { text: flowNote.text, onUsed: (_code, nm) => { setMark({ line: flowNote.line, as: "Flow change: " + nm, type: "flow" }); setFlowNote(null); } } : null} />}
       {licenceFor && <LicenceDialog model={model} quote={sourceLine(licenceFor)} onClose={() => setLicenceFor(null)} onSave={(role, type, ppl) => {
         const u = licenceFor; setLicenceFor(null);
         apply(m => { const r = m.roles.find(x => x.id === role.id) || role; return repo.saveRole(m, r, { licenceType: type, headcount: ppl ?? r.headcount, licenceNote: (r.licenceNote ? r.licenceNote + "\n" : "") + sourceLine(u) }); });
-        setMark({ i: u.i, as: "Licence: " + role.name + ", " + LICENCE_LABEL[type] });
+        setMark({ line: sourceLine(u), as: "Licence: " + role.name + ", " + LICENCE_LABEL[type], type: "licence" });
       }} />}
+      {shot && <ShotAnnotate src={"data:image/jpeg;base64," + shot.jpeg} title={shot.subject.replace(/^Screenshot: /, "Mark up: ")} by={repo.user}
+        onSkip={() => { const s = shot; setShot(null); repo.addScreenshot(w, s.subject, s.jpeg).then(x => setShots(xs => [x, ...xs])).catch(e => setProblem(String(e?.message || e))); }}
+        onSave={async marks => { const jpeg = await burnIn("data:image/jpeg;base64," + shot.jpeg, marks); const x = await repo.addScreenshot(w, shot.subject, jpeg, noteWithMarks(shot.subject, marks)); setShots(xs => [x, ...xs]); setShot(null); }} />}
       {image && (
         <Dialog open onOpenChange={(_, d) => { if (!d.open) setImage(null); }}>
           <DialogSurface style={{ maxWidth: "90vw" }}><DialogBody>
             <DialogTitle>{image.subject}</DialogTitle>
-            <DialogContent><img src={image.src} alt={image.subject} style={{ maxWidth: "100%", maxHeight: "70vh", display: "block" }} /></DialogContent>
+            <DialogContent><img src={image.src} alt={image.subject} style={{ maxWidth: "100%", maxHeight: "70vh", display: "block" }} />{image.note && marksOf(image.note).comments.length > 0 && <div data-emph="shot-text" style={{ whiteSpace: "pre-wrap", fontSize: 12, marginTop: 8 }}>{shotText(image.note).split("\n").slice(1).join("\n")}</div>}</DialogContent>
             <DialogActions><Button appearance="primary" onClick={() => setImage(null)}>Close</Button></DialogActions>
           </DialogBody></DialogSurface>
         </Dialog>
@@ -440,12 +486,14 @@ function Notes({ tpl, w, save }: { tpl: MsTemplate | null; w: Workshop; save: (p
 }
 
 /** Analyse: what the workshop recorded, one place to look before the conclusion. The AI analysis comes in a later version. */
-function Analyse({ w, run, model, shots, transcriptLines, used, captured, openPoints }: { w: Workshop; run: RunState; model: Model; shots: Screenshot[]; transcriptLines: number; used: number; captured: number; openPoints: number }) {
+function Analyse({ w, run, model, shots, transcriptLines, used, todo, rejected, captured, openPoints }: { w: Workshop; run: RunState; model: Model; shots: Screenshot[]; transcriptLines: number; used: number; todo: number; rejected: number; captured: number; openPoints: number }) {
   const l = useLook();
   const marks = Object.values(run.marks);
   const comments = model.comments.filter(c => c.workshopId === w.id).length;
   const rows: [string, string | number][] = [
-    ["Transcript lines", transcriptLines ? transcriptLines + " (" + used + " used)" : "none pasted"], ["Screenshots", shots.length], ["Requirements captured", captured], ["Comments", comments], ["Action items and open questions", openPoints],
+    ["Transcript lines", transcriptLines ? transcriptLines + " (" + used + " used, " + rejected + " not relevant, " + todo + " to review)" : "none pasted"],
+    ["Screenshots", shots.length + (shots.some(s => s.note) ? " (" + shots.filter(s => marksOf(s.note).comments.length || marksOf(s.note).lines.length).length + " marked up)" : "")],
+    ["Flow drawings", Object.values(readDrawings(w.drawings)).reduce((n, d) => n + d.strokes.length, 0) + " lines, " + Object.values(readDrawings(w.drawings)).reduce((n, d) => n + d.comments.length, 0) + " comments on " + Object.keys(readDrawings(w.drawings)).length + " flows"], ["Requirements captured", captured], ["Comments", comments], ["Action items and open questions", openPoints],
     ["Scope proposals", Object.keys(run.scope).length], ["Board cards kept / struck / main path", marks.filter(m => m.state === "keep").length + " / " + marks.filter(m => m.state === "strike").length + " / " + marks.filter(m => m.main).length],
     ["Steps fit-checked", Object.keys(run.stepFit).length], ["Fit-gap proposals", Object.keys(run.processFit).length], ["Questions answered", Object.keys(run.answers).length], ["Agenda lines walked", run.done.length + " of " + run.agenda.length],
   ];

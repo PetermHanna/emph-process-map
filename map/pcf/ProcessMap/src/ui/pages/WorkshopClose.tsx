@@ -4,11 +4,12 @@
 // proposes the next workshop in Microsoft's order.
 import * as React from "react";
 import { Button, Checkbox, Field, Input, ToggleButton } from "@fluentui/react-components";
-import { Copy16Regular, ArrowUndo16Regular } from "@fluentui/react-icons";
+import { Copy16Regular, ArrowUndo16Regular, Print20Regular, ArrowDownload20Regular } from "@fluentui/react-icons";
 import { C, useLook } from "../look";
 import { AddBox, Edit, PageProps, Pill } from "../kit";
 import { RAID, RAID_STATUS, SESSION, labelOf } from "../../domain/codes";
-import { minutesPerVisit } from "../../domain/session";
+import { minutesPerVisit, markLine, readBackCounts, readBackChecks, readBackSummary, readBackHtml, READBACK_MARKS, ReadBackItem, ReadBackMark, OpenPoint, SessionState } from "../../domain/session";
+import { FlowLink } from "./FlowLink";
 import { effectiveScope, itemsAt, childItems, How } from "../../domain/repository";
 import { ConclusionItem, RunState, Verdict, ChildTask, agreeRest, conclusionCounts, closeWarnings, closeChanges, closeProblems, nextTemplate, HeldWorkshop, BoardCard, fitChecked, gapAreas, readTasks, kindOfValue, KINDS } from "../../domain/workshop";
 import type { Workshop, ProcessItem } from "../../domain/types";
@@ -17,7 +18,54 @@ import { GUIDANCE } from "../guidance";
 const VERDICTS: { v: Verdict; name: string }[] = [{ v: "agreed", name: "Agreed" }, { v: "not_agreed", name: "Not agreed" }, { v: "parked", name: "Parked" }];
 export const peopleOf = (w: Workshop) => w.participants.split(/\n|,/).map(x => x.trim()).filter(Boolean);
 
-export function Conclusion({ model, repo, apply, w, run, onRun, items, lines, closed }: PageProps & { w: Workshop; run: RunState; onRun: (fn: (r: RunState) => RunState) => void; items: ConclusionItem[]; lines: string[]; closed: boolean }) {
+/** The read-back with the room's answer per line (Business Map U3): Confirmed, Changed (with what changed) or Open, and who confirmed for the organisation. */
+function ReadBack({ model, repo, apply, w, items, onSession, closed }: PageProps & { w: Workshop; items: ReadBackItem[]; onSession: (fn: (s: SessionState) => SessionState) => void; closed: boolean }) {
+  const l = useLook();
+  const rb = w.session.readBack, marks = rb?.marks || {};
+  const c = readBackCounts(items, rb);
+  const facts: [string, string][] = [["Workshop", w.name], ["Date", w.heldOn || ""], ["Facilitator", w.facilitator], ["Participants", peopleOf(w).join(", ")]];
+  const html = () => readBackHtml((model.workspace.organisation ? model.workspace.organisation + ": " : "") + "workshop summary", facts.filter(x => x[1]), readBackSummary(items, rb));
+  const print = () => {
+    const f = document.createElement("iframe");
+    f.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0";
+    document.body.appendChild(f);
+    f.contentDocument!.open(); f.contentDocument!.write(html()); f.contentDocument!.close();
+    setTimeout(() => { f.contentWindow!.focus(); f.contentWindow!.print(); setTimeout(() => f.remove(), 1000); }, 200);
+  };
+  const download = () => { const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\uFEFF" + html()], { type: "application/msword" })); a.download = w.name.replace(/[\\/:*?"<>|]+/g, " ").trim() + " summary.doc"; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
+  const set = (key: string, mark: ReadBackMark, note?: string) => onSession(s => markLine(s, key, mark, note));
+  return (
+    <div data-emph="read-back" style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div className={l.section}>Read back <span className={l.muted} style={{ fontWeight: 400, fontSize: 12 }} data-emph="read-back-counts">· {c.confirmed} confirmed, {c.changed} changed, {c.open} open, {c.left} not read back</span></div>
+      <div className={l.muted} style={{ fontSize: 12 }}>Read each line to the room in these words and mark the answer. Changed: note what changed, then change it where it is kept.</div>
+      {!items.length && <div className={l.muted}>Nothing to read back yet.</div>}
+      {items.map(i => {
+        const m = marks[i.key];
+        const req = i.key.startsWith("req:") ? model.requirements.find(r => r.id === i.key.slice(4)) : undefined;
+        return (
+          <div key={i.key} data-emph="read-back-line" data-key={i.key} style={{ borderBottom: "1px solid " + C.line, paddingBottom: 4, display: "flex", flexDirection: "column", gap: 2 }}>
+            <div className={l.row}>
+              <span style={{ flexGrow: 1 }}>{i.text}{i.meta && <span className={l.muted} style={{ fontSize: 11, display: "block" }}>{i.meta}</span>}</span>
+              {READBACK_MARKS.map(([k, name]) => <ToggleButton key={k} size="small" disabled={closed} checked={m?.mark === k} data-emph={"read-back-" + k} onClick={() => set(i.key, k)}>{name}</ToggleButton>)}
+            </div>
+            {req && req.activityId && <FlowLink model={model} repo={repo} apply={apply} r={req} />}
+            {m?.mark === "changed" && <Input size="small" data-emph="read-back-note" placeholder="What changed" defaultValue={m.note || ""} disabled={closed} onBlur={e => { if (e.target.value !== (m.note || "")) set(i.key, "changed", e.target.value); }} />}
+          </div>
+        );
+      })}
+      <Field label="Confirmed for the organisation by" hint="Name and role of who confirmed the read-back in the room">
+        <Input data-emph="read-back-by" defaultValue={rb?.confirmedBy || ""} disabled={closed} onBlur={e => { if (e.target.value !== (rb?.confirmedBy || "")) onSession(s => ({ ...s, readBack: { ...(s.readBack || {}), confirmedBy: e.target.value } })); }} />
+      </Field>
+      <div className={l.row}>
+        <Button size="small" icon={<Copy16Regular />} onClick={() => navigator.clipboard?.writeText(items.map(i => i.text + (marks[i.key] ? " [" + marks[i.key].mark + (marks[i.key].note ? ": " + marks[i.key].note : "") + "]" : "")).join("\n"))}>Copy</Button>
+        <Button size="small" icon={<Print20Regular />} data-emph="read-back-print" onClick={print}>Summary: print / PDF</Button>
+        <Button size="small" icon={<ArrowDownload20Regular />} data-emph="read-back-doc" onClick={download}>.doc</Button>
+      </div>
+    </div>
+  );
+}
+
+export function Conclusion({ model, repo, apply, w, run, onRun, items, readBack, onSession, closed }: PageProps & { w: Workshop; run: RunState; onRun: (fn: (r: RunState) => RunState) => void; items: ConclusionItem[]; readBack: ReadBackItem[]; onSession: (fn: (s: SessionState) => SessionState) => void; closed: boolean }) {
   const l = useLook();
   const c = conclusionCounts(items, run);
   const people = Array.from(new Set(peopleOf(w).concat(run.present)));
@@ -39,9 +87,7 @@ export function Conclusion({ model, repo, apply, w, run, onRun, items, lines, cl
         {people.map(p => <Checkbox key={p} label={p} disabled={closed} checked={run.present.includes(p)} onChange={(_, d) => onRun(r => ({ ...r, present: d.checked ? Array.from(new Set(r.present.concat(p))) : r.present.filter(x => x !== p) }))} />)}
         {!people.length && <span className={l.muted}>Add the participants in Prepare.</span>}
       </div>
-      <div className={l.section}>Read back</div>
-      <ol style={{ margin: 0, paddingLeft: 20 }}>{lines.map((x, i) => <li key={i}>{x}</li>)}</ol>
-      <div><Button size="small" icon={<Copy16Regular />} onClick={() => navigator.clipboard?.writeText(lines.join("\n"))}>Copy</Button></div>
+      <ReadBack model={model} repo={repo} apply={apply} w={w} items={readBack} onSession={onSession} closed={closed} />
       <div className={l.section}>Action items <span className={l.muted} style={{ fontWeight: 400, fontSize: 12 }}>(RAID)</span></div>
       {openPoints.map(a => (
         <div key={a.id} className={l.row} data-emph="action-item">
@@ -67,8 +113,9 @@ export function heldOf(w: Workshop, items: ProcessItem[]): HeldWorkshop {
     gapAreas: run ? gapAreas(run, items).map(id => items.find(x => x.id === id)).filter(Boolean).map(a => ({ code: a!.code, name: a!.catalogName || a!.name })) : [] };
 }
 
-export function Close({ model, repo, apply, w, run, items, cards, closed, how, onPlanned }: PageProps & {
+export function Close({ model, repo, apply, w, run, items, cards, closed, how, onPlanned, readBack, openList, transcriptTodo }: PageProps & {
   w: Workshop; run: RunState; items: ConclusionItem[]; cards: BoardCard[]; closed: boolean; how: How; onPlanned: (id: string) => void;
+  readBack: ReadBackItem[]; openList: OpenPoint[]; transcriptTodo: number;
 }) {
   const l = useLook();
   const [problem, setProblem] = React.useState<string | null>(null);
@@ -76,12 +123,17 @@ export function Close({ model, repo, apply, w, run, items, cards, closed, how, o
   const changes = closeChanges(run, cards, model.items, w.name);
   const problems = closeProblems(changes);
   const warnings = closeWarnings(items, run, tasks);
+  const checks = readBackChecks(readBack, w.session.readBack, openList, transcriptTodo);
+  // the room's answers on requirements go into their history (Business Map D1)
+  const answers = readBack.filter(i => i.key.startsWith("req:") && w.session.readBack?.marks?.[i.key]).map(i => { const m = w.session.readBack!.marks![i.key];
+    return { rowId: i.key.slice(4), answer: m.mark === "changed" ? "Changed in the room" + (m.note ? ": " + m.note : "") : m.mark === "confirmed" ? "Confirmed" : "Open" }; })
+    .filter(a => model.requirements.some(r => r.id === a.rowId));
   const saveTasks = (t: ChildTask[]) => apply(m => repo.saveWorkshop(m, m.workshops.find(x => x.id === w.id) || w, { childTasks: JSON.stringify(t) }));
   const e2eInScope = itemsAt(model, 1).filter(e => effectiveScope(model, e)).map(e => e.code);
   const areasInScope = Object.fromEntries(itemsAt(model, 1).map(e => [e.code, childItems(model, e.id).filter(a => effectiveScope(model, a)).map(a => ({ code: a.code, name: a.catalogName || a.name }))]));
   const next = closed ? nextTemplate(GUIDANCE, heldOf(w, model.items), model.workshops.filter(x => x.id !== w.id).map(x => heldOf(x, model.items)), e2eInScope, areasInScope) : null;
   const planned = next ? model.workshops.find(x => x.id !== w.id && x.session.run?.template === next.template.id && x.status !== SESSION.closed) : undefined;
-  const doClose = () => { setProblem(null); apply(m => repo.closeWorkshop(m, m.workshops.find(x => x.id === w.id) || w, changes, how, tasks)).catch(e => setProblem(String(e?.message || e))); };
+  const doClose = () => { setProblem(null); apply(async m => repo.closeWorkshop(await repo.recordReadBack(m, answers, how), m.workshops.find(x => x.id === w.id) || w, changes, how, tasks)).catch(e => setProblem(String(e?.message || e))); };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }} data-emph="close">
       {tasks.length > 0 && <>
@@ -94,6 +146,8 @@ export function Close({ model, repo, apply, w, run, items, cards, closed, how, o
           : <div className={l.muted}>Nothing to write: no agreed scope, card or fit-gap that differs from today.</div>}
         <div className={l.muted} style={{ fontSize: 12 }}>Each change is recorded as set in a workshop: {w.name}, {w.heldOn || "no date"}, present: {how.present || "nobody marked"}.</div>
         {warnings.map(x => <div key={x} style={{ color: C.warn }} data-emph="close-warning">{x}</div>)}
+        {checks.length > 0 && <div data-emph="close-checks" style={{ color: C.warn }}>Before you close: {checks.join("; ")}. You can close all the same.</div>}
+        {answers.length > 0 && <div className={l.muted} style={{ fontSize: 12 }} data-emph="close-read-back">The room's answers on {answers.length} requirement{answers.length === 1 ? "" : "s"} go into their history.</div>}
         {problems.map(x => <div key={x} style={{ color: C.bad }}>{x}</div>)}
         {problem && <div style={{ color: C.bad }}>{problem}</div>}
         <div><Button appearance="primary" data-emph="workshop-close" disabled={problems.length > 0} onClick={doClose}>Close the workshop{changes.length ? " and write " + changes.length + " change" + (changes.length === 1 ? "" : "s") : ""}</Button></div>

@@ -31,6 +31,7 @@ const header = (busy) => `<div class="cmd" data-id="CommandBar"><button id="save
   <div class="sect"><input id="field-a" data-id="name.fieldControl-text-box-text" placeholder="Topic" aria-label="Topic"><button id="go" data-id="go" style="margin-left:8px">Do it</button><span role="tablist" style="margin-left:680px"><span role="tab">A control's own tab</span></span><iframe id="frame" src="/frame"></iframe></div>`;
 m.innerHTML = f === "list" ? `<div class="cmd" data-id="CommandBar"><button>New</button></div><div id="list"><h2>Active records</h2><div style="height:300px;background:#fafafa">grid</div></div>` : header(f === "busy");
 </script>
+<script>window.__clicks = { go: 0 }; document.addEventListener("click", e => { if (e.target && e.target.id === "go") window.__clicks.go++; }, true);</script>
 <script src="mock.js"></script>
 <script src="tests.js"></script>
 <script src="guide.js"></script>

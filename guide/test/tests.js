@@ -1,5 +1,6 @@
 // await __g.run() on main.aspx?f=band | busy | list. Keep the pane visible. Clears the guide's saved state first; a test page only.
 // await __g.launch() checks how the Process Map starts a flow: the emph-guide-start event and ?emphguide=<flow id>.
+// await __g.modes() (then reload) and await __g.modes2(): Guide only by default, training Play / Pause / Resume / Stop. main.aspx?emphguide=<id>&emphstep=P300: await __g.step().
 window.__g = (function () {
   const w = ms => new Promise(r => setTimeout(r, ms));
   const root = () => document.getElementById("emph-guide-host").shadowRoot;
@@ -106,5 +107,51 @@ window.__g = (function () {
     localStorage.removeItem("emphLaunch");
     return log.join("\n");
   }
-  return { run, launch, reset: () => { localStorage.removeItem("emphGuideState"); sessionStorage.clear(); }, part, rect, root };
+  // Guide 1.1 (EBM Guide 0.14.0): Guide only is the default, voice off, Next at once and nothing clicked; training has Play, Pause, Resume, Stop.
+  async function modes() {
+    log.length = 0;
+    localStorage.setItem("emphGuideState", JSON.stringify({ run: "narrated", voice: true, open: false }));
+    location.hash = "modes-pending";
+    return "Reload the page (keep ?f=band), then run: await __g.modes2()";
+  }
+  async function modes2() {
+    log.length = 0;
+    const clicks0 = window.__clicks.go;
+    await openFlow();
+    const s0 = state();
+    check("an old saved setting starts on Guide only with the voice off", s0.run === "guide" && s0.voice === false && s0.m14 === true, s0);
+    const dock = part("dock"), btns = () => [...part("dock").querySelectorAll(".acts button")].map(b => b.textContent.trim());
+    check("Guide only: Next is there at once, no Play", btns().includes("Next") && !btns().some(b => /Play/.test(b)), btns());
+    check("the voice button says off", !!$("#voice") && /off/i.test($("#voice").title), $("#voice") && $("#voice").title);
+    part("dock").querySelector("[data-next]").click(); await w(500);
+    check("Next moves on without clicking anything on the page", /Qualify lead/.test(part("dock").innerText) && window.__clicks.go === clicks0, { text: part("dock").innerText.slice(0, 60), clicks: window.__clicks.go });
+    $("#back").click(); await w(400);
+    check("Back returns to the step", /Capture lead/.test(part("dock").innerText), part("dock").innerText.slice(0, 60));
+    const runSel = async () => { if (!root().querySelector("#run")) { $("#more").click(); await w(150); } return root().querySelector("#run"); };
+    const sel = await runSel();
+    check("Mode has Guide only and the two training runs", !!sel && [...sel.options].map(o => o.value).join() === "guide,check,full", sel && [...sel.options].map(o => o.text));
+    sel.value = "check"; sel.dispatchEvent(new Event("change", { bubbles: true })); await w(300);
+    check("Training shows Play", btns().some(b => /Play/.test(b)), btns());
+    $("#play").click(); await w(250);
+    check("Play runs, with Pause and Stop", !!$("#pause") && !!$("#stop"), btns());
+    $("#pause").click(); await w(300);
+    check("Pause holds on the step, with Resume and Stop", !!$("#play") && /Resume/.test($("#play").textContent) && !!$("#stop") && /Capture lead/.test(part("dock").innerText), btns());
+    const v0 = document.getElementById("field-a").value; await w(800);
+    check("nothing is typed while paused", document.getElementById("field-a").value === v0, document.getElementById("field-a").value);
+    part("dock").querySelector("[data-next]").click(); await w(400);
+    check("Next while paused moves without acting", /Qualify lead/.test(part("dock").innerText) && window.__clicks.go === clicks0, window.__clicks.go);
+    $("#stop").click(); await w(300);
+    check("Stop ends the run", !$("#stop") && /Play/.test(btns().join()), btns());
+    const sel2 = await runSel(); sel2.value = "guide"; sel2.dispatchEvent(new Event("change", { bubbles: true })); await w(300);
+    location.hash = "";
+    return log.join("\n");
+  }
+  // ?emphguide=<id>&emphstep=P300 opens the flow at that step, without the introduction
+  async function step() {
+    log.length = 0;
+    await w(800);
+    check("?emphstep opens the flow at that step", !!part("dock") && /Qualify lead/.test(part("dock").innerText) && !$("#intro-go"), part("dock") && part("dock").innerText.slice(0, 60));
+    return log.join("\n");
+  }
+  return { run, launch, modes, modes2, step, reset: () => { localStorage.removeItem("emphGuideState"); sessionStorage.clear(); }, part, rect, root };
 })();

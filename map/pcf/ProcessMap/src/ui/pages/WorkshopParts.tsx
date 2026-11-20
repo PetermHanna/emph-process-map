@@ -9,6 +9,8 @@ import { buildAgenda, agendaHtml, AgendaBlock, processKeyOf, activityCodeOf } fr
 import { isActive, productsOf, levelUp } from "../../domain/rules";
 import { loadActivities, flowsOf, Repository } from "../../domain/repository";
 import type { Model, Workshop, ProcessItem, Activity, Role } from "../../domain/types";
+import { MeetingRequest } from "./WorkshopMeeting";
+import { readDrawings, drawingLines } from "../../domain/drawing";
 
 /** Our process if there is one, else Microsoft's reference, without dropped activities, in flow order. */
 async function flowOf(model: Model, repo: Repository, processId: string): Promise<Activity[]> {
@@ -57,6 +59,10 @@ export function FacilitatorAgenda({ w, model, repo, agenda }: { w: Workshop; mod
       <div className={l.row} style={{ justifyContent: "space-between" }}>
         <div className={l.section} style={{ margin: 0 }}>Facilitator's agenda <span className={l.muted} style={{ fontWeight: 400 }} data-emph="agenda-total">· {plan.items.length} business processes, {plan.total} min</span></div>
         <div className={l.row}>
+          <MeetingRequest w={w} organisation={model.workspace.organisation} what={Array.from(new Set(agenda.map(p => levelUp(model.items, p, 1)?.name || "").filter(Boolean)))}
+            lines={plan.items.map(x => ({ text: (x.code ? x.code + " " : "") + x.name, minutes: x.minutes }))}
+            sections={blocks.filter(b => !b.notUsed).map(b => ({ title: (b.code ? b.code + " " : "") + b.name, who: b.roles, systems: b.systemsToday, target: b.products,
+              questions: plan.items.find(x => x.key === b.key)?.prompts.filter(q => !/^What can't the standard/.test(q)) || [], flow: b.activities.map(a => a.name).join(" → ") }))} />
           <Button size="small" icon={<Print20Regular />} disabled={!plan.items.length} onClick={print}>Print / PDF</Button>
           <Button size="small" icon={<ArrowDownload20Regular />} disabled={!plan.items.length} onClick={download}>.doc</Button>
         </div>
@@ -99,6 +105,7 @@ export function FlowWalk({ w, model, repo, apply, p, acts, closed, onVisit, onAd
           <Button size="small" onClick={onOpenStudio}>Open the flow studio</Button>
         </div>
       </div>
+      {(() => { const d = readDrawings(w.drawings)[ours.id]; const ls = d ? drawingLines(d, c => walk.find(x => x.code === c)?.name) : []; return ls.length ? <div data-emph="walk-drawing" className={l.muted} style={{ fontSize: 12 }}>Drawn in this workshop: {ls.join("; ")}</div> : null; })()}
       {walk.map((a, i) => {
         const notes = model.comments.filter(c => c.activityId === a.id);
         const reqs = model.requirements.filter(r => r.activityId === a.id && isActive(r));
