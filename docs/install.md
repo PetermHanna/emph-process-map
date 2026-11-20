@@ -12,7 +12,7 @@ Use a Dataverse environment of your own (a trial or a sandbox is fine). The inst
 It creates:
 
 - Publisher `emphprocessmap` (prefix `emph`, choice values from 582100000) and the unmanaged solution `EMPHProcessMap`.
-- 18 tables (see [architecture](architecture.md)), each with a main form and a default view.
+- 16 tables (see [architecture](architecture.md)), each with a main form and a default view. Choice columns carry Microsoft's picklists from the Azure DevOps template for Dynamics 365 projects.
 - Web resources `emph_/open.html` and `emph_/icon.svg`.
 - The model-driven app **EMPH Process Map**.
 - One workspace record, which hosts the component.
@@ -37,14 +37,14 @@ By hand instead: open the Workspace main form, select **Host column**, Component
    python map/schema/import-catalog.py "<path to the catalog .xlsx>"
    ```
 
-   This writes `map/schema/catalog.json` and `map/schema/catalog-load.js` (which also carries Microsoft's reference flows from `map/schema/flows.json`): 16 end-to-end processes, about 100 process areas and about 700 business processes (scenarios, test cases and deprecated rows are left out). The repository already carries a `catalog.json` (October 2026) for the demo site; `catalog-load.js` stays out of git.
+   This writes `map/schema/catalog.json` and `map/schema/catalog-load.js` (which also carries Microsoft's reference flows from `map/schema/flows.json`): 16 end-to-end processes, about 100 process areas, about 700 business processes and 3,870 scenarios, all loaded into `emph_processitem` (system processes, test cases and deprecated or deleted rows are left out). The repository already carries a `catalog.json` (October 2026) for the demo site; `catalog-load.js` stays out of git.
 3. On the same WhoAmI page and console:
    1. Paste all of `map/schema/catalog-load.js`.
    2. Choose what to load: `window.EMPH_SAMPLE_NAME = 'catalog'` (the catalog only, nothing in scope), `'realestate'` (the default) or `'engineering'`.
    3. Optional: `window.EMPH_FLOWS_ALL = true` loads Microsoft's reference flow for every catalog process (634 flows, about 6,500 activities; this takes a while). Without it, only the processes in scope get their flow.
-   4. Paste all of [`map/schema/sample-data.js`](../map/schema/sample-data.js) and press Enter. It takes a few minutes; `window.__emphSample` shows progress.
+   4. Paste all of [`map/schema/sample-data.js`](../map/schema/sample-data.js) and press Enter. With the scenarios it writes about 5,000 process items, which takes a while; `window.__emphSample` shows progress.
 
-The demos put their own processes in scope on top of the real catalog, with owners, applications, a reference flow, configuration decisions and requirements. Everything else stays out of scope. Load once per environment: it adds records each time it runs.
+The demos put their own processes in scope on top of the real catalog (and, below them, the scenarios for the products they move to), with owners, roles with licences, current systems per area, a reference flow, configuration decisions and requirements. Everything else keeps Scope *10 - Unspecified*. Load once per environment: it adds records each time it runs.
 
 ## 5. Open it
 

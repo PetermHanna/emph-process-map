@@ -2,7 +2,7 @@
 
 Map how your organisation works against the Microsoft Business Process Catalog, inside a Dynamics 365 / Dataverse model-driven app.
 
-You scope end-to-end processes, process areas and business processes, record who owns each one and in which application it runs today and tomorrow, adapt Microsoft's reference flows into your own, answer configuration decisions, and capture what standard doesn't cover. Guided workshops collect it with the business; sign-offs freeze it and export to Word, PDF and Excel.
+You scope the catalog's four levels (end-to-end processes, process areas, business processes and scenarios) with Microsoft's own fields and picklists, decide fit or gap, record the systems used today and what happens to them, read the target products up from the scenarios in scope, adapt Microsoft's reference flows into your own, answer configuration decisions, and capture what standard doesn't cover. Guided workshops collect it with the business; sign-offs freeze it and export to Word, PDF and Excel.
 
 **Try it:** [live demo](https://petermhanna.github.io/emph-process-map/) in your browser, with in-memory data (nothing is saved): [Harbourview Properties](https://petermhanna.github.io/emph-process-map/?sample=realestate), [Lakeside Engineering](https://petermhanna.github.io/emph-process-map/?sample=engineering), [catalog only](https://petermhanna.github.io/emph-process-map/?sample=catalog).
 
@@ -14,19 +14,19 @@ You scope end-to-end processes, process areas and business processes, record who
 
 ## Pages
 
-- **Our processes** (main page): the catalog drawn like Microsoft's documentation. Process areas run left to right with arrows, and their business processes run top to bottom. Tick processes in or out of scope, and rename any of them to your own wording while Microsoft's name stays visible.
-- **Processes**: the catalog tree. For a business process: scope, review state, disposition (retain, transition, retire, gap), owner, applications today and target, roles, configuration decisions, requirements and its flow.
+- **Our processes** (main page): the catalog drawn like Microsoft's documentation. Process areas run left to right with arrows, and their business processes run top to bottom. Tick processes in or out of scope (Microsoft's Scope field), see the target products, and rename any of them to your own wording while Microsoft's name stays visible.
+- **Processes**: the catalog tree, levels 1 to 4. For a business process: Scope, Fit gap status with its gap solution approach, owner, workstream lead, subject matter expert, roles, systems today and target products, its scenarios, configuration decisions, requirements and its flow.
 - **Flow studio**: the Microsoft reference flow next to *our process*, in swimlanes by role. Changes are tracked; confirming asks for a rationale for each one and turns it into a draft requirement.
-- **Requirements**: MoSCoW priority, category, coverage by standard (standard, configuration, extension, gap), size, owner and resolution.
-- **Workshops**: seven phases: prepare, scope, walk-through, process flow, configuration, fit-gap, summary.
+- **Requirements**: Microsoft's Requirement fields: type, MoSCoW (stored as Microsoft's priority), fit or gap with the gap solution approach, business approval state, acceptance criteria, requirement mapping, source text.
+- **Workshops**: seven phases: prepare, scope, walk-through, process flow, configuration, fit-gap, summary. Open points become RAID action items.
 - **Sign-off**: freeze, compare with today, approve, export.
-- **Applications** and **Settings** (organisation and roles).
+- **Systems** (used today per process area: keep, migrate or retire) and **Settings** (organisation, and roles with licence type and products).
 
 ## Microsoft catalog and demos
 
 [map/schema/flows.json](map/schema/flows.json) holds Microsoft's reference process flows for 634 catalog processes, converted by [map/schema/import-flows.py](map/schema/import-flows.py) from [microsoft/dynamics365patternspractices](https://github.com/microsoft/dynamics365patternspractices). Every loaded process gets its reference flow, ready to adapt into *our process*.
 
-[map/schema/import-catalog.py](map/schema/import-catalog.py) converts Microsoft's Business Process Catalog workbook into the three levels the app uses (16 end-to-end processes, about 100 areas, about 700 business processes). [map/schema/sample-data.js](map/schema/sample-data.js) loads it, either alone or with one of two fictional organisations whose processes point at real catalog IDs:
+[map/schema/import-catalog.py](map/schema/import-catalog.py) converts Microsoft's Business Process Catalog workbook into the four levels the app uses (16 end-to-end processes, about 100 areas, about 700 business processes, 3,870 scenarios). [map/schema/sample-data.js](map/schema/sample-data.js) loads it, either alone or with one of two fictional organisations whose processes point at real catalog IDs:
 
 - **Harbourview Properties**: sells and rents units (Prospect to quote, Rent to return, Order to cash) and maintains them with Dynamics 365 Field Service and Project Operations (Service to deliver, Acquire to dispose, Project to profit). Its unit-maintenance flow is Microsoft's 95.25.100 reference flow adapted with tracked changes.
 - **Lakeside Engineering**: project-based installation work.
