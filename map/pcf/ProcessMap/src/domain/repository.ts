@@ -42,7 +42,7 @@ const COLS = {
     + "emph_riskimpactassessment,emph_triggers,emph_contingencyplan,emph_probability,emph_impactseverity,emph_riskcategory,emph_riskresponse,emph_impact,emph_issuetype,emph_severity,emph_reportedby,"
     + "emph_responsibleparty,emph_responsiblerole,emph_justification,emph_impactassessment,emph_alternativesolution,emph_changerequesttype,emph_requestor,emph_frozenkey,_emph_item_value,_emph_workshop_value,_emph_signoff_value",
   history: "emph_historyid,emph_table,emph_rowid,emph_field,emph_oldvalue,emph_newvalue,emph_how,emph_by,emph_workshopname,createdon",
-  workshop: "emph_workshopid,emph_name,emph_heldon,emph_facilitator,emph_participants,emph_minutes,emph_phase,emph_status,emph_sessiondata,emph_transcript,emph_microsoftworkshoptype,emph_sbdphase,"
+  workshop: "emph_workshopid,emph_name,emph_heldon,emph_facilitator,emph_participants,emph_minutes,emph_phase,emph_status,emph_sessiondata,emph_transcript,emph_drawings,emph_microsoftworkshoptype,emph_sbdphase,"
     + "emph_kind,emph_sessionorder,emph_units,emph_childtasks,_emph_item_value",
   signOff: "emph_signoffid,emph_name,emph_version,emph_scopenote,emph_state,emph_approvedon,_emph_approver_value",
   activity: "emph_flowactivityid,emph_name,emph_activitycode,emph_shape,emph_lane,emph_stage,emph_links,emph_summary,emph_delta,emph_rationale,emph_rank,emph_x,emph_y,_emph_processflow_value",
@@ -72,7 +72,7 @@ export async function loadModel(g: Gateway): Promise<Model> {
     raids: ra.map(raidFrom).sort((a, b) => (a.createdOn || "").localeCompare(b.createdOn || "")),
     workshops: wk.map(r => ({ id: r.emph_workshopid, name: txt(r.emph_name), heldOn: day(r.emph_heldon), facilitator: txt(r.emph_facilitator), participants: txt(r.emph_participants), minutes: txt(r.emph_minutes),
       phase: Math.min(4, Math.max(0, r.emph_phase ?? 0)), status: r.emph_status ?? SESSION.open, itemId: id(r._emph_item_value), msType: num(r.emph_microsoftworkshoptype), sbdPhase: num(r.emph_sbdphase),
-      kind: num(r.emph_kind), order: num(r.emph_sessionorder), units: txt(r.emph_units), childTasks: txt(r.emph_childtasks), session: readSession(r.emph_sessiondata), transcript: txt(r.emph_transcript) }))
+      kind: num(r.emph_kind), order: num(r.emph_sessionorder), units: txt(r.emph_units), childTasks: txt(r.emph_childtasks), session: readSession(r.emph_sessiondata), transcript: txt(r.emph_transcript), drawings: txt(r.emph_drawings) }))
       .sort((a, b) => (b.heldOn || "").localeCompare(a.heldOn || "")),
     signOffs: so.map(r => ({ id: r.emph_signoffid, name: txt(r.emph_name), version: r.emph_version ?? 0, scopeNote: txt(r.emph_scopenote), state: r.emph_state ?? SIGNOFF.draft, approver: txt(r["_emph_approver_value@OData.Community.Display.V1.FormattedValue"]), approvedOn: r.emph_approvedon || null }))
       .sort((a, b) => b.version - a.version),
@@ -205,6 +205,8 @@ export interface ResetPlan { generated: Requirement[]; touched: number; linked: 
 export interface How { how: number; workshop?: string; present?: string; on?: string | null }
 const DIRECT: How = { how: HOW.direct };
 const RESTORE: How = { how: HOW.restore };
+/** The history field of a read-back answer on a requirement. */
+export const READ_BACK_FIELD = "Read back";
 
 export class Repository {
   constructor(public g: Gateway, public user = "") {}
@@ -588,7 +590,7 @@ export class Repository {
       emph_microsoftworkshoptype: msType, emph_sbdphase: sbdPhase, emph_units: units || null, emph_childtasks: childTasks || null };
     if (e2eId) data["emph_Item@odata.bind"] = ref("emph_processitem", e2eId);
     const workshop: Workshop = { id: await this.g.insert("emph_workshop", data), name, heldOn, facilitator: "", participants: "", minutes: "", phase: 0, status: SESSION.open, itemId: e2eId || null,
-      msType, sbdPhase, kind: kindValue(kind), order, units, childTasks, session, transcript: "" };
+      msType, sbdPhase, kind: kindValue(kind), order, units, childTasks, session, transcript: "", drawings: "" };
     return { model: { ...m, workshops: [workshop, ...m.workshops] }, workshop };
   }
   /**
@@ -622,11 +624,27 @@ export class Repository {
     const { written, closedOn, ...rest } = (cur.session.run || {}) as RunState;
     return this.saveWorkshop(model, cur, { status: SESSION.open, phase: 3, session: { ...cur.session, run: rest as RunState } });
   }
+  /**
+   * What the room answered when a requirement was read back (Confirmed, Changed: what changed, Open), kept in history as a
+   * row on the requirement with field "Read back" (Business Map D1: confirmations are part of an item's history). Not restorable.
+   */
+  async recordReadBack(m: Model, answers: { rowId: string; answer: string }[], how: How): Promise<Model> {
+    const rows: HistoryRow[] = [];
+    for (const a of answers) {
+      const row: HistoryRow = { id: "", table: "emph_requirement", rowId: a.rowId, field: READ_BACK_FIELD, oldValue: "", newValue: a.answer.slice(0, 2000), how: how.how, by: this.user, workshopName: how.workshop || "", createdOn: new Date().toISOString() };
+      try {
+        row.id = await this.g.insert("emph_history", { emph_name: "emph_requirement " + READ_BACK_FIELD, emph_table: row.table, emph_rowid: row.rowId, emph_field: READ_BACK_FIELD, emph_newvalue: row.newValue || null,
+          emph_how: how.how, emph_by: this.user || null, emph_workshopname: how.workshop || null });
+        rows.push(row);
+      } catch { /* the workshop closes all the same */ }
+    }
+    return { ...m, history: rows.concat(m.history) };
+  }
   async saveWorkshop(m: Model, w: Workshop, patch: Partial<Workshop>): Promise<Model> {
     const n = { ...w, ...patch };
     await this.g.patch("emph_workshop", w.id, { emph_name: n.name, emph_heldon: n.heldOn, emph_facilitator: n.facilitator || null, emph_participants: n.participants || null, emph_minutes: n.minutes || null, emph_phase: n.phase,
       emph_status: n.status, emph_sessiondata: JSON.stringify(n.session), emph_microsoftworkshoptype: n.msType, emph_sbdphase: n.sbdPhase, emph_kind: n.kind, emph_sessionorder: n.order,
-      emph_units: n.units || null, emph_childtasks: n.childTasks || null, ...("transcript" in patch ? { emph_transcript: n.transcript || null } : {}) });
+      emph_units: n.units || null, emph_childtasks: n.childTasks || null, ...("transcript" in patch ? { emph_transcript: n.transcript || null } : {}), ...("drawings" in patch ? { emph_drawings: n.drawings || null } : {}) });
     return { ...m, workshops: m.workshops.map(x => (x.id === w.id ? n : x)) };
   }
   // ---------- comments ----------
@@ -644,15 +662,16 @@ export class Repository {
   }
 
   /** A screenshot taken during a workshop, kept as a note (annotation) on it. `jpeg` is base64 without the data: prefix. */
-  async addScreenshot(w: Workshop, subject: string, jpeg: string): Promise<Screenshot> {
+  /** `note`: the note's text, with the marks drawn on the picture after a fixed line (drawing.ts noteWithMarks). */
+  async addScreenshot(w: Workshop, subject: string, jpeg: string, note = ""): Promise<Screenshot> {
     const at = new Date().toISOString();
     const id = await this.g.insert("annotation", { subject: subject.slice(0, 500), filename: "screenshot-" + at.slice(0, 19).replace(/[:T]/g, "-") + ".jpg", mimetype: "image/jpeg",
-      documentbody: jpeg, isdocument: true, "objectid_emph_workshop@odata.bind": ref("emph_workshop", w.id) });
-    return { id, subject, createdOn: at };
+      documentbody: jpeg, isdocument: true, ...(note ? { notetext: note.slice(0, 100000) } : {}), "objectid_emph_workshop@odata.bind": ref("emph_workshop", w.id) });
+    return { id, subject, createdOn: at, note };
   }
   async screenshots(w: Workshop): Promise<Screenshot[]> {
-    const rows = await this.g.query("annotation", "?$select=annotationid,subject,createdon&$filter=_objectid_value eq " + w.id + "&$orderby=createdon desc");
-    return rows.map(r => ({ id: r.annotationid, subject: txt(r.subject), createdOn: r.createdon || "" }));
+    const rows = await this.g.query("annotation", "?$select=annotationid,subject,notetext,createdon&$filter=_objectid_value eq " + w.id + "&$orderby=createdon desc");
+    return rows.map(r => ({ id: r.annotationid, subject: txt(r.subject), createdOn: r.createdon || "", note: txt(r.notetext) }));
   }
   async screenshotImage(id: string): Promise<string> {
     const rows = await this.g.query("annotation", "?$select=documentbody,mimetype&$filter=annotationid eq " + id);

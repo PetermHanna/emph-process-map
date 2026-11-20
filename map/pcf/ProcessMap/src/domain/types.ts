@@ -84,9 +84,9 @@ export interface HistoryRow { id: string; table: string; rowId: string; field: s
 export interface Workshop {
   id: string; name: string; heldOn: string | null; facilitator: string; participants: string; minutes: string; phase: number; status: number; itemId: string | null;
   msType: number | null; sbdPhase: number | null; kind: number | null; order: number | null; units: string; childTasks: string;
-  session: SessionState; transcript: string;
+  session: SessionState; transcript: string; /** the flow drawings made in this workshop, JSON by flow id (drawing.ts) */ drawings: string;
 }
-export interface Screenshot { id: string; subject: string; createdOn: string }
+/** note: the note text, with the marks drawn on the picture (drawing.ts) */ export interface Screenshot { id: string; subject: string; createdOn: string; note?: string }
 export interface SignOff { id: string; name: string; version: number; scopeNote: string; state: number; approver: string; approvedOn: string | null }
 
 export interface Model {

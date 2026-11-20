@@ -356,3 +356,8 @@ export function licenceSummary(roles: { headcount: number | null; type: string |
   const currencies = Array.from(new Set(prices.map(p => p.currency).filter(Boolean)));
   return { products, totals, monthly: prices.length ? cost : null, currency: currencies.length === 1 ? currencies[0] : currencies.join("/"), complete: priced && prices.length > 0 };
 }
+
+/** The words of a requirement's flow link (Business Map N1): the business process, then the step it was raised on. */
+export function flowLinkText(process: { code: string; name: string } | undefined, stepName: string | null): string {
+  return "Open flow: " + (process ? (process.code ? process.code + " " : "") + process.name : "the process") + (stepName ? " › " + stepName : "");
+}

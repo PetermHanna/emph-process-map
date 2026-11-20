@@ -150,7 +150,7 @@ window.__emph = { log: [], done: false, error: null };
       date('HeldOn', 'Date'), text('Facilitator', 'Facilitator'), note('Participants', 'Participants', 20000), note('Minutes', 'Minutes', 20000), whole('Phase', 'Phase'),
       choice('Status', 'Status', ['Open', 'Closed']), pick('MicrosoftWorkshopType', 'Microsoft workshop type', 'microsoftWorkshopType'), pick('SbdPhase', 'Success by Design phase', 'sbdPhase'),
       pick('Kind', 'Kind', 'workshopKind'), whole('SessionOrder', 'Session order'), text('Units', 'Units', 1000), note('ChildTasks', 'Child tasks (JSON)', 20000),
-      note('SessionData', 'Session (JSON)', 100000), note('Transcript', 'Meeting transcript', 1048576)]],
+      note('SessionData', 'Session (JSON)', 100000), note('Transcript', 'Meeting transcript', 1048576), note('Drawings', 'Flow drawings (JSON)', 1048576)]],
     ['emph_Comment', 'Comment', 'Comments', 'A remark on a process item or one of its flow activities, often a line from a workshop transcript.', [
       text('ActivityCode', 'Activity code', 20), text('Author', 'Author'), note('Text', 'Comment', 20000), note('Source', 'Quoted line', 4000)]],
     ['emph_SignOff', 'Sign-off', 'Sign-offs', 'A frozen, approved version of scope, decisions, flows and requirements.', [

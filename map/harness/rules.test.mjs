@@ -12,7 +12,7 @@ const ts = createRequire(join(root, "pcf/package.json"))("typescript");
 const out = mkdtempSync(join(tmpdir(), "emph-"));
 const src = join(root, "pcf/ProcessMap/src/domain");
 // Transpile the domain modules side by side, pointing their relative imports at the .mjs output.
-for (const name of ["codes", "types", "workshop", "session", "rules", "documents"]) {
+for (const name of ["codes", "types", "workshop", "session", "rules", "documents", "drawing"]) {
   const js = ts.transpileModule(readFileSync(join(src, name + ".ts"), "utf8"), { compilerOptions: { module: "ESNext", target: "ES2020" } }).outputText
     .replace(/from "\.\/(\w+)"/g, 'from "./$1.mjs"');
   writeFileSync(join(out, name + ".mjs"), js);
@@ -30,6 +30,7 @@ const S = await load("session");
 const D = await load("documents");
 const P = await load("placement");
 const W = await load("workshop");
+const DR = await load("drawing");
 
 let n = 0;
 const req = p => ({ id: "r" + ++n, reqId: "", name: "n", description: "d", itemId: "p1", origin: C.REQ_ORIGIN.captured, originRef: "", originFlowId: null, review: false,
@@ -696,4 +697,217 @@ test("next workshop in Microsoft's order: board, storyline, deep-dives of areas 
   const done = [held(), { kind: "storyline", template: story.id, unit: "90", closed: true }].concat(deeps.map(d => ({ kind: "deepdive", template: d.id, unit: d.unit, closed: true })));
   const x = W.nextTemplate(GUIDE, done[done.length - 1], done, ["90", "10"], { "90": areas["90"] });
   assert.equal(x.template.id, W.templatesFor(GUIDE, "board", "10")[0].id); assert.match(x.why, /Next end-to-end process in scope: 10/);
+});
+
+// ---------- slice 4: capture upgrades (Business Map U1, U2, U3, N5, N7, N1, F4, D1; made-up content) ----------
+const rows4 = u => u.map(x => [x.at, x.speaker, x.text]);
+
+test("transcript shape a: name and time on one line, then the words", () => {
+  const u = S.parseTranscript("Anna Berg   0:03\nWe need the site on every invoice.\nAnd the cost centre.\n\nBen Koch   0:12\nWho signs the order?");
+  assert.deepEqual(rows4(u), [[3, "Anna Berg", "We need the site on every invoice. And the cost centre."], [12, "Ben Koch", "Who signs the order?"]]);
+});
+
+test("transcript shape b: WebVTT with voice tags and cue numbers", () => {
+  const u = S.parseTranscript("WEBVTT\n\n1\n00:00:03.000 --> 00:00:07.000\n<v Anna Berg>We need the site.</v>\n\n2\n00:00:09.500 --> 00:00:12.000\n<v Ben Koch>Who signs?</v>");
+  assert.deepEqual(rows4(u), [[3, "Anna Berg", "We need the site."], [9.5, "Ben Koch", "Who signs?"]]);
+});
+
+test("transcript shape c: the name on its own line, the time on the next, then the words", () => {
+  const u = S.parseTranscript("Anna Berg\n0:03\nWe need the site on every invoice.\nAnd the cost centre.\n\nBen Koch\n0:41\nWho signs the order?\n\nAnna Berg\n1:15\nThe project manager.");
+  assert.deepEqual(rows4(u), [[3, "Anna Berg", "We need the site on every invoice. And the cost centre."], [41, "Ben Koch", "Who signs the order?"], [75, "Anna Berg", "The project manager."]]);
+});
+
+test("transcript shape d: the Teams .docx download, a time range then the name on its own line", () => {
+  const u = S.parseTranscript("Transcript\n\n0:0:0.0 --> 0:0:5.120\nAnna Berg\nWe need the site on every invoice.\n\n0:0:6.300 --> 0:0:9.0\nBen Koch\nWho signs the order?");
+  assert.deepEqual(rows4(u), [[0, "Anna Berg", "We need the site on every invoice."], [6.3, "Ben Koch", "Who signs the order?"]]);
+});
+
+test("transcript shape e: a date and clock time after the name count from the first line", () => {
+  const de = S.parseTranscript("Anna Berg   11.11.2026 09:03\nWe need the site.\n\nBen Koch   11.11.2026 09:05\nWho signs?");
+  assert.deepEqual(rows4(de), [[0, "Anna Berg", "We need the site."], [120, "Ben Koch", "Who signs?"]]);
+  const us = S.parseTranscript("Anna Berg 11/11/2026 9:03 AM\nWe need the site.\n\nBen Koch 11/11/2026 1:10 PM\nWho signs?");
+  assert.deepEqual(rows4(us), [[0, "Anna Berg", "We need the site."], [4 * 3600 + 7 * 60, "Ben Koch", "Who signs?"]]);
+});
+
+test("transcript shape f: times over an hour, colons in speech, and Note: on a line of its own stays in the turn", () => {
+  const u = S.parseTranscript("Anna Berg   1:02:03\nWe have three types: partial, final and credit.\n\nNote: retention is five percent.\n\nBen Koch   1:03:00\nOkay.");
+  assert.deepEqual(rows4(u), [[3723, "Anna Berg", "We have three types: partial, final and credit. Note: retention is five percent."], [3780, "Ben Koch", "Okay."]]);
+  assert.ok(!u.some(x => x.speaker === "Note"));
+  // a clock time said inside a turn is speech, not a new speaker
+  assert.deepEqual(rows4(S.parseTranscript("Anna Berg   0:03\nWe start at\nthe office at 9:30 AM\n\nBen Koch   0:09\nFine.")), [[3, "Anna Berg", "We start at the office at 9:30 AM"], [9, "Ben Koch", "Fine."]]);
+});
+
+test("long turns are cut into sentences that keep the time and speaker, and the whole turn", () => {
+  assert.deepEqual(S.splitSentences("We use z.B. two sites. The rate is 5.5 percent, e.g. for Nr. 3 only. Okay. Who signs it? Dr. Klein does."),
+    ["We use z.B. two sites.", "The rate is 5.5 percent, e.g. for Nr. 3 only.", "Okay. Who signs it?", "Dr. Klein does."]);
+  const turn = { at: 63, speaker: "Anna Berg", text: "We need the site on every invoice. Finance needs read-only access." };
+  const s = S.transcriptLines([turn]);
+  assert.deepEqual(s.map(S.sourceLine), ["[1:03] Anna Berg: We need the site on every invoice.", "[1:03] Anna Berg: Finance needs read-only access."]);
+  assert.ok(s.every(x => x.turn === "[1:03] Anna Berg: We need the site on every invoice. Finance needs read-only access."));
+  assert.deepEqual(S.transcriptLines([{ at: 1, speaker: "A", text: "One sentence only." }]), [{ at: 1, speaker: "A", text: "One sentence only." }]);
+});
+
+test("a requirement captured from a whole turn still shows on each of its sentences; used lines by quoted line or old number", () => {
+  const turn = { at: 63, speaker: "Anna Berg", text: "We need the site on every invoice. Finance needs read-only access." };
+  const s = S.transcriptLines([turn]);
+  const m = S.usedLines(s, [{ reqId: "RQ-00007", sourceText: S.sourceLine(turn) }], [], {});
+  assert.deepEqual([...m], [[0, "RQ-00007"], [1, "RQ-00007"]]);
+  const own = S.usedLines(s, [{ reqId: "RQ-00008", sourceText: S.sourceLine(s[1]) }], [], { [S.sourceLine(s[0])]: "Licence: Finance, Team Members" });
+  assert.deepEqual([...own], [[0, "Licence: Finance, Team Members"], [1, "RQ-00008"]]);
+});
+
+test("a negated need is not a must; needs and nötig are", () => {
+  for (const t of ["We do not need a second approval.", "We don't need that report.", "No need to print it.", "Nobody needs to sign it.", "A PO is not required here.",
+    "Das ist nicht nötig.", "Das brauchen wir nicht.", "Das muss nicht sein.", "Kein Export nötig.", "We needn't print it."]) assert.equal(S.lineSignals(t).must, false, t);
+  for (const t of ["Finance needs read-only access.", "No, we need the site on every invoice.", "The technicians must record time offline.", "Wir brauchen die Baustelle auf jeder Rechnung.", "Eine Freigabe ist erforderlich."])
+    assert.equal(S.lineSignals(t).must, true, t);
+});
+
+test("the paste box warns about missing speakers and times, or a long paste read as one line", () => {
+  const raw = "some text\nmore text\neven more\nand more\nstill more";
+  assert.match(S.pasteWarnings(raw, [{ at: null, speaker: "", text: raw }]).join(" "), /Only one line/);
+  assert.deepEqual(S.pasteWarnings("Anna Berg   0:03\nHi there.", S.parseTranscript("Anna Berg   0:03\nHi there.")), []);
+  assert.match(S.pasteWarnings("x", [{ at: null, speaker: "A", text: "x" }]).join(" "), /1 of 1 lines have no time/);
+});
+
+test("suggested type: licence, open point, flow change, business rule, requirement, else comment; the facilitator's questions are comments", () => {
+  assert.equal(S.suggestType("Finance needs read-only access, about six people."), "licence");
+  assert.equal(S.suggestType("Who signs the order?"), "open");
+  assert.equal(S.suggestType("Usually the foreman signs the timesheets."), "open");
+  assert.equal(S.suggestType("Who decides on the payment run is still open."), "open");
+  assert.equal(S.suggestType("After approval we send it straight to the supplier."), "flow");
+  assert.equal(S.suggestType("Orders above ten thousand need three quotes."), "rule");
+  assert.equal(S.suggestType("Retention is five percent until acceptance."), "rule");
+  assert.equal(S.suggestType("We must have the site on every invoice."), "req");
+  assert.equal(S.suggestType("Expenses are collected on paper and typed in at month end."), "req");
+  assert.equal(S.suggestType("We do not need a second approval."), "comment");
+  assert.equal(S.suggestType("How do you invoice?", { facilitator: true }), "comment");
+  assert.ok(S.isFacilitator("Lena Hoffmann", "lena hoffmann")); assert.ok(S.isFacilitator("Lena Hoffmann", "Lena"));
+  assert.ok(!S.isFacilitator("Lena Hoffmann", "")); assert.ok(!S.isFacilitator("Jonas Keller", "Lena Hoffmann"));
+});
+
+test("line review: its own entry first, else what it was already used for, else to do; counts; undo rules; the To do view", () => {
+  assert.deepEqual(S.reviewOf("We must have it.", undefined, ""), { status: "todo", type: "req", legacy: false });
+  assert.deepEqual(S.reviewOf("We must have it.", { type: "rule" }, ""), { status: "todo", type: "rule", legacy: false });
+  assert.deepEqual(S.reviewOf("x", { status: "rejected" }, ""), { status: "rejected", type: "comment", legacy: false });
+  assert.deepEqual(S.reviewOf("x", undefined, "RQ-00001"), { status: "accepted", type: "req", legacy: true });
+  assert.deepEqual(S.reviewOf("x", { status: "accepted", type: "rule" }, "RQ-00001"), { status: "accepted", type: "rule", legacy: false });
+  assert.equal(S.usedType("Flow change: Approve"), "flow"); assert.equal(S.usedType("Licence: Office, Team Members"), "licence"); assert.equal(S.usedType("Open point"), "open");
+  const c = S.reviewCounts([{ status: "accepted", type: "req" }, { status: "accepted", type: "open" }, { status: "rejected", type: "comment" }, { status: "todo", type: "rule" }]);
+  assert.deepEqual(c, { total: 4, handled: 3, accepted: 2, rejected: 1, todo: 1, byType: { req: 1, rule: 0, comment: 0, open: 1, flow: 0, licence: 0 } });
+  const open = { closed: false, signedOff: false };
+  assert.equal(S.undoRule({ status: "rejected", type: "req", legacy: false }, open).can, true);
+  assert.equal(S.undoRule({ status: "accepted", type: "rule", legacy: false }, open).can, true);
+  assert.equal(S.undoRule({ status: "accepted", type: "req", legacy: false }, { closed: false, signedOff: true }).can, false);
+  assert.equal(S.undoRule({ status: "rejected", type: "req", legacy: false }, { closed: true, signedOff: false }).can, false);
+  assert.match(S.undoRule({ status: "accepted", type: "flow", legacy: false }, open).reason, /flow/);
+  assert.match(S.undoRule({ status: "accepted", type: "licence", legacy: false }, open).reason, /role/);
+  assert.equal(S.undoRule({ status: "accepted", type: "req", legacy: true }, open).can, false);
+  let st = S.readSession("{}");
+  st = S.withReview(st, "L1", { type: "rule" }); assert.deepEqual(st.review, { L1: { type: "rule" } });
+  st = S.withReview(st, "L1", { status: "accepted", type: "rule" }); assert.equal(st.review.L1.status, "accepted");
+  st = S.withReview(st, "L1", { type: undefined, text: "" }); assert.deepEqual(st.review, {});
+  assert.deepEqual(S.readSession(JSON.stringify(S.withReview(S.readSession("{}"), "L2", { status: "rejected" }))).review, { L2: { status: "rejected" } });
+  const items = [{ r: { status: "accepted" }, b: "p1" }, { r: { status: "rejected" }, b: "p1" }, { r: { status: "todo" }, b: "p1" }, { r: { status: "todo" }, b: "p2" }];
+  const v = S.reviewView(items, i => i.b === "p1", "todo");
+  assert.equal(v.todo, 1); assert.equal(v.shown.length, 1); assert.equal(v.scoped.length, 3);
+  assert.equal(S.reviewView(items, () => true, "all").shown.length, 4);
+});
+
+// a workshop with two requirements (one with no owner), a process decision, a licence from the transcript and an action item
+const rbReqs = [{ id: "r1", reqId: "RQ-00001", description: "Site on every invoice", owner: "Ana", mapping: "", approvedBy: "", said: "Ana Field", where: "Invoice customers" },
+  { id: "r2", reqId: "RQ-00002", description: "Payment plan", owner: "", mapping: "Use milestones", approvedBy: "Ben" }];
+const rbProcs = [{ id: "p1", name: "Invoice customers", visited: true, decisions: ["Fit", "Legacy ERP: Retire"] }];
+const rbOpen = [{ text: "Who approves above 50k?", owner: "", due: "", source: "[2:00] Ben Office: Who approves above fifty thousand?" }, { text: "Done one", owner: "", due: "", done: true }];
+const rbUsed = { "[0:40] Ben Office: Finance needs read-only access.": "Licence: Finance, Team Members", "[1:30] Ana Field: No second approval.": "Flow change: Approve", "3": "Licence: old number key" };
+
+test("read-back lines have stable keys and keep the fixed phrases", () => {
+  const items = S.readBackItems(rbReqs, rbProcs, rbOpen, S.transcriptDecisions(rbUsed));
+  assert.deepEqual(items.map(i => i.key), ["req:r1", "req:r2", "dec:r2", "proc:p1:Fit", "proc:p1:Legacy ERP", "line:[0:40] Ben Office: Finance needs read-only access.", "line:[1:30] Ana Field: No second approval.",
+    "owner:r2", "open:[2:00] Ben Office: Who approves above fifty thousand?"]);
+  assert.deepEqual(items.map(i => i.kind), ["Requirement", "Requirement", "Decision", "Decision", "Decision", "Licence", "Decision", "Open point", "Open point"]);
+  assert.equal(items[0].text, "Requirement: Site on every invoice (RQ-00001), owner Ana");
+  assert.equal(items[0].meta, "RQ-00001 · said by Ana Field · Invoice customers");
+  assert.equal(items[6].text, "Decision: Flow change: Approve");
+  assert.equal(items[8].meta, "No owner yet");
+  const again = S.readBackItems(rbReqs.slice().reverse(), rbProcs, rbOpen, S.transcriptDecisions(rbUsed));
+  assert.deepEqual(new Set(again.map(i => i.key)), new Set(items.map(i => i.key)));
+  assert.deepEqual(S.summaryLines(rbReqs, rbProcs, rbOpen).slice(0, 2), ["Requirement: Site on every invoice (RQ-00001), owner Ana", "Requirement: Payment plan (RQ-00002)"]);
+});
+
+test("a read-back mark toggles, Changed keeps what changed, counts and close checks follow", () => {
+  const items = S.readBackItems(rbReqs, rbProcs, rbOpen, S.transcriptDecisions(rbUsed));
+  let st = S.readSession("{}");
+  st = S.markLine(st, "req:r1", "confirmed");
+  st = S.markLine(st, "req:r2", "changed");
+  st = S.markLine(st, "req:r2", "changed", "Milestones per site");
+  st = S.markLine(st, "owner:r2", "open");
+  st = S.markLine(st, "proc:p1:Fit", "confirmed"); st = S.markLine(st, "proc:p1:Fit", "confirmed"); // clicked again: cleared
+  assert.deepEqual(st.readBack.marks["req:r2"], { mark: "changed", note: "Milestones per site" });
+  assert.equal(st.readBack.marks["proc:p1:Fit"], undefined);
+  assert.deepEqual(S.readBackCounts(items, st.readBack), { confirmed: 1, changed: 1, open: 1, left: 6 });
+  assert.deepEqual(S.markLine(st, "req:r2", "confirmed").readBack.marks["req:r2"], { mark: "confirmed" });
+  assert.deepEqual(S.readSession(JSON.stringify(st)).readBack, st.readBack);
+  assert.deepEqual(S.readBackChecks(items, undefined, rbOpen, 3), ["9 read-back lines are not answered yet", "1 action item has no owner", "nobody is named as confirming for the organisation", "3 transcript lines are still to review"]);
+  const marks = Object.fromEntries(items.map(i => [i.key, { mark: "confirmed" }]));
+  assert.deepEqual(S.readBackChecks(items, { marks, confirmedBy: "Ana Field, Finance lead" }, rbOpen.map(o => ({ ...o, owner: "Ben" })), 0), []);
+  const sum = S.readBackSummary(items, { ...st.readBack, confirmedBy: "Ana Field" });
+  assert.deepEqual([sum.confirmed.length, sum.changed.length, sum.open.length, sum.notReadBack.length], [1, 1, 1, 6]);
+  const html = S.readBackHtml("Harbourview: workshop summary", [["Workshop", "Lead to cash"]], sum);
+  assert.match(html, /<h2>Confirmed<\/h2><ul><li>Site on every invoice \(RQ-00001\), owner Ana/);
+  assert.match(html, /What changed: Milestones per site/); assert.match(html, /Not read back yet/); assert.match(html, /organisation by:<\/b> Ana Field/);
+  assert.ok(!/<script/i.test(S.readBackHtml("<script>", [], S.readBackSummary([], undefined))));
+});
+
+test("meeting request: Teams link with subject, times, attendees and agenda; the prep pack per agenda part", () => {
+  assert.deepEqual(S.emailsIn("Ana Field <A.Field@harbourview.example>\nBen Office, ben.office@harbourview.example; a.field@harbourview.example"), ["a.field@harbourview.example", "ben.office@harbourview.example"]);
+  assert.equal(S.meetingSubject("Harbourview Properties", ["Project to profit"]), "Harbourview Properties process workshop: Project to profit");
+  assert.equal(S.meetingMinutes(127), 135); assert.equal(S.meetingMinutes(10), 30);
+  const text = S.agendaText([{ text: "80.20.010 Estimate projects", minutes: 12 }, { text: "Wrap up" }]);
+  assert.match(text, /^1\. 80\.20\.010 Estimate projects \(0-12 min\)\n2\. Wrap up\n\nPlanned time: 12 minutes/);
+  const url = new URL(S.teamsMeetingLink({ subject: "S", start: new Date("2026-11-20T08:00:00Z"), minutes: 90, attendees: ["a@x.example", "b@x.example"], content: text }));
+  assert.equal(url.origin + url.pathname, "https://teams.microsoft.com/l/meeting/new");
+  assert.equal(url.searchParams.get("startTime"), "2026-11-20T08:00:00.000Z"); assert.equal(url.searchParams.get("endTime"), "2026-11-20T09:30:00.000Z");
+  assert.equal(url.searchParams.get("attendees"), "a@x.example,b@x.example");
+  const long = new URL(S.teamsMeetingLink({ subject: "S", start: new Date(), minutes: 30, attendees: [], content: "x".repeat(5000) }));
+  assert.equal(long.searchParams.get("content").length, 1500); assert.equal(long.searchParams.get("attendees"), null);
+  const html = S.prepPackHtml("Harbourview: workshop prep pack", [["Date", "2026-11-20"]], [{ title: "80.20.010 Estimate projects", who: ["Project manager"], systems: ["Excel"], target: ["Project Operations"], questions: ["Which contract types do you use?"], flow: "Create quote → Approve" }]);
+  assert.match(html, /Which contract types do you use\?/); assert.match(html, /today: Excel; after: Project Operations/); assert.match(html, /Flow to look at:<\/b> Create quote/); assert.match(html, /Who should come:<\/b> Project manager/);
+});
+
+test("screenshot marks: lines tied to nothing, numbered comments kept in the note's text after a fixed line", () => {
+  const s = DR.makeStroke([[0, 0], [0.5, 0.5], [10, 10], [20, 20]], "#C50F1F", 4, []);
+  assert.deepEqual(s.pts, [[0, 0], [10, 10], [20, 20]]); assert.equal(s.step, null);
+  assert.equal(DR.makeStroke([[1, 1]], "#000", 4, []), null);
+  const c = DR.makeComment(100, 50, "  Wrong price list  ", [], "Ana");
+  assert.equal(c.text, "Wrong price list"); assert.equal(DR.makeComment(1, 1, "  ", []), null);
+  const note = DR.noteWithMarks("Screenshot of the quote", { strokes: [s], comments: [c] });
+  assert.match(note, /^Screenshot of the quote\n--- marks ---\n/);
+  const m = DR.marksOf(note);
+  assert.equal(m.lines.length, 1); assert.equal(m.comments[0].text, "Wrong price list");
+  assert.equal(DR.shotText(note), "Screenshot of the quote\n1 line drawn on the picture\n1. Wrong price list");
+  assert.equal(DR.noteWithMarks(note, { strokes: [], comments: [] }).split("--- marks ---").length, 2); // marks replaced, not added twice
+  assert.deepEqual(DR.marksOf("plain note"), { lines: [], comments: [] });
+  assert.equal(DR.undoLast({ strokes: [{ ...s, on: "2" }], comments: [{ ...c, on: "1" }] }).strokes.length, 0);
+});
+
+test("flow drawing: a line belongs to the step it is on (or near), kept per workshop and flow, and read as plain lines", () => {
+  const boxes = [{ code: "P200", x: 0, y: 0, w: 168, h: 62 }, { code: "P300", x: 214, y: 0, w: 168, h: 62 }];
+  assert.equal(DR.stepAt(50, 30, boxes), "P200"); assert.equal(DR.stepAt(200, 30, boxes), "P300"); assert.equal(DR.stepAt(900, 900, boxes), null);
+  const a = DR.makeStroke([[10, 10], [60, 40]], "#C50F1F", 3, boxes), b = DR.makeComment(250, 20, "Manager signs here", boxes);
+  assert.equal(a.step, "P200"); assert.equal(b.step, "P300");
+  const raw = DR.writeDrawing("", "flow1", { strokes: [a], comments: [b] });
+  assert.deepEqual(Object.keys(DR.readDrawings(raw)), ["flow1"]);
+  const moved = DR.retie(DR.readDrawings(raw).flow1, [{ code: "P300", x: 0, y: 0, w: 400, h: 62 }]);
+  assert.equal(moved.strokes[0].step, "P300");
+  assert.deepEqual(DR.drawingLines(DR.readDrawings(raw).flow1, c => ({ P200: "Capture lead", P300: "Qualify lead" })[c]), ["1 line drawn on Capture lead", "Comment on Qualify lead: Manager signs here"]);
+  assert.equal(DR.writeDrawing(raw, "flow1", DR.emptyDrawing()), "{}");
+  assert.deepEqual(DR.readDrawings("not json"), {}); assert.deepEqual(DR.readDrawings(JSON.stringify({ f: { strokes: [{ id: 1 }], comments: [] } })), {});
+  assert.throws(() => DR.writeDrawing("", "f", { strokes: [{ ...a, pts: Array.from({ length: 120000 }, (_, i) => [i, i]) }], comments: [] }), /too big/);
+  assert.equal(DR.pathOf([[0, 0], [5, 5]]), "M0 0 L5 5");
+});
+
+test("a requirement opens its flow at its step: the link's words", () => {
+  assert.equal(R.flowLinkText({ code: "80.20.010", name: "Estimate projects" }, "Approve the estimate"), "Open flow: 80.20.010 Estimate projects › Approve the estimate");
+  assert.equal(R.flowLinkText({ code: "", name: "Own process" }, null), "Open flow: Own process");
 });
