@@ -15,7 +15,7 @@ import { SHAPE_LABEL, FLOW_STATE, REQ_ORIGIN } from "../../domain/codes";
 import { flowDeltas, unreachable, covers, nextActivityCode, FlowDelta } from "../../domain/rules";
 import { loadActivities, flowsOf, Repository, ResetPlan } from "../../domain/repository";
 import { ActivityNotes } from "../pages/WorkshopParts";
-import type { Model, BusinessProcess, Activity } from "../../domain/types";
+import type { Model, ProcessItem, Activity } from "../../domain/types";
 
 const DELTA_TONE: Record<number, "ok" | "warn" | "bad"> = { [CHANGE.added]: "ok", [CHANGE.changed]: "warn", [CHANGE.removed]: "bad" };
 const DELTA_TEXT: Record<number, string> = { [CHANGE.added]: "Added", [CHANGE.changed]: "Changed", [CHANGE.removed]: "Dropped" };
@@ -23,7 +23,7 @@ const DELTA_TEXT: Record<number, string> = { [CHANGE.added]: "Added", [CHANGE.ch
 /** A sentence from a workshop transcript that describes a change to the flow; it becomes an activity's rationale. */
 export interface FlowNote { text: string; onUsed: (code: string, name: string) => void }
 
-export function FlowStudio({ model, repo, apply, process: p, onClose, note }: { model: Model; repo: Repository; apply: Apply; process: BusinessProcess; onClose: () => void; note?: FlowNote | null }) {
+export function FlowStudio({ model, repo, apply, process: p, onClose, note }: { model: Model; repo: Repository; apply: Apply; process: ProcessItem; onClose: () => void; note?: FlowNote | null }) {
   const l = useLook();
   const { reference, ours } = flowsOf(model, p.id);
   const [view, setView] = React.useState<"ours" | "reference">("ours");
@@ -136,7 +136,7 @@ export function FlowStudio({ model, repo, apply, process: p, onClose, note }: { 
 
   const playable = view === "reference" ? (refActs.length ? reference : undefined) : (ours && acts?.length ? ours : undefined);
   const counts = (acts || []).reduce<Record<number, number>>((a, x) => { a[x.change] = (a[x.change] || 0) + 1; return a; }, {});
-  const capturedReqs = model.requirements.filter(r => r.origin === REQ_ORIGIN.captured && (r.processId === p.id || !r.processId));
+  const capturedReqs = model.requirements.filter(r => r.origin === REQ_ORIGIN.captured && (r.itemId === p.id || !r.itemId));
 
   return (
     <OverlayDrawer open size="full" position="end" onOpenChange={(_, d) => { if (!d.open) onClose(); }}>
@@ -249,7 +249,7 @@ export function FlowStudio({ model, repo, apply, process: p, onClose, note }: { 
             <DialogSurface><DialogBody>
               <DialogTitle>Go back to the Microsoft reference?</DialogTitle>
               <DialogContent>
-                Our process flow is deleted, with {resetting.generated.length} requirement(s) it generated{resetting.touched ? ` (${resetting.touched} edited by hand)` : ""}, {resetting.testRuns.length} test run(s) and {resetting.notes.length} review note(s) on them.
+                Our process flow is deleted, with {resetting.generated.length} requirement(s) it generated{resetting.touched ? ` (${resetting.touched} edited by hand)` : ""}.
                 {resetting.linked.length > 0 && ` ${resetting.linked.length} hand-captured requirement(s) stay, marked for review.`} Sign-offs keep their own copies. This can't be undone.
               </DialogContent>
               <DialogActions>

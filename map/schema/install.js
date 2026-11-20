@@ -48,27 +48,71 @@ window.__emph = { log: [], done: false, error: null };
   const stamp = (name, t) => ({ '@odata.type': NS + 'DateTimeAttributeMetadata', ...col(name, t), Format: 'DateAndTime', DateTimeBehavior: { Value: 'UserLocal' } });
   const yesno = (name, t, def = false) => ({ '@odata.type': NS + 'BooleanAttributeMetadata', ...col(name, t), DefaultValue: def,
     OptionSet: { '@odata.type': NS + 'BooleanOptionSetMetadata', TrueOption: { Value: 1, Label: label('Yes') }, FalseOption: { Value: 0, Label: label('No') } } });
+  // LISTS-BEGIN: the choice lists, copied from src/domain/codes.ts (Microsoft's MS_PICKLISTS verbatim, then OURS); rules.test.mjs checks they match.
+  const LISTS = {
+  applicationFamily: ["Azure", "Business Central", "Customer Engagement", "Finance and Operations", "Power Platform", "Productivity"],
+  baselineComplexity: ["L - Large", "M - Medium", "S - Small", "XL - Extra Large", "XS - Extra Small"],
+  catalogStatus: ["10 - New", "20 - Review", "30 - Updated", "40 - Published", "50 - Custom", "60 - Deprecated", "65 - Deprecated (final)", "70 - Deleted"],
+  fitGapStatus: ["Fit", "Gap", "Unspecified"],
+  gapSolutionApproach: ["10 - Unspecified", "20 - Personalization", "30 - Power Platform", "40 - Java/Plug-in", "50 - X++ Extension", "60 - ISV", "70 - ISV Extension"],
+  priority: ["1", "2", "3", "4", "5"],
+  products: ["Agent 365", "Azure", "Business Central", "Commerce", "Contact Center", "Microsoft Copilot Studio", "Customer Insights", "Customer Insights Data", "Customer Insights Journey", "Customer Service", "Customer Voice", "Field Service", "Finance", "Fraud Protection", "Guides", "Human Resources", "Microsoft 365", "Microsoft Cloud for Sustainability", "Other", "Power Apps", "Power Automate", "Power BI", "Power Pages", "Project", "Project Operations", "Remote Assist", "Sales", "Sales Copilot", "SharePoint", "Supply Chain Management", "Teams"],
+  scope: ["10 - Unspecified", "20 - In scope", "30 - Out of scope", "40 - Not applicable"],
+  sbdPhase: ["10 - Strategize", "20 - Initiate", "31 - Implement - Analysis", "32 - Implement - Design", "33 - Implement - Development", "34 - Implement - Test", "45 - Prepare - Train", "49 - Prepare - Cutover", "50 - Operate"],
+  responsibleParty: ["Customer", "Partner"],
+  roleType: ["Functional", "Governance", "Technical"],
+  responsibleRole: ["Application Administrator", "Build Manager", "Business Analyst", "Business Architect", "Business Change Leads", "Business Lead", "Business Process Owner", "Business Subject Matter Experts (SME)", "Business Unit Sponsors", "Change Management Lead", "Communications Lead", "Compliance Manager", "Data Architect", "Data Migration Analyst", "Data Migration Lead", "Database Administrator", "Delivery Lead", "Deployment Lead", "Developer", "Development Lead", "Enterprise Architect", "Executive - Business (CEO/CFO/COO)", "Executive - Technology (VP/Director/CTO/CIO)", "Executive Sponsor", "Infrastructure Lead", "Integration Analyst", "Integration Architect", "Integration Lead", "Network Administrator", "Program Manager", "Project Manager", "Project Sponsor", "Quality Analyst", "Reporting Analyst", "Reporting Lead", "Security Administrator", "Security Analyst", "Security Developer", "Security Lead", "Solution Architect", "Solution Manager", "Solution Specialist", "Support Analyst", "Support Manager", "Technical Architect", "Testing Lead", "Trainer", "Training Lead", "UX Designer", "Workflow Analyst", "Workflow Lead"],
+  estimatedComplexity: ["L - Large", "M - Medium", "S - Small", "XL - Extra Large", "XS - Extra Small"],
+  estimatedProjectImpact: ["Critical", "High", "Low", "Medium"],
+  microsoftWorkshopType: ["Storyboard", "Storyline design review", "Detailed design", "FastTrack"],
+  severity: ["1 - Critical", "2 - High", "3 - Medium", "4 - Low"],
+  issueType: ["Budget", "General", "Resource", "Scope", "Timeline"],
+  impactSeverity: ["1 - Critical", "2 - High", "3 - Medium", "4 - Low"],
+  riskCategory: ["External", "Functional", "Management", "Organizational", "Technical"],
+  riskResponse: ["Accept", "Avoid", "Mitigate", "Transfer"],
+  changeRequestType: ["Design Change", "Estimation Change", "Scope Change"],
+  author: ["Microsoft", "Partner", "Project"],
+  businessApprovalState: ["New", "Ready for review", "In review", "Approved", "Rejected"],
+  processType: ["Setup", "Master data", "Transactional", "Analytical", "Governance"],
+
+  setHow: ["Workshop", "Direct", "Migration", "Proposal"],
+  systemDecision: ["Keep", "Migrate", "Retire"],
+  raidType: ["Risk", "Assumption", "Issue", "Decision", "Action item", "Change request"],
+  raidStatus: ["Open", "In progress", "Closed"],
+  requirementType: ["Functional", "Non-functional", "Integration", "Data", "Reporting", "Compliance", "Business rule"],
+  licenceType: ["Full", "Team Members", "Operations - Activity", "Device", "None"],
+  requirementOrigin: ["Captured", "Flow change", "Configuration decision", "Scope change", "Process decision"],
+  workshopKind: ["Discovery", "Scenario board", "Storyline review", "Deep dive"],
+  proposalStatus: ["Proposed", "Accepted", "Edited", "Rejected"],
+  proposalSource: ["Transcript", "Screenshot", "Document"],
+  };
+  // LISTS-END
   const choice = (name, t, options) => ({ '@odata.type': NS + 'PicklistAttributeMetadata', ...col(name, t),
     OptionSet: { '@odata.type': NS + 'OptionSetMetadata', IsGlobal: false, OptionSetType: 'Picklist', Options: options.map((o, i) => ({ Value: FIRST + i, Label: label(o) })) } });
-  const scope = () => [whole('Rank', 'Rank'), yesno('InScope', 'In scope', true), text('CatalogCode', 'Catalog ID', 30), text('CatalogName', 'Microsoft name', 400), note('Summary', 'Summary')];
+  const pick = (name, t, list) => { if (!LISTS[list]) throw new Error('no list ' + list); return choice(name, t, LISTS[list]); };
+  const how = () => [pick('SetHow', 'Set how', 'setHow'), text('SetBy', 'Set by'), date('SetOn', 'Set on'), text('Present', 'Present', 1000), text('WorkshopName', 'Agreed in workshop', 300)];
 
   // ---------- tables: logical name, display names, description, columns ----------
+  // Microsoft's field names and picklists (ADO template guidelines - OCT 2026) wherever Microsoft has the field.
   const TABLES = [
     ['emph_Workspace', 'Workspace', 'Workspaces', 'Hosts the EMPH Process Map component and holds organisation settings.', [
       text('Organisation', 'Organisation'), note('HostData', 'Host column', 100), note('Settings', 'Settings (JSON)', 100000)]],
-    ['emph_EndToEndProcess', 'End-to-end process', 'End-to-end processes', 'Top level of the Microsoft Business Process Catalog, e.g. Order to cash.', [...scope(), text('Accent', 'Accent colour', 20)]],
-    ['emph_ProcessArea', 'Process area', 'Process areas', 'Second level of the catalog, inside an end-to-end process.', scope()],
-    ['emph_Application', 'Application', 'Applications', 'An application in use or planned.', [
-      choice('Category', 'Category', ['Finance', 'Projects', 'Field service', 'Supply chain', 'Customer service', 'Sales', 'HR and payroll', 'Engineering', 'Collaboration', 'Analytics', 'Other']),
-      text('Publisher', 'Publisher', 100), yesno('IsMicrosoft', 'Microsoft'), yesno('IsTarget', 'Target application'), choice('Status', 'Status', ['In use', 'Planned', 'Retiring']), text('Hosting', 'Hosting', 100), note('Summary', 'Summary', 2000)]],
-    ['emph_Role', 'Role', 'Roles', 'A role: a lane in process flows and an owner of business processes.', [note('Summary', 'Summary', 2000), whole('Rank', 'Rank'), whole('Headcount', 'Headcount'),
-      choice('LicenceType', 'Licence type', ['Full user', 'Team Members', 'Read-only', 'Device', 'External (no licence)']), whole('LicenceUsers', 'People needing the licence'), note('LicenceNote', 'Licence notes', 20000)]],
-    ['emph_BusinessProcess', 'Business process', 'Business processes', 'Third level of the catalog, or our own process.', [
-      ...scope(), choice('Origin', 'Origin', ['Microsoft catalog', 'Our own']), choice('ReviewState', 'Review', ['Not reviewed', 'Confirmed', 'Not used']),
-      choice('Disposition', 'Disposition', ['Retain', 'Transition', 'Retire', 'Gap']), text('UserCount', 'Users', 50), note('Comments', 'Comments')]],
-    ['emph_ProcessRole', 'Process role', 'Process roles', 'A role involved in a business process.', []],
+    ['emph_ProcessItem', 'Process item', 'Process items', 'A level 1-4 item of the Microsoft Business Process Catalog (End to end, Process area, Process, Scenario) or our own, with Microsoft\'s fields.', [
+      whole('Level', 'Level'), text('CatalogCode', 'Process sequence ID', 30), text('CatalogName', 'Microsoft name', 400), note('Summary', 'Description'), whole('Rank', 'Rank'),
+      pick('Scope', 'Scope', 'scope'), text('ScopeReason', 'Scope reason', 1000), note('ScopeApproach', 'Scope approach'),
+      pick('FitGapStatus', 'Fit gap status', 'fitGapStatus'), pick('GapSolutionApproach', 'Gap solution approach', 'gapSolutionApproach'), text('FitGapReason', 'Fit gap rationale', 1000),
+      text('BusinessProcessOwner', 'Business process owner'), text('WorkstreamLead', 'Workstream lead'), text('SubjectMatterExpert', 'Subject matter expert'),
+      pick('BaselineComplexity', 'Baseline complexity', 'baselineComplexity'), pick('Priority', 'Priority', 'priority'), pick('ProcessType', 'Process type', 'processType'),
+      yesno('IsOwn', 'Our own item'), pick('Author', 'Author', 'author'), pick('CatalogStatus', 'Catalog status', 'catalogStatus'), text('Products', 'Products', 500),
+      ...how(), text('Accent', 'Accent colour', 20), note('Comments', 'Comments')]],
+    ['emph_System', 'Current system', 'Current systems', 'Software used today in a process area (or one business process), and what happens to it: keep, migrate or retire.', [
+      text('Vendor', 'Vendor'), pick('Decision', 'Decision', 'systemDecision'), date('RetireOn', 'Retire on'), text('Users', 'Users', 50), text('Hosting', 'Hosting', 100), note('Note', 'Note', 2000)]],
+    ['emph_Role', 'Role', 'Roles', 'A role: a lane in process flows, with headcount and licence.', [note('Summary', 'Summary', 2000), whole('Rank', 'Rank'), whole('Headcount', 'Headcount'),
+      pick('ResponsibleRole', 'Responsible role', 'responsibleRole'), pick('LicenceType', 'Licence type', 'licenceType'), pick('BaseProduct', 'Base product', 'products'),
+      text('AttachProducts', 'Attach products', 500), note('LicenceNote', 'Note (quoted lines)', 20000)]],
+    ['emph_ItemRole', 'Item role', 'Item roles', 'A role involved in a process item.', []],
     ['emph_ProcessFlow', 'Process flow', 'Process flows', 'A flow diagram of a business process: the Microsoft reference or our process.', [
-      choice('FlowType', 'Flow type', ['Microsoft reference', 'Our process']), choice('State', 'State', ['Draft', 'Confirmed']), text('CatalogCode', 'Catalog ID', 30), link('SourceLink', 'Source'), note('Comments', 'Comments')]],
+      choice('FlowType', 'Flow type', ['Microsoft reference', 'Our process']), choice('State', 'State', ['Draft', 'Confirmed']), text('CatalogCode', 'Process sequence ID', 30), link('SourceLink', 'Source'), note('Comments', 'Comments')]],
     ['emph_FlowActivity', 'Flow activity', 'Flow activities', 'One activity in a process flow.', [
       text('ActivityCode', 'Activity code', 20), choice('Shape', 'Shape', ['Start', 'Activity', 'Decision', 'End', 'Subprocess']), text('Lane', 'Lane'), text('Stage', 'Stage'),
       note('Links', 'Links (JSON)'), note('Summary', 'Summary'), choice('Delta', 'Change', ['Unchanged', 'Added', 'Changed', 'Dropped']), note('Rationale', 'Rationale', 20000),
@@ -76,65 +120,71 @@ window.__emph = { log: [], done: false, error: null };
       text('ScreenPath', 'Screen path', 1000), text('ScreenTarget', 'Screen target', 1000), note('ScreenSignature', 'Screen signature', 2000),
       note('Narration', 'Narration'), text('Instruction', 'Instruction', 500), text('Completion', 'Done when', 500), note('SampleValue', 'Sample value', 2000), text('NextAction', 'Then', 300)]],
     ['emph_ConfigDecision', 'Configuration decision', 'Configuration decisions', 'A setup question to decide, with its answer.', [
-      text('Code', 'Code', 30), choice('AnswerType', 'Answer type', ['Choice', 'Multiple choice', 'Yes or no', 'Number', 'Text', 'List']), note('Choices', 'Choices'),
+      text('Code', 'Code', 30), text('Product', 'Product', 100), choice('AnswerType', 'Answer type', ['Choice', 'Multiple choice', 'Yes or no', 'Number', 'Text', 'List']), note('Choices', 'Choices'),
       note('Guidance', 'Guidance'), text('MenuPath', 'Menu path', 400), note('Steps', 'Steps'), note('Expected', 'Expected result', 2000), link('SourceLink', 'Source'), text('SourceLabel', 'Source label', 300),
       whole('Rank', 'Rank'), note('Answer', 'Answer'), choice('State', 'State', ['Open', 'Decided']), note('Comments', 'Comments')]],
-    ['emph_Workshop', 'Workshop', 'Workshops', 'A guided discovery session.', [
+    ['emph_Requirement', 'Requirement', 'Requirements', 'Microsoft\'s Requirement work item: something needed, with its fit or gap.', [
+      numbered('ReqId', 'Requirement ID', 'RQ-{SEQNUM:5}'), note('Description', 'Description', 20000), pick('RequirementType', 'Requirement type', 'requirementType'),
+      pick('FitGapStatus', 'Fit gap status', 'fitGapStatus'), pick('GapSolutionApproach', 'Gap solution approach', 'gapSolutionApproach'), note('ScopeApproach', 'Scope approach', 20000),
+      note('AcceptanceCriteria', 'Acceptance criteria', 20000), note('RequirementMapping', 'Requirement mapping', 20000), pick('Priority', 'Priority', 'priority'),
+      pick('ApprovalState', 'Business approval state', 'businessApprovalState'), pick('Author', 'Author', 'author'), pick('EstimatedComplexity', 'Estimated complexity', 'estimatedComplexity'),
+      text('Owner', 'Owner'), text('ApprovedBy', 'Approved by'), date('ApprovedOn', 'Approved on'), text('ClosedReason', 'Closed reason'),
+      text('SourceType', 'Source type', 100), note('SourceText', 'Source text', 20000), text('RaisedBy', 'Raised by'),
+      pick('Origin', 'Origin', 'requirementOrigin'), text('OriginRef', 'Origin reference', 100), yesno('Review', 'Needs review')]],
+    ['emph_Raid', 'RAID item', 'RAID items', 'Microsoft\'s Risk, Assumption, Issue, Decision, Action item and Change request. Open questions are action items marked as a question.', [
+      pick('RaidType', 'Type', 'raidType'), note('Description', 'Description', 20000), text('Owner', 'Owner'), pick('Priority', 'Priority', 'priority'), date('TargetDate', 'Target date'),
+      pick('Status', 'Status', 'raidStatus'), yesno('IsQuestion', 'Open question'), note('SourceText', 'Source text', 4000),
+      note('RiskImpactAssessment', 'Risk impact assessment'), note('Triggers', 'Triggers'), note('ContingencyPlan', 'Contingency plan'), whole('Probability', 'Probability'),
+      pick('ImpactSeverity', 'Impact severity', 'impactSeverity'), pick('RiskCategory', 'Risk category', 'riskCategory'), pick('RiskResponse', 'Risk response', 'riskResponse'),
+      text('DecisionMaker', 'Decision maker'), note('Impact', 'Impact'), note('Resolution', 'Resolution'), pick('IssueType', 'Issue type', 'issueType'), text('ReportedBy', 'Reported by'),
+      pick('ResponsibleParty', 'Responsible party', 'responsibleParty'), pick('ResponsibleRole', 'Responsible role', 'responsibleRole'),
+      note('Justification', 'Justification'), note('ImpactAssessment', 'Impact assessment'), note('AlternativeSolution', 'Alternative solution'),
+      pick('ChangeRequestType', 'Change request type', 'changeRequestType'), text('Requestor', 'Requestor')]],
+    ['emph_History', 'History', 'History', 'One row per changed value, insert only: what changed, from what to what, how and by whom.', [
+      text('Table', 'Table', 50), text('RowId', 'Row', 50), text('Field', 'Field', 100), note('OldValue', 'Old value', 2000), note('NewValue', 'New value', 2000),
+      pick('How', 'How', 'setHow'), text('By', 'By'), text('WorkshopName', 'Agreed in workshop', 300)]],
+    ['emph_Proposal', 'Proposal', 'Proposals', 'A suggested change (for example from AI analysis of a transcript), with its quotes. Nothing changes until a person accepts it.', [
+      text('TargetTable', 'Table', 50), text('TargetRowId', 'Row', 50), text('Field', 'Field', 100), note('CurrentValue', 'Current value', 4000), note('ProposedValue', 'Proposed value', 4000),
+      note('Quotes', 'Quotes', 20000), pick('Source', 'Source', 'proposalSource'), pick('Status', 'Status', 'proposalStatus'), note('Reason', 'Reason', 4000), text('DecidedBy', 'Decided by'), stamp('DecidedOn', 'Decided on')]],
+    ['emph_Workshop', 'Workshop', 'Workshops', 'A workshop with the people who run the processes.', [
       date('HeldOn', 'Date'), text('Facilitator', 'Facilitator'), note('Participants', 'Participants', 20000), note('Minutes', 'Minutes', 20000), whole('Phase', 'Phase'),
-      choice('Status', 'Status', ['Open', 'Closed']), note('SessionData', 'Session (JSON)', 100000), note('Transcript', 'Meeting transcript', 1048576)]],
-    ['emph_Comment', 'Comment', 'Comments', 'A remark on a business process or one of its flow activities, often a line from a workshop transcript.', [
+      choice('Status', 'Status', ['Open', 'Closed']), pick('MicrosoftWorkshopType', 'Microsoft workshop type', 'microsoftWorkshopType'), pick('SbdPhase', 'Success by Design phase', 'sbdPhase'),
+      pick('Kind', 'Kind', 'workshopKind'), whole('SessionOrder', 'Session order'), text('Units', 'Units', 1000), note('ChildTasks', 'Child tasks (JSON)', 20000),
+      note('SessionData', 'Session (JSON)', 100000), note('Transcript', 'Meeting transcript', 1048576)]],
+    ['emph_Comment', 'Comment', 'Comments', 'A remark on a process item or one of its flow activities, often a line from a workshop transcript.', [
       text('ActivityCode', 'Activity code', 20), text('Author', 'Author'), note('Text', 'Comment', 20000), note('Source', 'Quoted line', 4000)]],
-    ['emph_Requirement', 'Requirement', 'Requirements', 'Something needed that standard may not cover.', [
-      numbered('ReqId', 'Requirement ID', 'RQ-{SEQNUM:5}'), note('Description', 'Description', 20000), choice('Moscow', 'MoSCoW', ['Must', 'Should', 'Could', "Won't"]),
-      choice('Category', 'Category', ['Functional', 'Non-functional', 'Integration', 'Data', 'Reporting', 'Compliance', 'Licensing']), text('RaisedBy', 'Raised by'), note('Verbatim', 'In their words', 20000),
-      text('Owner', 'Owner'), choice('State', 'State', ['Draft', 'In review', 'Agreed', 'Rejected', 'Deferred', 'Duplicate']),
-      choice('Coverage', 'Coverage by standard', ['Standard', 'Configuration', 'Extension', 'Gap']), choice('Size', 'Size', ['XS', 'S', 'M', 'L', 'XL']),
-      note('Resolution', 'Resolution', 20000), text('ResolvedBy', 'Resolved by'), date('ResolvedOn', 'Resolved on'),
-      choice('Origin', 'Origin', ['Captured', 'Flow change', 'Configuration decision', 'Scope change', 'Process decision']), text('OriginRef', 'Origin reference', 100), yesno('Review', 'Needs review')]],
     ['emph_SignOff', 'Sign-off', 'Sign-offs', 'A frozen, approved version of scope, decisions, flows and requirements.', [
       note('ScopeNote', 'Scope note', 20000), whole('Version', 'Version'), choice('State', 'State', ['Draft', 'In review', 'Approved', 'Superseded']), stamp('ApprovedOn', 'Approved on')]],
     ['emph_SignOffItem', 'Sign-off item', 'Sign-off items', 'A frozen copy of one item in a sign-off.', [
       text('ReqId', 'Requirement ID', 40), note('Description', 'Description', 20000), note('Snapshot', 'Snapshot (JSON)', 100000),
       choice('ItemType', 'Item type', ['Requirement', 'Process flow', 'Configuration decision', 'Scope']), text('ItemKey', 'Item key')]],
-    ['emph_RequirementLink', 'Requirement link', 'Requirement links', 'A link from a requirement to a work item or a guided flow.', [
-      choice('LinkType', 'Link type', ['Work item', 'Guided flow', 'Other']), text('Target', 'Target'), link('Url', 'URL')]],
-    ['emph_TestRun', 'Test run', 'Test runs', 'One test of a requirement.', [
-      text('RunRef', 'Run reference', 50), text('Tester', 'Tester'), stamp('TestedOn', 'Tested on'), choice('Outcome', 'Outcome', ['Passed', 'Failed', 'Blocked']), note('Evidence', 'Evidence', 20000)]],
-    ['emph_ReviewNote', 'Review note', 'Review notes', 'A reviewer note on a requirement or sign-off.', [text('Author', 'Author'), note('Note', 'Note', 20000), choice('State', 'State', ['Open', 'Resolved'])]],
   ];
   // [table, lookup, label, target, on delete, required]
   const LOOKUPS = [
-    ['processarea', 'EndToEndProcess', 'End-to-end process', 'emph_endtoendprocess', 'Cascade', true],
-    ['businessprocess', 'ProcessArea', 'Process area', 'emph_processarea', 'Cascade', true],
-    ['businessprocess', 'CurrentApplication', 'Application today', 'emph_application', 'RemoveLink'],
-    ['businessprocess', 'TargetApplication', 'Target application', 'emph_application', 'RemoveLink'],
-    ['businessprocess', 'ProcessOwner', 'Process owner', 'emph_role', 'RemoveLink'],
-    ['processrole', 'BusinessProcess', 'Business process', 'emph_businessprocess', 'Cascade', true],
-    ['processrole', 'Role', 'Role', 'emph_role', 'RemoveLink'],
-    ['processflow', 'BusinessProcess', 'Business process', 'emph_businessprocess', 'Cascade'],
+    ['processitem', 'Parent', 'Parent', 'emph_processitem', 'RemoveLink'],
+    ['system', 'Item', 'Process item', 'emph_processitem', 'RemoveLink'],
+    ['itemrole', 'Item', 'Process item', 'emph_processitem', 'Cascade', true],
+    ['itemrole', 'Role', 'Role', 'emph_role', 'Cascade', true],
+    ['processflow', 'Item', 'Process item', 'emph_processitem', 'Cascade'],
     ['processflow', 'ReferenceFlow', 'Reference flow', 'emph_processflow', 'RemoveLink'],
     ['flowactivity', 'ProcessFlow', 'Process flow', 'emph_processflow', 'Cascade', true],
-    ['configdecision', 'BusinessProcess', 'Business process', 'emph_businessprocess', 'RemoveLink'],
-    ['configdecision', 'Application', 'Application', 'emph_application', 'RemoveLink'],
-    ['workshop', 'EndToEndProcess', 'End-to-end process', 'emph_endtoendprocess', 'RemoveLink'],
-    ['requirement', 'BusinessProcess', 'Business process', 'emph_businessprocess', 'RemoveLink'],
+    ['configdecision', 'Item', 'Process item', 'emph_processitem', 'RemoveLink'],
+    ['workshop', 'Item', 'End-to-end process', 'emph_processitem', 'RemoveLink'],
+    ['requirement', 'Item', 'Process item', 'emph_processitem', 'RemoveLink'],
     ['requirement', 'OriginFlow', 'Origin flow', 'emph_processflow', 'RemoveLink'],
     ['requirement', 'EvidenceFlow', 'Evidence flow', 'emph_processflow', 'RemoveLink'],
     ['requirement', 'Workshop', 'Workshop', 'emph_workshop', 'RemoveLink'],
     ['requirement', 'FlowActivity', 'Flow activity', 'emph_flowactivity', 'RemoveLink'],
-    ['comment', 'BusinessProcess', 'Business process', 'emph_businessprocess', 'Cascade'],
+    ['raid', 'Item', 'Process item', 'emph_processitem', 'RemoveLink'],
+    ['raid', 'Workshop', 'Workshop', 'emph_workshop', 'RemoveLink'],
+    ['proposal', 'Item', 'Process item', 'emph_processitem', 'RemoveLink'],
+    ['proposal', 'Workshop', 'Workshop', 'emph_workshop', 'RemoveLink'],
+    ['comment', 'Item', 'Process item', 'emph_processitem', 'Cascade'],
     ['comment', 'FlowActivity', 'Flow activity', 'emph_flowactivity', 'RemoveLink'],
     ['comment', 'Workshop', 'Workshop', 'emph_workshop', 'RemoveLink'],
-    ['requirement', 'ParentRequirement', 'Parent requirement', 'emph_requirement', 'RemoveLink'],
-    ['requirement', 'DuplicateOf', 'Duplicate of', 'emph_requirement', 'RemoveLink'],
     ['signoff', 'Approver', 'Approver', 'systemuser', 'RemoveLink'],
     ['signoffitem', 'SignOff', 'Sign-off', 'emph_signoff', 'Cascade', true],
     ['signoffitem', 'Requirement', 'Requirement', 'emph_requirement', 'RemoveLink'],
-    ['requirementlink', 'Requirement', 'Requirement', 'emph_requirement', 'Cascade', true],
-    ['testrun', 'Requirement', 'Requirement', 'emph_requirement', 'Cascade', true],
-    ['testrun', 'ProcessFlow', 'Process flow', 'emph_processflow', 'RemoveLink'],
-    ['reviewnote', 'Requirement', 'Requirement', 'emph_requirement', 'RemoveLink'],
-    ['reviewnote', 'SignOff', 'Sign-off', 'emph_signoff', 'RemoveLink'],
   ];
 
   const NOTES = ['emph_Workshop']; // screenshots from a workshop are kept as notes (annotation) on it
@@ -172,7 +222,7 @@ window.__emph = { log: [], done: false, error: null };
     if (change(m)) await web('PUT', path, m, { ...IN_SOLUTION, 'MSCRM.MergeLabels': 'true' });
   }
   const defaultFirst = m => (m.DefaultFormValue === FIRST ? false : ((m.DefaultFormValue = FIRST), true));
-  for (const [t, a] of [['emph_requirement', 'emph_state'], ['emph_requirement', 'emph_origin'], ['emph_signoff', 'emph_state'], ['emph_reviewnote', 'emph_state'], ['emph_businessprocess', 'emph_origin'], ['emph_businessprocess', 'emph_reviewstate'], ['emph_processflow', 'emph_state'], ['emph_configdecision', 'emph_state']])
+  for (const [t, a] of [['emph_requirement', 'emph_approvalstate'], ['emph_requirement', 'emph_origin'], ['emph_raid', 'emph_status'], ['emph_proposal', 'emph_status'], ['emph_processitem', 'emph_scope'], ['emph_signoff', 'emph_state'], ['emph_processflow', 'emph_state'], ['emph_configdecision', 'emph_state']])
     await amend(t, a, 'PicklistAttributeMetadata', defaultFirst);
   for (const [schema] of TABLES) await amend(schema.toLowerCase(), 'emph_name', 'StringAttributeMetadata', m => (m.RequiredLevel.Value === 'ApplicationRequired' ? false : ((m.RequiredLevel.Value = 'ApplicationRequired'), true)));
   // notes on a table that was made before they were wanted
@@ -180,11 +230,6 @@ window.__emph = { log: [], done: false, error: null };
     const path = `EntityDefinitions(LogicalName='${schema.toLowerCase()}')`;
     const e = await read(path);
     if (!e.HasNotes) { delete e['@odata.context']; e['@odata.type'] = NS + 'EntityMetadata'; e.HasNotes = true; await web('PUT', path, e, { ...IN_SOLUTION, 'MSCRM.MergeLabels': 'true' }); say('notes on ' + schema.toLowerCase()); }
-  }
-  // a choice added to an existing column (Licensing in Category)
-  for (const [t, a, value, text] of [['emph_requirement', 'emph_category', FIRST + 6, 'Licensing']]) {
-    const o = (await read(`EntityDefinitions(LogicalName='${t}')/Attributes(LogicalName='${a}')/${NS}PicklistAttributeMetadata?$expand=OptionSet($select=Options)`)).OptionSet.Options;
-    if (!o.some(x => x.Value === value)) { await web('POST', 'InsertOptionValue', { EntityLogicalName: t, AttributeLogicalName: a, Value: value, Label: label(text), SolutionUniqueName: SOLUTION }); say('  ' + a + ': ' + text); }
   }
   say('tables ready');
 
@@ -210,23 +255,21 @@ window.__emph = { log: [], done: false, error: null };
   const guid = () => '{' + crypto.randomUUID() + '}';
   // table → view columns and related lists [child, lookup]
   const UI = {
-    emph_endtoendprocess: [['emph_catalogcode', 'emph_name', 'emph_inscope', 'emph_rank'], [['emph_processarea', 'emph_endtoendprocess']]],
-    emph_processarea: [['emph_catalogcode', 'emph_name', 'emph_endtoendprocess', 'emph_inscope'], [['emph_businessprocess', 'emph_processarea']]],
-    emph_businessprocess: [['emph_catalogcode', 'emph_name', 'emph_processarea', 'emph_inscope', 'emph_reviewstate', 'emph_disposition'], [['emph_processrole', 'emph_businessprocess'], ['emph_processflow', 'emph_businessprocess'], ['emph_configdecision', 'emph_businessprocess'], ['emph_requirement', 'emph_businessprocess']]],
-    emph_application: [['emph_name', 'emph_category', 'emph_publisher', 'emph_status', 'emph_istarget'], []],
-    emph_role: [['emph_name', 'emph_summary', 'emph_headcount', 'emph_licencetype', 'emph_licenceusers'], []],
-    emph_processrole: [['emph_name', 'emph_businessprocess', 'emph_role'], []],
-    emph_processflow: [['emph_name', 'emph_flowtype', 'emph_state', 'emph_businessprocess'], [['emph_flowactivity', 'emph_processflow']]],
+    emph_processitem: [['emph_catalogcode', 'emph_name', 'emph_level', 'emph_parent', 'emph_scope', 'emph_fitgapstatus', 'emph_products'], [['emph_processitem', 'emph_parent'], ['emph_itemrole', 'emph_item'], ['emph_system', 'emph_item'], ['emph_processflow', 'emph_item'], ['emph_configdecision', 'emph_item'], ['emph_requirement', 'emph_item'], ['emph_raid', 'emph_item']]],
+    emph_system: [['emph_name', 'emph_item', 'emph_vendor', 'emph_decision', 'emph_retireon'], []],
+    emph_role: [['emph_name', 'emph_responsiblerole', 'emph_headcount', 'emph_licencetype', 'emph_baseproduct'], []],
+    emph_itemrole: [['emph_name', 'emph_item', 'emph_role'], []],
+    emph_processflow: [['emph_name', 'emph_flowtype', 'emph_state', 'emph_item'], [['emph_flowactivity', 'emph_processflow']]],
     emph_flowactivity: [['emph_activitycode', 'emph_name', 'emph_processflow', 'emph_shape', 'emph_lane', 'emph_delta'], []],
-    emph_configdecision: [['emph_code', 'emph_name', 'emph_businessprocess', 'emph_answer', 'emph_state'], []],
-    emph_requirement: [['emph_reqid', 'emph_name', 'emph_businessprocess', 'emph_moscow', 'emph_state', 'emph_coverage'], [['emph_requirementlink', 'emph_requirement'], ['emph_testrun', 'emph_requirement'], ['emph_reviewnote', 'emph_requirement']]],
-    emph_workshop: [['emph_name', 'emph_heldon', 'emph_facilitator', 'emph_status'], [['emph_requirement', 'emph_workshop'], ['emph_comment', 'emph_workshop']]],
-    emph_comment: [['emph_name', 'emph_businessprocess', 'emph_activitycode', 'emph_author'], []],
-    emph_signoff: [['emph_name', 'emph_version', 'emph_state', 'emph_approvedon'], [['emph_signoffitem', 'emph_signoff'], ['emph_reviewnote', 'emph_signoff']]],
+    emph_configdecision: [['emph_code', 'emph_name', 'emph_item', 'emph_answer', 'emph_state'], []],
+    emph_requirement: [['emph_reqid', 'emph_name', 'emph_item', 'emph_priority', 'emph_fitgapstatus', 'emph_approvalstate'], []],
+    emph_raid: [['emph_name', 'emph_raidtype', 'emph_item', 'emph_owner', 'emph_targetdate', 'emph_status'], []],
+    emph_history: [['emph_name', 'emph_oldvalue', 'emph_newvalue', 'emph_how', 'emph_by', 'createdon'], []],
+    emph_proposal: [['emph_name', 'emph_targettable', 'emph_field', 'emph_status', 'emph_item'], []],
+    emph_workshop: [['emph_name', 'emph_heldon', 'emph_microsoftworkshoptype', 'emph_facilitator', 'emph_status'], [['emph_requirement', 'emph_workshop'], ['emph_raid', 'emph_workshop'], ['emph_comment', 'emph_workshop']]],
+    emph_comment: [['emph_name', 'emph_item', 'emph_activitycode', 'emph_author'], []],
+    emph_signoff: [['emph_name', 'emph_version', 'emph_state', 'emph_approvedon'], [['emph_signoffitem', 'emph_signoff']]],
     emph_signoffitem: [['emph_reqid', 'emph_name', 'emph_signoff', 'emph_itemtype'], []],
-    emph_requirementlink: [['emph_name', 'emph_linktype', 'emph_target', 'emph_requirement'], []],
-    emph_testrun: [['emph_name', 'emph_requirement', 'emph_outcome', 'emph_tester', 'emph_testedon'], []],
-    emph_reviewnote: [['emph_name', 'emph_author', 'emph_state', 'emph_requirement'], []],
   };
   const meta = {};
   for (const t of Object.keys(UI).concat('emph_workspace'))
@@ -280,9 +323,9 @@ window.__emph = { log: [], done: false, error: null };
   const group = (id, title, items) => `<Group Id="${id}" IsProfile="false"><Titles><Title LCID="1033" Title="${title}" /></Titles>${items}</Group>`;
   const sitemapxml = `<SiteMap IntroducedVersion="7.0.0.0"><Area Id="emph_area" ShowGroups="true"><Titles><Title LCID="1033" Title="Process map" /></Titles>` +
     group('emph_home', 'Process map', `<SubArea Id="emph_open" Url="$webresource:emph_/open.html" Icon="$webresource:emph_/icon.svg" AvailableOffline="false" PassParams="false"><Titles><Title LCID="1033" Title="Process map" /></Titles></SubArea>`) +
-    group('emph_catalog', 'Process catalog', entry('emph_e2e', 'emph_endtoendprocess') + entry('emph_areas', 'emph_processarea') + entry('emph_bp', 'emph_businessprocess') + entry('emph_flows', 'emph_processflow') + entry('emph_dec', 'emph_configdecision')) +
-    group('emph_fitgap', 'Fit-gap', entry('emph_req', 'emph_requirement') + entry('emph_ws', 'emph_workshop') + entry('emph_com', 'emph_comment') + entry('emph_so', 'emph_signoff') + entry('emph_tr', 'emph_testrun')) +
-    group('emph_setup', 'Setup', entry('emph_apps', 'emph_application') + entry('emph_roles', 'emph_role')) +
+    group('emph_catalog', 'Process catalog', entry('emph_items', 'emph_processitem') + entry('emph_flows', 'emph_processflow') + entry('emph_dec', 'emph_configdecision')) +
+    group('emph_fitgap', 'Fit-gap', entry('emph_req', 'emph_requirement') + entry('emph_raids', 'emph_raid') + entry('emph_ws', 'emph_workshop') + entry('emph_com', 'emph_comment') + entry('emph_so', 'emph_signoff') + entry('emph_prop', 'emph_proposal') + entry('emph_hist', 'emph_history')) +
+    group('emph_setup', 'Setup', entry('emph_sys', 'emph_system') + entry('emph_roles', 'emph_role')) +
     `</Area></SiteMap>`;
   let sitemap = await first(`sitemaps?$select=sitemapid&$filter=sitemapnameunique eq '${APP}'`);
   if (sitemap) await web('PATCH', `sitemaps(${sitemap.sitemapid})`, { sitemapxml }, IN_SOLUTION);
@@ -290,7 +333,7 @@ window.__emph = { log: [], done: false, error: null };
   const findApp = async () => (await first(`appmodules?$select=appmoduleid&$filter=uniquename eq '${APP}'`)) || (await read(`appmodules/${NS}RetrieveUnpublishedMultiple()`)).value.find(a => a.uniquename === APP);
   let app = await findApp();
   if (!app) {
-    await web('POST', 'appmodules', { name: 'EMPH Process Map', uniquename: APP, description: 'Business processes, flows, configuration decisions and requirements, based on the Microsoft Business Process Catalog.', webresourceid: '953b9fac-1e5e-e611-80d6-00155ded156f', clienttype: 4 }, IN_SOLUTION);
+    await web('POST', 'appmodules', { name: 'EMPH Process Map', uniquename: APP, description: 'Process items (levels 1 to 4), flows, fit-gap, requirements and RAID, based on the Microsoft Business Process Catalog.', webresourceid: '953b9fac-1e5e-e611-80d6-00155ded156f', clienttype: 4 }, IN_SOLUTION);
     app = await findApp(); say('app created');
   }
   await web('POST', 'AddAppComponents', { AppId: app.appmoduleid, Components: [{ '@odata.type': NS + 'sitemap', sitemapid: sitemap.sitemapid }, ...Object.keys(meta).map(t => ({ '@odata.type': NS + 'entity', entityid: meta[t].MetadataId })), ...(workspaceForm ? [{ '@odata.type': NS + 'systemform', formid: workspaceForm.formid }] : [])] });

@@ -15,27 +15,27 @@ import { Processes } from "./pages/Processes";
 import { Requirements } from "./pages/Requirements";
 import { Workshops } from "./pages/Workshops";
 import { SignOffs } from "./pages/SignOffs";
-import { Applications } from "./pages/Applications";
+import { Systems } from "./pages/Systems";
 import { Settings } from "./pages/Settings";
 
-export type PageKey = "overview" | "processes" | "requirements" | "workshops" | "signoff" | "applications" | "settings";
+export type PageKey = "overview" | "processes" | "requirements" | "workshops" | "signoff" | "systems" | "settings";
 export interface Nav { go: (page: PageKey, focus?: string | null) => void; focus: string | null }
 
 const PAGES: { key: PageKey; label: string; icon: React.ReactElement; hint: string }[] = [
   { key: "overview", label: "Our processes", icon: <Board20Regular />, hint: "The business processes we run, by end-to-end process and process area" },
-  { key: "processes", label: "Processes", icon: <BranchFork20Regular />, hint: "End-to-end processes, process areas and business processes" },
-  { key: "requirements", label: "Requirements", icon: <TaskListLtr20Regular />, hint: "What standard doesn't cover, with priority and coverage" },
+  { key: "processes", label: "Processes", icon: <BranchFork20Regular />, hint: "End-to-end processes, process areas, business processes and scenarios" },
+  { key: "requirements", label: "Requirements", icon: <TaskListLtr20Regular />, hint: "What standard doesn't cover, with priority, fit or gap" },
   { key: "workshops", label: "Workshops", icon: <PeopleTeam20Regular />, hint: "Guided discovery sessions" },
   { key: "signoff", label: "Sign-off", icon: <Signature20Regular />, hint: "Frozen, approved versions of the scope and requirements" },
-  { key: "applications", label: "Applications", icon: <Apps20Regular />, hint: "Current and target applications" },
-  { key: "settings", label: "Settings", icon: <Settings20Regular />, hint: "Organisation and roles" },
+  { key: "systems", label: "Systems", icon: <Apps20Regular />, hint: "Systems used today per process area: keep, migrate or retire" },
+  { key: "settings", label: "Settings", icon: <Settings20Regular />, hint: "Organisation, roles and licences" },
 ];
 
 export interface ShellProps { gateway: Gateway; user: { id: string | null; name: string }; fullScreen?: { supported: boolean; set: (on: boolean) => void } }
 
 export function Shell({ gateway, user, fullScreen }: ShellProps) {
   const l = useLook();
-  const repo = React.useMemo(() => new Repository(gateway), [gateway]);
+  const repo = React.useMemo(() => new Repository(gateway, user.name), [gateway, user.name]);
   const [model, setModel] = React.useState<Model | null>(null);
   const [problem, setProblem] = React.useState<string | null>(null);
   const [page, setPage] = React.useState<PageKey>("overview");
@@ -92,7 +92,7 @@ export function Shell({ gateway, user, fullScreen }: ShellProps) {
                 {page === "requirements" && <Requirements model={model} repo={repo} apply={apply} nav={nav} />}
                 {page === "workshops" && <Workshops model={model} repo={repo} apply={apply} nav={nav} />}
                 {page === "signoff" && <SignOffs model={model} repo={repo} apply={apply} user={user} />}
-                {page === "applications" && <Applications model={model} repo={repo} apply={apply} />}
+                {page === "systems" && <Systems model={model} repo={repo} apply={apply} />}
                 {page === "settings" && <Settings model={model} repo={repo} apply={apply} />}
               </>
             )}

@@ -26,11 +26,10 @@ export class DataverseGateway implements Gateway {
 
 /** Entity set names, used for lookup binding. */
 export const SETS: Record<string, string> = {
-  emph_workspace: "emph_workspaces", emph_endtoendprocess: "emph_endtoendprocesses", emph_processarea: "emph_processareas",
-  emph_businessprocess: "emph_businessprocesses", emph_application: "emph_applications", emph_role: "emph_roles", emph_processrole: "emph_processroles",
+  emph_workspace: "emph_workspaces", emph_processitem: "emph_processitems", emph_system: "emph_systems", emph_role: "emph_roles", emph_itemrole: "emph_itemroles",
   emph_processflow: "emph_processflows", emph_flowactivity: "emph_flowactivities", emph_configdecision: "emph_configdecisions",
-  emph_requirement: "emph_requirements", emph_workshop: "emph_workshops", emph_signoff: "emph_signoffs", emph_signoffitem: "emph_signoffitems",
-  emph_requirementlink: "emph_requirementlinks", emph_testrun: "emph_testruns", emph_reviewnote: "emph_reviewnotes",
+  emph_requirement: "emph_requirements", emph_raid: "emph_raids", emph_history: "emph_histories", emph_proposal: "emph_proposals",
+  emph_workshop: "emph_workshops", emph_signoff: "emph_signoffs", emph_signoffitem: "emph_signoffitems",
   annotation: "annotations", emph_comment: "emph_comments",
 };
 export const ref = (table: string, id: string) => "/" + SETS[table] + "(" + id + ")";

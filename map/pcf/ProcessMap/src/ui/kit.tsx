@@ -5,6 +5,7 @@ import { Add16Regular, Edit12Regular } from "@fluentui/react-icons";
 import { C, useLook } from "./look";
 import type { Model } from "../domain/types";
 import type { Repository } from "../domain/repository";
+import { labels, ListName, FIT_GAP, GAP_UNSPECIFIED } from "../domain/codes";
 
 export type Apply = (fn: (m: Model) => Promise<Model>) => Promise<void>;
 export interface PageProps { model: Model; repo: Repository; apply: Apply }
@@ -23,6 +24,32 @@ export function Choice({ value, labels, onChange, placeholder = "Not set", disab
       <Option value="">{placeholder}</Option>
       {Object.keys(labels).map(k => <Option key={k} value={k}>{labels[Number(k)]}</Option>)}
     </Dropdown>
+  );
+}
+
+/** Choice from one of the named lists in codes.ts (Microsoft's picklists or ours). */
+export function ListChoice({ list, value, onChange, placeholder, width, disabled }: { list: ListName; value: number | null; onChange: (v: number | null) => void; placeholder?: string; width?: number; disabled?: boolean }) {
+  return <Choice value={value} labels={labels(list)} onChange={onChange} placeholder={placeholder} width={width} disabled={disabled} />;
+}
+
+/**
+ * Microsoft's Fit gap status with its Gap solution approach. A Gap needs an approach, so picking Gap waits for one
+ * before anything is saved.
+ */
+export function FitGapPick({ fitGap, gapApproach, onSave, disabled }: { fitGap: number | null; gapApproach: number | null; onSave: (fitGap: number | null, gapApproach: number | null) => void; disabled?: boolean }) {
+  const [pending, setPending] = React.useState(false);
+  React.useEffect(() => setPending(false), [fitGap, gapApproach]);
+  const gap = pending || fitGap === FIT_GAP.gap;
+  const approaches = Object.fromEntries(Object.entries(labels("gapSolutionApproach")).filter(([k]) => Number(k) !== GAP_UNSPECIFIED)) as Record<number, string>;
+  return (
+    <span data-emph="fit-gap" style={{ display: "inline-flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+      <Choice value={pending ? FIT_GAP.gap : fitGap} labels={labels("fitGapStatus")} disabled={disabled} width={130} onChange={v => {
+        if (v === FIT_GAP.gap && (gapApproach == null || gapApproach === GAP_UNSPECIFIED)) { setPending(true); return; }
+        setPending(false); onSave(v, v === FIT_GAP.gap ? gapApproach : null);
+      }} />
+      {gap && <Choice value={fitGap === FIT_GAP.gap ? gapApproach : null} labels={approaches} placeholder="Gap solution approach" disabled={disabled} width={190} onChange={v => { if (v != null) onSave(FIT_GAP.gap, v); }} />}
+      {pending && <span style={{ color: C.bad, fontSize: 11 }} data-emph="needs-approach">A gap needs a solution approach</span>}
+    </span>
   );
 }
 

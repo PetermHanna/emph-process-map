@@ -1,7 +1,7 @@
 // Rules with no UI or Dataverse. Run from map/: node --test harness/rules.test.mjs (needs pcf/node_modules for TypeScript)
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync, existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
@@ -31,28 +31,96 @@ const D = await load("documents");
 const P = await load("placement");
 
 let n = 0;
-const req = p => ({ id: "r" + ++n, reqId: "", name: "n", description: "d", processId: "p1", origin: C.REQ_ORIGIN.captured, originRef: "", originFlowId: null, review: false,
-  moscow: null, category: null, raisedBy: "", verbatim: "", owner: "", state: C.REQ_STATE.draft, coverage: null, size: null, evidenceFlowId: null, resolution: "", resolvedBy: "", resolvedOn: null,
-  workshopId: null, parentId: null, duplicateOfId: null, ...p });
+const req = p => ({ id: "r" + ++n, reqId: "", name: "n", description: "d", itemId: "p1", origin: C.REQ_ORIGIN.captured, originRef: "", originFlowId: null, review: false,
+  type: null, fitGap: null, gapApproach: null, scopeApproach: "", acceptanceCriteria: "", mapping: "", priority: null, approval: C.APPROVAL.new, author: null, complexity: null,
+  owner: "", approvedBy: "", approvedOn: null, closedReason: "", sourceType: "", sourceText: "", raisedBy: "", workshopId: null, evidenceFlowId: null, ...p });
+// a small catalog tree: e (L1) > a (L2) > p (L3) > s1, s2 (L4)
+const node = (id, level, parentId, p = {}) => ({ id, level, parentId, scope: C.SCOPE.in, products: "", ...p });
 const act = (code, p = {}) => ({ id: code, flowId: "f", code, name: code, shape: C.SHAPE.activity, lane: "L", stage: "", links: [], summary: "", delta: C.DELTA.same, rank: 0, ...p });
 const L = (...to) => to.map(t => ({ to: t, label: "" }));
 
-test("option values start at the new base and keep their order", () => {
+test("option values are 582100000 + the label's position in Microsoft's list", () => {
   assert.equal(C.BASE, 582100000);
-  assert.equal(C.COVERAGE.gap, 582100003);
-  assert.equal(C.REQ_STATE_LABEL[582100002], "Agreed");
+  assert.equal(C.SCOPE.in, 582100001); assert.equal(C.FIT_GAP.gap, 582100001); assert.equal(C.GAP_UNSPECIFIED, 582100000);
+  assert.equal(C.APPROVAL.approved, 582100003); assert.equal(C.CATALOG_CUSTOM, 582100004); assert.equal(C.AUTHOR.project, 582100002);
+  assert.equal(C.labelOf("businessApprovalState", 582100002), "In review"); assert.equal(C.labelOf("scope", 582100009), "");
+  assert.equal(C.option("products", "Field Service"), 582100011); assert.equal(C.option("products", "Dynamics 365 Field Service"), null);
 });
 
-test("coverage is the weakest rated active requirement", () => {
-  const gap = req({ coverage: C.COVERAGE.gap });
-  const r = R.processCoverage([req({ coverage: C.COVERAGE.standard }), gap, req(), req({ coverage: C.COVERAGE.gap, state: C.REQ_STATE.rejected }), req({ processId: "p2", coverage: C.COVERAGE.gap })], "p1");
-  assert.equal(r.coverage, C.COVERAGE.gap); assert.equal(r.weakest, gap); assert.equal(r.rated, 2); assert.equal(r.unrated, 1);
-  assert.equal(R.processCoverage([req()], "p1").coverage, null);
+// Microsoft's picklists must be exactly as Business Map's msTemplate.ts (itself checked against "ADO template guidelines - OCT 2026.xlsx").
+// The file is read from the sibling folder, or from EMPH_MS_TEMPLATE; the test is skipped where it isn't (the public repo alone).
+const MS_TEMPLATE = process.env.EMPH_MS_TEMPLATE || join(root, "../../elevion-business-map/company-model/pcf/CompanyModel/app/msTemplate.ts");
+test("Microsoft's picklists match msTemplate.ts, list by list and value by value", { skip: !existsSync(MS_TEMPLATE) && "msTemplate.ts not found: " + MS_TEMPLATE }, async () => {
+  const js = ts.transpileModule(readFileSync(MS_TEMPLATE, "utf8"), { compilerOptions: { module: "ESNext", target: "ES2020" } }).outputText;
+  writeFileSync(join(out, "msTemplate.mjs"), js);
+  const M = await load("msTemplate");
+  assert.deepEqual(Object.keys(C.MS_PICKLISTS).sort(), Object.keys(M.MS_PICKLISTS).sort());
+  for (const k of Object.keys(M.MS_PICKLISTS)) assert.deepEqual([...C.MS_PICKLISTS[k]], [...M.MS_PICKLISTS[k]], k);
+  assert.deepEqual([...C.OURS.raidType], [...M.RAID_TYPES]); assert.deepEqual([...C.OURS.licenceType], [...M.LICENCE_TYPES]);
+  assert.deepEqual(Object.fromEntries(Object.entries(M.MOSCOW_PRIORITY).map(([k, v]) => [k, C.option("priority", v)])), Object.fromEntries(Object.entries(C.MOSCOW_LABEL).map(([v, k]) => [k, Number(v)])));
 });
 
-test("active excludes rejected, duplicate and deferred only", () => {
-  assert.ok(R.isActive({ state: C.REQ_STATE.agreed }));
-  for (const s of [C.REQ_STATE.rejected, C.REQ_STATE.duplicate, C.REQ_STATE.deferred]) assert.ok(!R.isActive({ state: s }));
+// install.js and sample-data.js are pasted into a browser console, so they carry their own copy of the lists: it must match codes.ts.
+const listsIn = (file, begin, end) => { const t = readFileSync(join(root, "schema", file), "utf8"); const i = t.indexOf(begin), j = t.indexOf(end, i); return Function("return " + t.slice(t.indexOf("{", i), t.lastIndexOf("}", j) + 1))(); };
+test("install.js creates every choice list exactly as codes.ts", () => {
+  const L = listsIn("install.js", "const LISTS = {", "// LISTS-END");
+  assert.deepEqual(L, JSON.parse(JSON.stringify({ ...C.MS_PICKLISTS, ...C.OURS })));
+});
+test("sample-data.js uses the same lists as codes.ts", () => {
+  const L = listsIn("sample-data.js", "const LISTS = {", "  const V = n");
+  for (const [k, v] of Object.entries(L)) assert.deepEqual(v, [...C.listOf(k)], k);
+});
+
+test("scope greys the children: an item counts as in scope only when every parent is", () => {
+  const items = [node("e", 1, null), node("a", 2, "e", { scope: C.SCOPE.out }), node("p", 3, "a"), node("s1", 4, "p"), node("b", 2, "e"), node("q", 3, "b"), node("r", 3, "b", { scope: C.SCOPE.unspecified })];
+  const by = id => items.find(x => x.id === id);
+  assert.ok(R.inScope(items, by("e"))); assert.ok(R.inScope(items, by("q")));
+  assert.ok(!R.inScope(items, by("a"))); assert.ok(!R.inScope(items, by("p"))); assert.ok(!R.inScope(items, by("s1"))); // under an area out of scope
+  assert.ok(!R.inScope(items, by("r"))); // 10 - Unspecified is not in scope
+  assert.deepEqual(R.ancestorsOf(items, by("s1")).map(x => x.id), ["p", "a", "e"]);
+  assert.equal(R.levelUp(items, by("s1"), 2).id, "a");
+  assert.deepEqual(R.descendantsOf(items, "a").map(x => x.id), ["p", "s1"]);
+  assert.ok(!R.scopeDecided(C.SCOPE.unspecified)); assert.ok(R.scopeDecided(C.SCOPE.na)); assert.ok(!R.scopeDecided(null));
+});
+
+test("products are read up from the scenarios in scope", () => {
+  const items = [node("e", 1, null), node("a", 2, "e"), node("p", 3, "a", { products: "Finance, Business Central" }),
+    node("s1", 4, "p", { products: "Field Service" }), node("s2", 4, "p", { products: "Business Central", scope: C.SCOPE.out }), node("s3", 4, "p", { products: "Field Service, Finance" }),
+    node("q", 3, "a", { products: "Sales; Finance" })]; // no scenarios: its own products
+  const by = id => items.find(x => x.id === id);
+  assert.deepEqual(R.productsOf(items, by("p")), ["Field Service", "Finance"]);
+  assert.deepEqual(R.productsOf(items, by("q")), ["Finance", "Sales"]);
+  assert.deepEqual(R.productsOf(items, by("e")), ["Field Service", "Finance"]); // from level 4 only, q's own products are not read up past it
+  assert.deepEqual(R.productsOf(items, by("s2")), ["Business Central"]);
+  const out = items.map(x => (x.id === "a" ? { ...x, scope: C.SCOPE.out } : x));
+  assert.deepEqual(R.productsOf(out, out.find(x => x.id === "p")), []); // the area is out, so its scenarios are too
+});
+
+test("a Gap needs a gap solution approach", () => {
+  assert.equal(R.fitGapProblem({ fitGap: C.FIT_GAP.gap, gapApproach: null }), "A gap needs a gap solution approach.");
+  assert.equal(R.fitGapProblem({ fitGap: C.FIT_GAP.gap, gapApproach: C.GAP_UNSPECIFIED }), "A gap needs a gap solution approach.");
+  assert.equal(R.fitGapProblem({ fitGap: C.FIT_GAP.gap, gapApproach: C.option("gapSolutionApproach", "30 - Power Platform") }), null);
+  assert.equal(R.fitGapProblem({ fitGap: C.FIT_GAP.fit, gapApproach: null }), null);
+  assert.equal(R.requirementProblem({ description: "Rent indexing", fitGap: C.FIT_GAP.gap, gapApproach: null }), "A gap needs a gap solution approach.");
+});
+
+test("an item's fit-gap from its requirements: any gap makes it a gap", () => {
+  const r = R.itemFitGap([req({ fitGap: C.FIT_GAP.fit }), req({ fitGap: C.FIT_GAP.gap, gapApproach: 582100002 }), req(), req({ fitGap: C.FIT_GAP.gap, approval: C.APPROVAL.rejected }), req({ itemId: "p2", fitGap: C.FIT_GAP.gap })], "p1");
+  assert.equal(r.fitGap, C.FIT_GAP.gap); assert.equal(r.gaps, 1); assert.equal(r.rated, 2); assert.equal(r.unrated, 1);
+  assert.equal(R.itemFitGap([req({ fitGap: C.FIT_GAP.fit })], "p1").fitGap, C.FIT_GAP.fit);
+  assert.equal(R.itemFitGap([req()], "p1").fitGap, null);
+});
+
+test("MoSCoW is shown, Microsoft's priority stored", () => {
+  assert.equal(C.moscowOf(C.option("priority", "1")), "Must"); assert.equal(C.moscowOf(C.option("priority", "4")), "Won't");
+  assert.equal(C.moscowOf(C.option("priority", "5")), "5"); assert.equal(C.moscowOf(null), "");
+});
+
+test("active excludes rejected and closed requirements", () => {
+  assert.ok(R.isActive({ approval: C.APPROVAL.approved, closedReason: "" }));
+  assert.ok(R.isActive({ approval: C.APPROVAL.new, closedReason: "" }));
+  assert.ok(!R.isActive({ approval: C.APPROVAL.rejected, closedReason: "" }));
+  for (const why of ["Deferred", "Duplicate"]) assert.ok(!R.isActive({ approval: C.APPROVAL.new, closedReason: why }));
 });
 
 test("a title is the first line, cut to length", () => {
@@ -115,6 +183,8 @@ test("hand edits on a generated requirement are noticed", () => {
   assert.ok(!R.touchedByHand(req({ description: "x" }), "x"));
   assert.ok(R.touchedByHand(req({ description: "y" }), "x"));
   assert.ok(R.touchedByHand(req({ owner: "Ann" }), null));
+  assert.ok(R.touchedByHand(req({ description: "x", fitGap: C.FIT_GAP.fit }), "x"));
+  assert.ok(R.touchedByHand(req({ description: "x", approval: C.APPROVAL.inReview }), "x"));
 });
 
 test("next activity code steps by five", () => {
@@ -136,10 +206,10 @@ test("minutes per visit add up repeated visits", () => {
 });
 
 test("the summary uses fixed phrases and asks about missing owners", () => {
-  const lines = S.summaryLines([{ reqId: "RQ-1", description: "Permit check", owner: "", resolution: "Add a step", resolvedBy: "Ann" }],
-    [{ name: "Invoice", disposition: C.DISPOSITION.transition, visited: true }, { name: "Other", disposition: C.DISPOSITION.retain, visited: false }],
+  const lines = S.summaryLines([{ reqId: "RQ-1", description: "Permit check", owner: "", mapping: "Add a step", approvedBy: "Ann" }],
+    [{ name: "Invoice", decisions: ["Fit", "Legacy ERP: Retire"], visited: true }, { name: "Other", decisions: ["Gap"], visited: false }],
     [{ text: "Send the form", owner: "Bo", due: "2026-11-20" }, { text: "Done", owner: "", due: "", done: true }]);
-  assert.deepEqual(lines, ["Requirement: Permit check (RQ-1)", "Decision: Add a step, decided by Ann", "Decision: Invoice: Transition", "Open point: who owns RQ-1?", "Open point: Send the form, owner Bo, by 2026-11-20"]);
+  assert.deepEqual(lines, ["Requirement: Permit check (RQ-1)", "Decision: Add a step, decided by Ann", "Decision: Invoice: Fit", "Decision: Invoice: Legacy ERP: Retire", "Open point: who owns RQ-1?", "Open point: Send the form, owner Bo, by 2026-11-20"]);
 });
 
 test("a broken session falls back to empty", () => {
@@ -148,18 +218,18 @@ test("a broken session falls back to empty", () => {
 });
 
 test("sign-off tables use labels, not option values", () => {
-  const items = [{ type: C.ITEM.requirement, key: "r", name: "R", description: "Need", snapshot: { reqId: "RQ-1", moscow: C.BASE, coverage: C.COVERAGE.gap, state: C.REQ_STATE.agreed } },
-    { type: C.ITEM.scope, key: "p", name: "Invoice", description: "", snapshot: { code: "X001", area: "A", inScope: false } }];
+  const items = [{ type: C.ITEM.requirement, key: "r", name: "R", description: "Need", snapshot: { reqId: "RQ-1", priority: C.BASE, fitGap: C.FIT_GAP.gap, gapApproach: C.option("gapSolutionApproach", "60 - ISV"), approval: C.APPROVAL.approved } },
+    { type: C.ITEM.scope, key: "p", name: "Invoice", description: "", snapshot: { code: "X001", level: 3, parent: "A", scope: C.SCOPE.out, inScope: false } }];
   const [reqs, , , scope] = D.signOffTables(items);
-  assert.deepEqual(reqs.rows[0].slice(0, 8), ["RQ-1", "Need", "", "", "Must", "", "Agreed", "Gap"]);
-  assert.deepEqual(scope.rows[0], ["X001", "Invoice", "A", "No"]);
+  assert.deepEqual(reqs.rows[0].slice(0, 11), ["RQ-1", "Need", "", "", "", "Must", "1", "Gap", "60 - ISV", "", "Approved"]);
+  assert.deepEqual(scope.rows[0], ["X001", "Invoice", "3", "A", "30 - Out of scope", "No"]);
 });
 
 test("the document escapes content, marks drafts and lists out-of-scope processes", () => {
   const items = [{ type: C.ITEM.requirement, key: "r", name: "R", description: "<b>x</b>", snapshot: {} }, { type: C.ITEM.scope, key: "p", name: "Out", description: "", snapshot: { inScope: false } }, { type: C.ITEM.scope, key: "q", name: "In", description: "", snapshot: { inScope: true } }];
   const html = D.signOffDocument("T", [["A", "B"]], items, false);
   assert.ok(html.includes("&lt;b&gt;x&lt;/b&gt;")); assert.ok(html.includes("DRAFT"));
-  assert.ok(html.includes("1 of 2 business processes in scope")); assert.ok(html.includes("<td>Out</td>")); assert.ok(!html.includes("<td>In</td>"));
+  assert.ok(html.includes("1 of 2 process items in scope")); assert.ok(html.includes("<td>Out</td>")); assert.ok(!html.includes("<td>In</td>"));
   assert.ok(!D.signOffDocument("T", [], items, true).includes("DRAFT"));
 });
 
@@ -246,7 +316,7 @@ test("line signals: hedges in English and German, a longer hedge counts once, mu
 
 test("used lines: requirement number, open point, comment, then what the session recorded", () => {
   const u = [{ at: 1, speaker: "Ana", text: "One." }, { at: 2, speaker: "Ben", text: "Two." }, { at: 3, speaker: "Ana", text: "Three." }, { at: 4, speaker: "Ben", text: "Four." }, { at: 5, speaker: "Ana", text: "Five." }, { at: 6, speaker: "Ben", text: "Six." }];
-  const m = S.usedLines(u, [{ reqId: "RQ-00003", verbatim: "[0:01] Ana: One." }], [{ text: "x", source: "[0:02] Ben: Two." }], { 3: "Flow change: Approve order", 4: "Licence: Technician, Team Members" }, [{ source: "[0:03] Ana: Three." }]);
+  const m = S.usedLines(u, [{ reqId: "RQ-00003", sourceText: "[0:01] Ana: One." }], [{ text: "x", source: "[0:02] Ben: Two." }], { 3: "Flow change: Approve order", 4: "Licence: Technician, Team Members" }, [{ source: "[0:03] Ana: Three." }]);
   assert.deepEqual([...m], [[0, "RQ-00003"], [1, "Open point"], [2, "Comment"], [3, "Flow change: Approve order"], [4, "Licence: Technician, Team Members"]]);
   assert.equal(m.has(5), false);
 });
@@ -259,16 +329,16 @@ test("visit keys: a process, or a process and one of its activities", () => {
 test("the facilitator's agenda: prompts, minutes and a printable page", () => {
   const acts = [{ name: "Receive request", decision: false }, { name: "Approved?", decision: true }, { name: "Plan visit", decision: false }];
   const a = S.buildAgenda([
-    { key: "p1", code: "95.25.100", name: "Receive service requests", notUsed: false, appToday: "Spreadsheet", appTarget: "Field Service", disposition: "Transition", roles: ["Dispatcher"], scope: ["Emergency jobs <b>"], openQuestions: 2, activities: acts },
-    { key: "p2", code: "95.25.950", name: "Schedule frontline workers", notUsed: false, appToday: "", appTarget: "", disposition: "", roles: [], scope: [], openQuestions: 0, activities: [] },
-    { key: "p3", code: "95.35.100", name: "Old process", notUsed: true, appToday: "X", appTarget: "Y", disposition: "", roles: ["R"], scope: ["s"], openQuestions: 3, activities: acts },
+    { key: "p1", code: "95.25.100", name: "Receive service requests", notUsed: false, systemsToday: ["Spreadsheet (Retire)"], products: ["Field Service"], fitGap: "Fit", roles: ["Dispatcher"], scope: ["Emergency jobs <b>"], openQuestions: 2, activities: acts },
+    { key: "p2", code: "95.25.950", name: "Schedule frontline workers", notUsed: false, systemsToday: [], products: [], fitGap: "", roles: [], scope: [], openQuestions: 0, activities: [] },
+    { key: "p3", code: "95.35.100", name: "Old process", notUsed: true, systemsToday: ["X"], products: ["Y"], fitGap: "", roles: ["R"], scope: ["s"], openQuestions: 3, activities: acts },
   ]);
   const [x, y, z] = a.items;
   assert.equal(x.minutes, 5 + Math.ceil(3 * 1.5) + 2 + 2); assert.equal(x.from, 0); assert.equal(y.from, x.to); assert.equal(y.minutes, 5); assert.equal(z.minutes, 2); assert.equal(a.total, x.minutes + 5 + 2);
-  assert.deepEqual(x.prompts, ["Do you do this? Who does it (Dispatcher)?", "Today in Spreadsheet: still right?", "After migration in Field Service: agreed?", "Planned: Transition. Agreed?", "In scope: Emergency jobs <b>",
+  assert.deepEqual(x.prompts, ["Do you do this? Who does it (Dispatcher)?", "Today in Spreadsheet (Retire): still right?", "After migration in Field Service: agreed?", "Fit-gap so far: Fit. Agreed?", "In scope: Emergency jobs <b>",
     "Decision \u201cApproved?\u201d: what happens on each outcome, and who decides?", "2 setup questions to answer", "What can't the standard do here, and why does it matter?"]);
-  assert.deepEqual(y.prompts.slice(0, 3), ["Do you do this? Who does it?", "Which system or tool is used today?", "Which system after migration?"]);
-  assert.deepEqual(z.prompts, ["Marked not used: confirm nobody does this."]);
+  assert.deepEqual(y.prompts.slice(0, 3), ["Do you do this? Who does it?", "Which system or tool is used today?", "Which product runs it after migration?"]);
+  assert.deepEqual(z.prompts, ["Marked not applicable: confirm nobody does this."]);
   assert.equal(x.chain, "Receive request \u2192 Approved? \u2192 Plan visit");
   const html = S.agendaHtml("Service workshop", "8 Nov 2026", a);
   assert.match(html, /^<!DOCTYPE html>/); assert.match(html, /1\. <span class="c">95\.25\.100<\/span> Receive service requests <span class="t">0\u201314 min<\/span>/);

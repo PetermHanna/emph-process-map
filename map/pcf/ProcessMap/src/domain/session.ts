@@ -1,29 +1,30 @@
 // Discovery workshop: the session's rules with no Dataverse or UI, so they can be tested alone.
-import { DISPOSITION_LABEL } from "./codes";
 
 export const PHASES: { name: string; discuss: string; produces: string }[] = [
   { name: "Prepare", discuss: "Participants and the end-to-end process for this session", produces: "The workshop record" },
   { name: "Scope", discuss: "Which business processes are in scope", produces: "Scope decisions" },
-  { name: "Walk-through", discuss: "Process by process: do you run it, who owns it, in which application?", produces: "Retain, transition, retire or gap" },
+  { name: "Walk-through", discuss: "Process by process: do you run it, who owns it, in which system today?", produces: "Owner, roles and systems to keep, migrate or retire" },
   { name: "Process flow", discuss: "The usual path and who does each activity, then the exceptions", produces: "Changes to our process flow" },
   { name: "Configuration", discuss: "The configuration decisions for this process", produces: "Answers" },
-  { name: "Fit-gap", discuss: "What standard doesn't cover, and why it matters", produces: "Requirements with priority and coverage" },
+  { name: "Fit-gap", discuss: "What standard doesn't cover, and why it matters", produces: "Requirements with priority, fit or gap" },
   { name: "Summary", discuss: "The facilitator reads back decisions and open points", produces: "Agreed list with owners and dates" },
 ];
 
 export interface Visit { key: string; name: string; at: string }
-export interface ActionItem { text: string; owner: string; due: string; done?: boolean; source?: string }
+/** An open point for the read-back: a RAID action item (or question) of the workshop. */
+export interface OpenPoint { text: string; owner: string; due: string; done?: boolean; source?: string }
 /** transcriptStart: when the recording began (ISO); captured: transcript line number -> what it became ("RQ-00012", "Open point", "Flow: P300"). */
-export interface SessionState { processIds: string[]; current: string | null; visits: Visit[]; actions: ActionItem[]; transcriptStart?: string | null; captured?: Record<string, string> }
+/** processIds: the process items on the agenda. Open points are RAID rows (emph_raid), not part of the session. */
+export interface SessionState { processIds: string[]; current: string | null; visits: Visit[]; transcriptStart?: string | null; captured?: Record<string, string> }
 
-export const newSession = (processIds: string[] = []): SessionState => ({ processIds, current: null, visits: [], actions: [] });
+export const newSession = (processIds: string[] = []): SessionState => ({ processIds, current: null, visits: [] });
 
 export function readSession(raw: string | null | undefined): SessionState {
   try {
     const j = JSON.parse(raw || "{}");
     const arr = (v: any) => (Array.isArray(v) ? v : []);
     const obj = (v: any) => (v && typeof v === "object" && !Array.isArray(v) ? v : {});
-    return { processIds: arr(j.processIds), current: j.current || null, visits: arr(j.visits), actions: arr(j.actions), transcriptStart: j.transcriptStart || null, captured: obj(j.captured) };
+    return { processIds: arr(j.processIds), current: j.current || null, visits: arr(j.visits), transcriptStart: j.transcriptStart || null, captured: obj(j.captured) };
   } catch { return newSession(); }
 }
 
@@ -47,17 +48,18 @@ export function minutesPerVisit(visits: Visit[], end: string): { key: string; na
 
 export const wasVisited = (visits: Visit[], key: string) => visits.some(v => v.key === key);
 
-export interface SummaryRequirement { reqId: string; description: string; owner: string; resolution: string; resolvedBy: string }
-export interface SummaryProcess { name: string; disposition: number | null; visited: boolean }
+export interface SummaryRequirement { reqId: string; description: string; owner: string; mapping: string; approvedBy: string }
+/** decisions: what was decided for the process, e.g. "Legacy ERP: Retire" */
+export interface SummaryProcess { name: string; decisions: string[]; visited: boolean }
 
 /** The read-back in fixed phrases, so it sounds the same each time and can be matched to a transcript. */
-export function summaryLines(reqs: SummaryRequirement[], processes: SummaryProcess[], actions: ActionItem[]): string[] {
+export function summaryLines(reqs: SummaryRequirement[], processes: SummaryProcess[], actions: OpenPoint[]): string[] {
   const out: string[] = [];
   reqs.forEach(r => {
     out.push("Requirement: " + r.description + (r.reqId ? " (" + r.reqId + ")" : "") + (r.owner ? ", owner " + r.owner : ""));
-    if (r.resolution) out.push("Decision: " + r.resolution + (r.resolvedBy ? ", decided by " + r.resolvedBy : ""));
+    if (r.mapping) out.push("Decision: " + r.mapping + (r.approvedBy ? ", decided by " + r.approvedBy : ""));
   });
-  processes.filter(p => p.visited && p.disposition != null).forEach(p => out.push("Decision: " + p.name + ": " + (DISPOSITION_LABEL[p.disposition as number] || "")));
+  processes.filter(p => p.visited).forEach(p => p.decisions.forEach(d => out.push("Decision: " + p.name + ": " + d)));
   reqs.filter(r => !r.owner).forEach(r => out.push("Open point: who owns " + (r.reqId || r.description) + "?"));
   actions.filter(a => !a.done).forEach(a => out.push("Open point: " + a.text + (a.owner ? ", owner " + a.owner : "") + (a.due ? ", by " + a.due : "")));
   return out;
@@ -170,14 +172,14 @@ export function lineSignals(text: string): { hedges: string[]; spans: { start: n
 }
 
 /**
- * What each transcript line became: a requirement number (its quoted line), "Open point" (an action item's source),
+ * What each transcript line became: a requirement number (its quoted line), "Open point" (a RAID action item's source),
  * "Comment" (a comment's source), or what the session recorded ("Flow change: Approve order", "Licence: Technician, Team Members").
  */
-export function usedLines(lines: Utterance[], requirements: { reqId: string; verbatim: string }[], openItems: { source?: string }[], used: Record<string, string> = {}, comments: { source: string }[] = []): Map<number, string> {
+export function usedLines(lines: Utterance[], requirements: { reqId: string; sourceText: string }[], openItems: { source?: string }[], used: Record<string, string> = {}, comments: { source: string }[] = []): Map<number, string> {
   const out = new Map<number, string>();
   lines.forEach((u, i) => {
     const q = sourceLine(u);
-    const r = requirements.find(x => x.verbatim === q);
+    const r = requirements.find(x => x.sourceText === q);
     const label = r ? r.reqId || "Requirement" : openItems.some(a => a.source === q) ? "Open point" : comments.some(c => c.source === q) ? "Comment" : used[String(i)] || "";
     if (label) out.set(i, label);
   });
@@ -186,7 +188,8 @@ export function usedLines(lines: Utterance[], requirements: { reqId: string; ver
 
 // ---------- the facilitator's agenda ----------
 export interface AgendaBlock {
-  key: string; code: string; name: string; notUsed: boolean; appToday: string; appTarget: string; disposition: string;
+  /** systemsToday: "Legacy ERP (Retire)"; products: the target, read up from the scenarios in scope */
+  key: string; code: string; name: string; notUsed: boolean; systemsToday: string[]; products: string[]; fitGap: string;
   roles: string[]; scope: string[]; openQuestions: number; activities: { name: string; decision: boolean }[];
 }
 export interface AgendaItem { key: string; code: string; name: string; from: number; to: number; minutes: number; prompts: string[]; chain: string }
@@ -197,12 +200,12 @@ export function buildAgenda(blocks: AgendaBlock[]): { items: AgendaItem[]; total
   const items = blocks.map(b => {
     const prompts: string[] = [];
     let minutes: number;
-    if (b.notUsed) { prompts.push("Marked not used: confirm nobody does this."); minutes = 2; }
+    if (b.notUsed) { prompts.push("Marked not applicable: confirm nobody does this."); minutes = 2; }
     else {
       prompts.push("Do you do this? Who does it" + (b.roles.length ? " (" + b.roles.join(", ") + ")" : "") + "?");
-      prompts.push(b.appToday ? "Today in " + b.appToday + ": still right?" : "Which system or tool is used today?");
-      prompts.push(b.appTarget ? "After migration in " + b.appTarget + ": agreed?" : "Which system after migration?");
-      if (b.disposition) prompts.push("Planned: " + b.disposition + ". Agreed?");
+      prompts.push(b.systemsToday.length ? "Today in " + b.systemsToday.join(", ") + ": still right?" : "Which system or tool is used today?");
+      prompts.push(b.products.length ? "After migration in " + b.products.join(", ") + ": agreed?" : "Which product runs it after migration?");
+      if (b.fitGap) prompts.push("Fit-gap so far: " + b.fitGap + ". Agreed?");
       if (b.scope.length) prompts.push("In scope: " + b.scope.join("; "));
       b.activities.filter(a => a.decision).forEach(a => prompts.push("Decision “" + a.name + "”: what happens on each outcome, and who decides?"));
       if (b.openQuestions) prompts.push(b.openQuestions + " setup question" + (b.openQuestions === 1 ? "" : "s") + " to answer");

@@ -5,7 +5,7 @@ import { Button, Field, Input, Switch, Textarea, Tooltip } from "@fluentui/react
 import { C, useLook } from "../look";
 import { Pill } from "../kit";
 import { parseTranscript, transcriptStats, linesByVisit, lineSignals, clock, processKeyOf, activityCodeOf, Utterance } from "../../domain/session";
-import type { Workshop, BusinessProcess } from "../../domain/types";
+import type { Workshop, ProcessItem } from "../../domain/types";
 
 export type LineUse = "requirement" | "comment" | "open" | "flow" | "licence";
 export type Line = Utterance & { i: number; key: string };
@@ -27,7 +27,7 @@ export function Marked({ text }: { text: string }) {
 }
 
 export function TranscriptPanel({ w, current, closed, save, saveSession, used, onUse }: {
-  w: Workshop; agenda: BusinessProcess[]; current: BusinessProcess | null; closed: boolean; used: Map<number, string>;
+  w: Workshop; agenda: ProcessItem[]; current: ProcessItem | null; closed: boolean; used: Map<number, string>;
   save: (patch: Partial<Workshop>) => void; saveSession: (fn: (s: Workshop["session"]) => Workshop["session"]) => void; onUse: (line: Line, use: LineUse) => void;
 }) {
   const l = useLook();

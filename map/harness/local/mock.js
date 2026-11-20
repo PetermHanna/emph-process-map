@@ -22,7 +22,7 @@ const webAPI = {
     return { entities: list.map(r => ({ ...r })) };
   },
   createRecord: async (t, d) => {
-    const r = { [t + "id"]: newId() };
+    const r = { [t + "id"]: newId(), createdon: new Date().toISOString() };
     if (t === "emph_requirement") r.emph_reqid = "RQ-" + String(++reqNo).padStart(5, "0");
     put(r, d); rows(t).push(r); __writes.push(["C", t, r[t + "id"]]);
     return { id: r[t + "id"] };

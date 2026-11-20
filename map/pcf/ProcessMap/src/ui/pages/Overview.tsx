@@ -1,6 +1,6 @@
-// The main page: our processes the way Microsoft's catalog documentation draws them. Each end-to-end process shows its
-// process areas left to right with arrows; inside each area its business processes run top to bottom with arrows.
-// Names can be changed to our own; Microsoft's name stays visible underneath.
+// The main page: our processes the way Microsoft's catalog documentation draws them. Each end-to-end process (level 1) shows its
+// process areas (level 2) left to right with arrows; inside each area its business processes (level 3) run top to bottom.
+// Names can be changed to our own; Microsoft's name stays visible underneath. Scope is Microsoft's Scope field.
 import * as React from "react";
 import { Button, Tooltip, Switch } from "@fluentui/react-components";
 import {
@@ -10,43 +10,49 @@ import {
 import { C, useLook } from "../look";
 import { PageProps, Stat, Meter, Empty, Pill, Rename } from "../kit";
 import type { Nav } from "../Shell";
-import { REVIEW, COVERAGE, FLOW_TYPE, FLOW_STATE, DISPOSITION, DISPOSITION_LABEL, ORIGIN } from "../../domain/codes";
-import { isActive, processCoverage } from "../../domain/rules";
-import { areasOf, effectiveScope, flowsOf } from "../../domain/repository";
-import type { BusinessProcess, EndToEnd, ProcessArea } from "../../domain/types";
+import { FIT_GAP, FLOW_TYPE, FLOW_STATE, SCOPE, labelOf } from "../../domain/codes";
+import { isActive, itemFitGap, productsOf } from "../../domain/rules";
+import { childItems, effectiveScope, flowsOf, itemsAt } from "../../domain/repository";
+import type { Model, ProcessItem } from "../../domain/types";
 import { areaIcon, endToEndIcon, Tile } from "../icons";
 
-const DISPOSITION_TONE: Record<number, "ok" | "info" | "neutral" | "bad"> = { [DISPOSITION.retain]: "ok", [DISPOSITION.transition]: "info", [DISPOSITION.retire]: "neutral", [DISPOSITION.gap]: "bad" };
 const GREY = "#64748B";
+/** The item's own fit-gap, else what its requirements say. */
+export const fitGapOf = (m: Model, p: ProcessItem) => p.fitGap ?? itemFitGap(m.requirements, p.id).fitGap;
+const decided = (m: Model, p: ProcessItem) => { const f = fitGapOf(m, p); return f === FIT_GAP.fit || f === FIT_GAP.gap; };
 
 export function Overview({ model, repo, apply, nav }: PageProps & { nav: Nav }) {
   const l = useLook();
   const [onlyInScope, setOnlyInScope] = React.useState(false);
   const [collapsed, setCollapsed] = React.useState<Set<string>>(new Set());
   const [opened, setOpened] = React.useState<Set<string>>(new Set());
-  const inScope = model.processes.filter(p => effectiveScope(model, p));
-  const confirmed = inScope.filter(p => p.review === REVIEW.confirmed).length;
+  const processes = itemsAt(model, 3);
+  const inScope = processes.filter(p => effectiveScope(model, p));
+  const done = inScope.filter(p => decided(model, p)).length;
   const active = model.requirements.filter(isActive);
-  const gaps = active.filter(r => r.coverage === COVERAGE.gap).length;
+  const gaps = active.filter(r => r.fitGap === FIT_GAP.gap).length;
   const ours = model.flows.filter(f => f.type === FLOW_TYPE.ours);
   const answered = model.decisions.filter(d => d.answer.trim()).length;
-  const used = (e: EndToEnd) => e.inScope && areasOf(model, e.id).some(a => model.processes.some(p => p.areaId === a.id && effectiveScope(model, p)));
-  const shown = model.endToEnds.filter(e => used(e) || opened.has(e.id));
-  const others = model.endToEnds.filter(e => !shown.includes(e));
+  const e2es = itemsAt(model, 1);
+  const target = Array.from(new Set(e2es.filter(e => effectiveScope(model, e)).flatMap(e => productsOf(model.items, e)))).sort();
+  const used = (e: ProcessItem) => effectiveScope(model, e) && childItems(model, e.id).some(a => childItems(model, a.id).some(p => effectiveScope(model, p)));
+  const shown = e2es.filter(e => used(e) || opened.has(e.id));
+  const others = e2es.filter(e => !shown.includes(e));
   const toggle = (set: Set<string>, id: string) => { const n = new Set(set); if (n.has(id)) n.delete(id); else n.add(id); return n; };
 
-  if (!model.endToEnds.length) return <Empty title="No processes yet" text="Load the Microsoft Business Process Catalog (see the install guide) or add your first end-to-end process." action={<Button appearance="primary" onClick={() => nav.go("processes")}>Go to Processes</Button>} />;
+  if (!e2es.length) return <Empty title="No processes yet" text="Load the Microsoft Business Process Catalog (see the install guide) or add your first end-to-end process." action={<Button appearance="primary" onClick={() => nav.go("processes")}>Go to Processes</Button>} />;
 
   return (
     <>
       <div className={l.grid} style={{ gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))" }}>
         <Stat value={inScope.length} label="Business processes in scope" />
-        <Stat value={inScope.length ? Math.round((100 * confirmed) / inScope.length) + "%" : "–"} label="Reviewed and confirmed" tone={C.railActive} />
+        <Stat value={inScope.length ? Math.round((100 * done) / inScope.length) + "%" : "–"} label="Fit or gap decided" tone={C.railActive} />
         <Stat value={active.length} label="Active requirements" />
         <Stat value={gaps} label="Gaps" tone={gaps ? C.bad : undefined} />
         <Stat value={ours.filter(f => f.state === FLOW_STATE.confirmed).length + " / " + ours.length} label="Our flows confirmed" />
         <Stat value={answered + " / " + model.decisions.length} label="Decisions answered" />
       </div>
+      {target.length > 0 && <div className={l.row} data-emph="target-products"><span className={l.muted} style={{ fontSize: 12 }}>Target, from the scenarios in scope:</span>{target.map(x => <Pill key={x} text={x} tone="brand" />)}</div>}
       <div className={l.row}>
         <Switch label="Only what's in scope" checked={onlyInScope} onChange={(_, d) => setOnlyInScope(d.checked)} />
         <span className={l.muted} style={{ fontSize: 12 }}>Click a process to open it. Use the box to put it in or out of scope, and the pencil to give it your own name.</span>
@@ -56,10 +62,10 @@ export function Overview({ model, repo, apply, nav }: PageProps & { nav: Nav }) 
 
       {shown.map(e => {
         const colour = used(e) && e.accent && e.accent !== GREY ? e.accent : used(e) ? C.railActive : GREY;
-        const areas = areasOf(model, e.id).filter(a => !onlyInScope || model.processes.some(p => p.areaId === a.id && effectiveScope(model, p)));
-        const procs = model.processes.filter(p => areas.some(a => a.id === p.areaId) && effectiveScope(model, p));
-        const done = procs.filter(p => p.review === REVIEW.confirmed).length;
-        const onTarget = procs.filter(p => p.targetAppId && model.apps.find(x => x.id === p.targetAppId)?.target).length;
+        const areas = childItems(model, e.id).filter(a => !onlyInScope || childItems(model, a.id).some(p => effectiveScope(model, p)));
+        const procs = areas.flatMap(a => childItems(model, a.id)).filter(p => effectiveScope(model, p));
+        const ok = procs.filter(p => decided(model, p)).length;
+        const products = productsOf(model.items, e);
         const open = !collapsed.has(e.id);
         return (
           <section key={e.id} className={l.card} style={{ padding: 0, overflow: "hidden" }} data-emph="e2e-section">
@@ -70,12 +76,11 @@ export function Overview({ model, repo, apply, nav }: PageProps & { nav: Nav }) 
               <Tile icon={endToEndIcon(e.code)} colour={colour} size={38} filled />
               <div style={{ flexGrow: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
                 <span><span className={l.code} style={{ minWidth: 0, marginRight: 6 }}>{e.code}</span>
-                  <Rename name={e.name} catalogName={e.catalogName} size={17} onSave={name => apply(m => repo.saveEndToEnd(m, e, { name }))} /></span>
-                <span className={l.muted} style={{ fontSize: 12 }}>{areas.length} process areas · {procs.length} business processes in scope</span>
+                  <Rename name={e.name} catalogName={e.catalogName} size={17} onSave={name => apply(m => repo.saveItem(m, e, { name }))} /></span>
+                <span className={l.muted} style={{ fontSize: 12 }}>{areas.length} process areas · {procs.length} business processes in scope{products.length ? " · " + products.join(", ") : ""}</span>
               </div>
-              <Pill text={done + " of " + procs.length + " confirmed"} tone={done === procs.length && procs.length ? "ok" : "neutral"} />
-              <Pill text={onTarget + " of " + procs.length + " on target applications"} tone={onTarget === procs.length && procs.length ? "ok" : "warn"} />
-              <div style={{ width: 110 }}><Meter part={done} whole={procs.length} colour={colour} /></div>
+              <Pill text={ok + " of " + procs.length + " fit or gap decided"} tone={ok === procs.length && procs.length ? "ok" : "neutral"} />
+              <div style={{ width: 110 }}><Meter part={ok} whole={procs.length} colour={colour} /></div>
               {!used(e) && <Button size="small" appearance="subtle" onClick={() => setOpened(s => toggle(s, e.id))}>Hide</Button>}
             </header>
             {open && (
@@ -108,9 +113,9 @@ export function Overview({ model, repo, apply, nav }: PageProps & { nav: Nav }) 
   );
 }
 
-function AreaColumn({ a, e, colour, onlyInScope, model, repo, apply, nav }: PageProps & { a: ProcessArea; e: EndToEnd; colour: string; onlyInScope: boolean; nav: Nav }) {
+function AreaColumn({ a, e, colour, onlyInScope, model, repo, apply, nav }: PageProps & { a: ProcessItem; e: ProcessItem; colour: string; onlyInScope: boolean; nav: Nav }) {
   const l = useLook();
-  const all = model.processes.filter(p => p.areaId === a.id);
+  const all = childItems(model, a.id);
   const list = onlyInScope ? all.filter(p => effectiveScope(model, p)) : all;
   const live = all.some(p => effectiveScope(model, p));
   const Icon = areaIcon(a.catalogName || a.name, e.code);
@@ -121,7 +126,7 @@ function AreaColumn({ a, e, colour, onlyInScope, model, repo, apply, nav }: Page
         clipPath: "polygon(0 0, calc(100% - 12px) 0, 100% 50%, calc(100% - 12px) 100%, 0 100%)", paddingRight: 18, minHeight: 52 }}>
         <span style={{ lineHeight: 0, flexShrink: 0 }}><Icon style={{ fontSize: 22 }} /></span>
         <div style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
-          <Rename name={a.name} catalogName={a.catalogName} size={13} onSave={name => apply(m => repo.saveArea(m, a, { name }))} />
+          <Rename name={a.name} catalogName={a.catalogName} size={13} onSave={name => apply(m => repo.saveItem(m, a, { name }))} />
           <span style={{ fontSize: 10, opacity: 0.8, fontFamily: "Consolas, monospace" }}>{a.code} · {all.filter(p => effectiveScope(model, p)).length} of {all.length} in scope</span>
         </div>
       </div>
@@ -138,48 +143,39 @@ function AreaColumn({ a, e, colour, onlyInScope, model, repo, apply, nav }: Page
   );
 }
 
-function ProcessBox({ p, n, colour, model, repo, apply, nav }: PageProps & { p: BusinessProcess; n: number; colour: string; nav: Nav }) {
+function ProcessBox({ p, n, colour, model, repo, apply, nav }: PageProps & { p: ProcessItem; n: number; colour: string; nav: Nav }) {
   const l = useLook();
   const on = effectiveScope(model, p);
-  const app = (id: string | null) => model.apps.find(a => a.id === id)?.name || "";
   const { reference, ours } = flowsOf(model, p.id);
-  const cov = processCoverage(model.requirements, p.id);
-  const reqs = model.requirements.filter(r => r.processId === p.id && isActive(r)).length;
-  const ok = p.review === REVIEW.confirmed;
-  const target = app(p.targetAppId);
+  const fit = fitGapOf(model, p);
+  const reqs = model.requirements.filter(r => r.itemId === p.id && isActive(r)).length;
+  const ok = fit === FIT_GAP.fit;
+  const products = productsOf(model.items, p);
+  const ticked = p.scope === SCOPE.in;
   return (
     <div data-emph="process-card" onClick={() => nav.go("processes", p.id)} className={l.cardClick}
       style={{ display: "flex", flexDirection: "column", gap: 4, padding: "7px 9px", borderRadius: 8, cursor: "pointer", fontSize: 12,
         background: !on ? "#F8FAFC" : ok ? "#F0FDF4" : "#fff", opacity: on ? 1 : 0.7,
         border: (on ? "1px solid " : "1px dashed ") + (ok ? "#86EFAC" : on ? colour + "88" : "#CBD5E1"), borderLeft: "4px solid " + (on ? (ok ? C.ok : colour) : "#CBD5E1") }}>
       <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
-        <Tooltip content={on ? "In scope: click to take it out" : "Out of scope: click to put it in"} relationship="label">
-          <button data-emph="scope-toggle" onClick={ev => { ev.stopPropagation(); apply(async m => {
-              let next = await repo.saveProcess(m, p, { inScope: !p.inScope });
-              if (p.inScope) return next;
-              // Putting a process in scope brings its area and end-to-end process in too.
-              const a = next.areas.find(x => x.id === p.areaId);
-              if (a && !a.inScope) next = await repo.saveArea(next, a, { inScope: true });
-              const e = a && next.endToEnds.find(x => x.id === a.endToEndId);
-              if (e && !e.inScope) next = await repo.saveEndToEnd(next, e, { inScope: true });
-              return next;
-            }); }}
+        <Tooltip content={(ticked ? "In scope: click to take it out" : "Not in scope (" + (labelOf("scope", p.scope) || "not set") + "): click to put it in") + (ticked && !on ? ". Its area or end-to-end process is not in scope." : "")} relationship="label">
+          <button data-emph="scope-toggle" onClick={ev => { ev.stopPropagation(); apply(m => repo.setScope(m, m.items.find(x => x.id === p.id) || p, !ticked)); }}
             style={{ border: 0, background: "transparent", padding: 0, cursor: "pointer", lineHeight: 0, color: on ? colour : "#94A3B8", flexShrink: 0, marginTop: 1 }}>
-            {p.inScope ? <CheckboxChecked16Filled /> : <CheckboxUnchecked16Regular />}
+            {ticked ? <CheckboxChecked16Filled /> : <CheckboxUnchecked16Regular />}
           </button>
         </Tooltip>
         <span style={{ fontSize: 10, color: C.muted, minWidth: 12, marginTop: 2 }}>{n}</span>
         <div style={{ minWidth: 0, flexGrow: 1 }}>
-          <Rename name={p.name} catalogName={p.catalogName} size={12} weight={on ? 600 : 400} onSave={name => apply(m => repo.saveProcess(m, p, { name }))} />
-          <div className={l.code} style={{ fontSize: 10 }}>{p.code}{p.origin === ORIGIN.own ? " · our own" : ""}</div>
+          <Rename name={p.name} catalogName={p.catalogName} size={12} weight={on ? 600 : 400} onSave={name => apply(m => repo.saveItem(m, p, { name }))} />
+          <div className={l.code} style={{ fontSize: 10 }}>{p.code}{p.isOwn ? " · our own" : ""}</div>
         </div>
         {ok && <CheckmarkCircle16Filled style={{ color: C.ok, flexShrink: 0 }} />}
       </div>
-      {on && (target || p.disposition != null || reqs > 0 || ours || reference) && (
+      {on && (products.length > 0 || fit != null || reqs > 0 || ours || reference) && (
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center", paddingLeft: 22 }}>
-          {target && <span style={{ fontSize: 10, color: C.muted }}>→ {target}</span>}
-          {p.disposition != null && <Pill text={DISPOSITION_LABEL[p.disposition]} tone={DISPOSITION_TONE[p.disposition]} />}
-          {cov.coverage === COVERAGE.gap && <Pill text="Gap" tone="bad" />}
+          {products.length > 0 && <span style={{ fontSize: 10, color: C.muted }} data-emph="card-products">→ {products.join(", ")}</span>}
+          {fit === FIT_GAP.gap && <Pill text="Gap" tone="bad" />}
+          {fit === FIT_GAP.fit && <Pill text="Fit" tone="ok" />}
           {reqs > 0 && <Pill text={String(reqs) + " req."} />}
           {(ours || reference) && <Tooltip content={ours ? "Our process" + (ours.state === FLOW_STATE.confirmed ? ", confirmed" : ", draft") : "Microsoft reference flow"} relationship="label">
             <span style={{ lineHeight: 0, color: ours ? colour : "#94A3B8", marginLeft: "auto" }}><Flowchart16Regular /></span>

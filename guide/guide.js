@@ -170,7 +170,7 @@
 
   // ---------- data ----------
   // All flows once, then filtered here: pick a process, or search across everything.
-  // End-to-end process names come from the Process Map (emph_endtoendprocess, with the organisation's own wording); these are Microsoft's, for a code it doesn't have.
+  // End-to-end process names come from the Process Map (emph_processitem level 1, with the organisation's own wording); these are Microsoft's, for a code it doesn't have.
   const PROCESSES = { 10: "Acquire to dispose", 20: "Case to resolution", 30: "Concept to market", 40: "Design to retire", 50: "Forecast to plan", 55: "Hire to retire", 60: "Inventory to deliver", 65: "Order to cash", 70: "Plan to produce", 75: "Source to pay", 80: "Project to profit", 85: "Prospect to quote", 90: "Record to report", 93: "Rent to return", 95: "Service to deliver", 99: "Administer to operate" };
   const procName = k => (st.e2e && st.e2e[k]) || PROCESSES[k] || "";
   // A staged process: the flows of one group (96.10.x) are the stages of a slide, drawn as chevrons in the top bar while one of them runs.
@@ -195,7 +195,7 @@
     if (st.allFlows) return;
     const r = await api("emph_processflows?$select=emph_processflowid,emph_name,emph_catalogcode,emph_flowtype&$orderby=emph_catalogcode&$top=2000");
     st.allFlows = r.value;
-    try { st.e2e = Object.fromEntries((await api("emph_endtoendprocesses?$select=emph_catalogcode,emph_name")).value.filter(x => x.emph_catalogcode).map(x => [String(x.emph_catalogcode), x.emph_name || ""])); } catch { st.e2e = null; }
+    try { st.e2e = Object.fromEntries((await api("emph_processitems?$select=emph_catalogcode,emph_name&$filter=emph_level eq 1")).value.filter(x => x.emph_catalogcode).map(x => [String(x.emph_catalogcode), x.emph_name || ""])); } catch { st.e2e = null; }
   }
   function flowMatches() {
     const q = (st.q || "").trim().toLowerCase(), all = st.allFlows || [];

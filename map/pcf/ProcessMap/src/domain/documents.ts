@@ -1,5 +1,5 @@
 // Sign-off export in the browser with no extra library: an Excel workbook, a Word document and a print view for PDF.
-import { ITEM, MOSCOW_LABEL, CATEGORY_LABEL, REQ_STATE_LABEL, COVERAGE_LABEL, SIZE_LABEL, REQ_ORIGIN_LABEL, DELTA } from "./codes";
+import { ITEM, REQ_ORIGIN_LABEL, DELTA, labelOf, moscowOf } from "./codes";
 import type { FrozenItem } from "./rules";
 
 export interface Table { title: string; columns: string[]; rows: string[][] }
@@ -11,12 +11,13 @@ const label = (m: Record<number, string>, v: unknown) => (v != null ? m[v as num
 export function signOffTables(items: FrozenItem[]): Table[] {
   const of = (t: number) => items.filter(x => x.type === t);
   return [
-    { title: "Requirements", columns: ["ID", "Description", "Raised by", "Origin", "MoSCoW", "Category", "State", "Coverage", "Size", "Owner", "Resolution", "Resolved by", "Resolved on"],
-      rows: of(ITEM.requirement).map(({ description, snapshot: x }) => [x.reqId || "", description, x.raisedBy || "", label(REQ_ORIGIN_LABEL, x.origin), label(MOSCOW_LABEL, x.moscow), label(CATEGORY_LABEL, x.category), label(REQ_STATE_LABEL, x.state), label(COVERAGE_LABEL, x.coverage), label(SIZE_LABEL, x.size), x.owner || "", x.resolution || "", x.resolvedBy || "", x.resolvedOn || ""]) },
-    { title: "Configuration decisions", columns: ["Code", "Question", "Answer", "Business process"], rows: of(ITEM.decision).map(x => [x.name, x.description, x.snapshot.answer || "", x.snapshot.process || ""]) },
+    { title: "Requirements", columns: ["ID", "Description", "Raised by", "Origin", "Requirement type", "MoSCoW", "Priority", "Fit gap status", "Gap solution approach", "Estimated complexity", "Business approval state", "Owner", "Requirement mapping", "Approved by", "Approved on"],
+      rows: of(ITEM.requirement).map(({ description, snapshot: x }) => [x.reqId || "", description, x.raisedBy || "", label(REQ_ORIGIN_LABEL, x.origin), labelOf("requirementType", x.type), moscowOf(x.priority), labelOf("priority", x.priority),
+        labelOf("fitGapStatus", x.fitGap), labelOf("gapSolutionApproach", x.gapApproach), labelOf("estimatedComplexity", x.complexity), labelOf("businessApprovalState", x.approval), x.owner || "", x.mapping || "", x.approvedBy || "", x.approvedOn || ""]) },
+    { title: "Configuration decisions", columns: ["Code", "Question", "Answer", "Process item"], rows: of(ITEM.decision).map(x => [x.name, x.description, x.snapshot.answer || "", x.snapshot.process || ""]) },
     { title: "Process flows", columns: ["Flow", "Activity", "Name", "Lane", "Change", "Rationale"],
       rows: of(ITEM.flow).flatMap(f => (f.snapshot.activities || []).map((a: any) => [f.name, a.code, a.name, a.lane || "", label(DELTA_LABEL, a.delta), a.rationale || ""])) },
-    { title: "Scope", columns: ["Catalog ID", "Business process", "Process area", "In scope"], rows: of(ITEM.scope).map(x => [x.snapshot.code || "", x.name, x.snapshot.area || "", x.snapshot.inScope ? "Yes" : "No"]) },
+    { title: "Scope", columns: ["Process sequence ID", "Process item", "Level", "Parent", "Scope", "In scope"], rows: of(ITEM.scope).map(x => [x.snapshot.code || "", x.name, String(x.snapshot.level ?? ""), x.snapshot.parent || "", labelOf("scope", x.snapshot.scope), x.snapshot.inScope ? "Yes" : "No"]) },
   ];
 }
 
@@ -71,15 +72,15 @@ const htmlTable = (t: Table) => t.rows.length
 /** The one line saying what the short document leaves out. */
 export function scopeLine(items: FrozenItem[]): string {
   const scope = items.filter(x => x.type === ITEM.scope);
-  if (!scope.length) return "Scope: no business processes recorded.";
+  if (!scope.length) return "Scope: no process items recorded.";
   const out = scope.filter(x => !x.snapshot.inScope).length;
-  return `Scope: ${scope.length - out} of ${scope.length} business processes in scope.` + (out ? ` The ${out} out of scope are listed below.` : "") + " The Excel export lists all of them.";
+  return `Scope: ${scope.length - out} of ${scope.length} process items in scope.` + (out ? ` The ${out} out of scope are listed below.` : "") + " The Excel export lists all of them.";
 }
 
 /** One HTML document for Word and for printing to PDF: requirements first, scope last, no empty sections. */
 export function signOffDocument(title: string, facts: [string, string][], items: FrozenItem[], approved: boolean): string {
   const [reqs, decisions, flows, scope] = signOffTables(items);
-  const outOfScope: Table = { ...scope, rows: scope.rows.filter(r => r[3] === "No") };
+  const outOfScope: Table = { ...scope, rows: scope.rows.filter(r => r[5] === "No") };
   const sections = [reqs, decisions, flows].filter(t => t.rows.length).map(t => `<h2>${esc(t.title)} (${t.rows.length})</h2>${htmlTable(t)}`).join("");
   const banner = approved ? "" : `<p class="draft">DRAFT. Not approved yet: for review only.</p>`;
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>body{font-family:'Segoe UI',Arial,sans-serif;font-size:10pt;color:#0F172A}h1{font-size:18pt;color:#0F766E}h2{font-size:12pt;margin-top:16pt;border-bottom:2px solid #0D9488;padding-bottom:2pt}table{border-collapse:collapse;width:100%}th,td{border:1px solid #CBD5E1;padding:3px 6px;text-align:left;vertical-align:top}th{background:#F1F5F9}.draft{border:2px solid #B91C1C;color:#B91C1C;font-weight:bold;padding:6px 10px}</style></head><body>${banner}<h1>${esc(title)}</h1>${facts.map(([k, v]) => `<p><b>${esc(k)}:</b> ${esc(v)}</p>`).join("")}${sections}<h2>Scope</h2><p>${esc(scopeLine(items))}</p>${htmlTable(outOfScope)}</body></html>`;

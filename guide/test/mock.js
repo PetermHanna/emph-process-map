@@ -25,7 +25,7 @@
     if (s.includes("emph_processflows")) return json({ value: [
       { emph_processflowid: FLOW, emph_name: "85.45.100 Identify opportunity", emph_catalogcode: "85.45.100", emph_flowtype: 582100000 },
       { emph_processflowid: OURS, emph_name: "85.45.100 Identify opportunity: our process", emph_catalogcode: "85.45.100", emph_flowtype: 582100001 }] });
-    if (s.includes("emph_endtoendprocesses")) return json({ value: [{ emph_catalogcode: "85", emph_name: "Lead to quote" }] });
+    if (s.includes("emph_processitems")) return json({ value: [{ emph_catalogcode: "85", emph_name: "Lead to quote" }] });
     return json({ value: [] });
   };
   window.__FLOW = FLOW;

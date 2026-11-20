@@ -1,62 +1,68 @@
-// The catalog hierarchy on the left, the selected item on the right.
+// The catalog tree (levels 1 to 4) on the left, the selected process item on the right, with Microsoft's fields.
 import * as React from "react";
 import { Button, Switch, Field, Checkbox, Dropdown, Option, Input, Textarea, Tooltip } from "@fluentui/react-components";
 import { ChevronDown16Regular, ChevronRight16Regular, Flowchart20Regular, Delete16Regular, Add16Regular } from "@fluentui/react-icons";
 import { C, useLook } from "../look";
-import { PageProps, Pill, Choice, Pick, Edit, AddBox, Empty } from "../kit";
+import { PageProps, Pill, Choice, ListChoice, FitGapPick, Edit, AddBox, Empty } from "../kit";
 import type { Nav } from "../Shell";
-import { ORIGIN, ORIGIN_LABEL, REVIEW, REVIEW_LABEL, DISPOSITION_LABEL, ANSWER, ANSWER_LABEL, DECISION_STATE, COVERAGE, COVERAGE_LABEL, FLOW_STATE } from "../../domain/codes";
-import { processCoverage } from "../../domain/rules";
-import { areasOf, processesOf, rolesOf, flowsOf, effectiveScope } from "../../domain/repository";
-import type { BusinessProcess, ConfigDecision, EndToEnd, ProcessArea, Model } from "../../domain/types";
+import { ANSWER, ANSWER_LABEL, DECISION_STATE, FIT_GAP, FLOW_STATE, SCOPE, LEVEL_LABEL, labelOf } from "../../domain/codes";
+import { itemFitGap, productsOf, levelUp } from "../../domain/rules";
+import { childItems, rolesOf, flowsOf, effectiveScope, itemsAt } from "../../domain/repository";
+import type { ConfigDecision, Model, ProcessItem } from "../../domain/types";
 import type { Repository } from "../../domain/repository";
 import { FlowStudio } from "../flow/FlowStudio";
 import { areaIcon, endToEndIcon, Tile } from "../icons";
 import { RequirementList, Capture } from "./Requirements";
 
-type Sel = { kind: "e2e" | "area" | "process"; id: string } | null;
-
 export function Processes({ model, repo, apply, nav }: PageProps & { nav: Nav }) {
   const l = useLook();
-  const [sel, setSel] = React.useState<Sel>(() => (nav.focus ? { kind: model.processes.some(p => p.id === nav.focus) ? "process" : "e2e", id: nav.focus } : null));
+  const [sel, setSel] = React.useState<string | null>(nav.focus);
   const [open, setOpen] = React.useState<Set<string>>(() => {
     const s = new Set<string>();
-    if (nav.focus) { s.add(nav.focus); const p = model.processes.find(x => x.id === nav.focus); const a = p && model.areas.find(x => x.id === p.areaId); if (a) { s.add(a.id); s.add(a.endToEndId); } }
+    const f = model.items.find(x => x.id === nav.focus);
+    for (let p = f && model.items.find(x => x.id === f.parentId); p; p = model.items.find(x => x.id === p!.parentId)) s.add(p.id);
     return s;
   });
   const toggle = (id: string) => setOpen(o => { const n = new Set(o); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   /** Select an item; from a panel link (expand) its branch opens too, from the tree the click toggles it instead. */
-  const pick = (kind: "e2e" | "area" | "process", id: string, expand = true) => { setSel({ kind, id }); if (expand && kind !== "process") setOpen(o => new Set(o).add(id)); };
+  const pick = (id: string, expand = true) => { setSel(id); if (expand) setOpen(o => new Set(o).add(id)); };
   const [filter, setFilter] = React.useState("");
   const f = filter.trim().toLowerCase();
-  const match = (p: BusinessProcess) => !f || p.name.toLowerCase().includes(f) || p.code.toLowerCase().includes(f);
-
-  const addE2E = (name: string) => apply(m => repo.saveEndToEnd(m, { id: "", code: "", name, catalogName: "", summary: "", rank: Math.max(0, ...m.endToEnds.map(x => x.rank)) + 10, inScope: true, accent: "#0D9488" }, {}));
+  const match = (p: ProcessItem) => !f || p.name.toLowerCase().includes(f) || p.code.toLowerCase().includes(f);
   const chevron = (id: string) => (open.has(id) || f ? <ChevronDown16Regular /> : <ChevronRight16Regular />);
+  const cur = model.items.find(x => x.id === sel);
+  const dim = (it: ProcessItem) => ({ opacity: effectiveScope(model, it) ? 1 : 0.5 });
 
   return (
     <div className={l.split}>
       <div className={l.card} style={{ padding: 10 }}>
         <Input placeholder="Find a business process" value={filter} onChange={(_, d) => setFilter(d.value)} style={{ width: "100%", marginBottom: 8 }} />
         <div className={l.tree} data-emph="process-tree">
-          {model.endToEnds.map(e => (
+          {itemsAt(model, 1).map(e => (
             <React.Fragment key={e.id}>
-              <div className={l.node + (sel?.id === e.id ? " " + l.nodeOn : "")} onClick={() => { pick("e2e", e.id, false); toggle(e.id); }} style={{ fontWeight: 600, opacity: e.inScope ? 1 : 0.5 }}>
-                {chevron(e.id)}<Tile icon={endToEndIcon(e.code)} colour={e.inScope && e.accent ? e.accent : "#64748B"} size={20} filled={e.inScope} /><span className={l.code} style={{ minWidth: 24 }}>{e.code}</span>{e.name}
+              <div className={l.node + (sel === e.id ? " " + l.nodeOn : "")} onClick={() => { pick(e.id, false); toggle(e.id); }} style={{ fontWeight: 600, ...dim(e) }}>
+                {chevron(e.id)}<Tile icon={endToEndIcon(e.code)} colour={effectiveScope(model, e) && e.accent ? e.accent : "#64748B"} size={20} filled={effectiveScope(model, e)} /><span className={l.code} style={{ minWidth: 24 }}>{e.code}</span>{e.name}
               </div>
-              {(open.has(e.id) || f) && areasOf(model, e.id).map(a => {
-                const procs = processesOf(model, a.id).filter(match);
+              {(open.has(e.id) || f) && childItems(model, e.id).map(a => {
+                const procs = childItems(model, a.id).filter(match);
                 if (f && !procs.length) return null;
                 return (
                   <React.Fragment key={a.id}>
-                    <div className={l.node + (sel?.id === a.id ? " " + l.nodeOn : "")} style={{ paddingLeft: 22, opacity: a.inScope ? 1 : 0.5 }} onClick={() => { pick("area", a.id, false); toggle(a.id); }}>
-                      {chevron(a.id)}<Tile icon={areaIcon(a.name, e.code)} colour={a.inScope && e.inScope && e.accent ? e.accent : "#64748B"} size={20} /><span className={l.code} style={{ minWidth: 40 }}>{a.code}</span>{a.name}
+                    <div className={l.node + (sel === a.id ? " " + l.nodeOn : "")} style={{ paddingLeft: 22, ...dim(a) }} onClick={() => { pick(a.id, false); toggle(a.id); }}>
+                      {chevron(a.id)}<Tile icon={areaIcon(a.name, e.code)} colour={effectiveScope(model, a) && e.accent ? e.accent : "#64748B"} size={20} /><span className={l.code} style={{ minWidth: 40 }}>{a.code}</span>{a.name}
                     </div>
                     {(open.has(a.id) || f) && procs.map(p => (
-                      <div key={p.id} data-emph="process-node" className={l.node + (sel?.id === p.id ? " " + l.nodeOn : "")} style={{ paddingLeft: 42, opacity: effectiveScope(model, p) ? 1 : 0.5 }} onClick={() => pick("process", p.id)}>
-                        <span className={l.code}>{p.code}</span><span style={{ flexGrow: 1 }}>{p.name}</span>
-                        {p.review === REVIEW.confirmed && <span title="Confirmed" style={{ color: C.ok }}>●</span>}
-                      </div>
+                      <React.Fragment key={p.id}>
+                        <div data-emph="process-node" className={l.node + (sel === p.id ? " " + l.nodeOn : "")} style={{ paddingLeft: 42, ...dim(p) }} onClick={() => { pick(p.id, false); toggle(p.id); }}>
+                          <span className={l.code}>{p.code}</span><span style={{ flexGrow: 1 }}>{p.name}</span>
+                          {fitDot(model, p)}
+                        </div>
+                        {open.has(p.id) && childItems(model, p.id).map(s => (
+                          <div key={s.id} data-emph="scenario-node" className={l.node + (sel === s.id ? " " + l.nodeOn : "")} style={{ paddingLeft: 62, fontSize: 12, ...dim(s) }} onClick={() => pick(s.id, false)}>
+                            <span className={l.code}>{s.code.split(".").pop()}</span><span style={{ flexGrow: 1 }}>{s.name}</span>
+                          </div>
+                        ))}
+                      </React.Fragment>
                     ))}
                   </React.Fragment>
                 );
@@ -64,109 +70,157 @@ export function Processes({ model, repo, apply, nav }: PageProps & { nav: Nav })
             </React.Fragment>
           ))}
         </div>
-        <div style={{ marginTop: 10 }}><AddBox placeholder="New end-to-end process" onAdd={addE2E} /></div>
+        <div style={{ marginTop: 10 }}><AddBox placeholder="Our own end-to-end process" onAdd={name => apply(async m => { const r = await repo.addOwnItem(m, null, name); setSel(r.item.id); return r.model; })} /></div>
       </div>
       <div>
-        {!sel && <Empty title="Pick an item" text="Choose an end-to-end process, a process area or a business process on the left." />}
-        {sel?.kind === "e2e" && model.endToEnds.find(x => x.id === sel.id) && <EndToEndPanel e={model.endToEnds.find(x => x.id === sel.id)!} model={model} repo={repo} apply={apply} onPick={pick} />}
-        {sel?.kind === "area" && model.areas.find(x => x.id === sel.id) && <AreaPanel a={model.areas.find(x => x.id === sel.id)!} model={model} repo={repo} apply={apply} onPick={pick} />}
-        {sel?.kind === "process" && model.processes.find(x => x.id === sel.id) && <ProcessPanel key={sel.id} p={model.processes.find(x => x.id === sel.id)!} model={model} repo={repo} apply={apply} onDeleted={() => setSel(null)} />}
+        {!cur && <Empty title="Pick an item" text="Choose an end-to-end process, a process area, a business process or a scenario on the left." />}
+        {cur && cur.level === 3 && <ProcessPanel key={cur.id} p={cur} model={model} repo={repo} apply={apply} onDeleted={() => setSel(null)} onPick={pick} />}
+        {cur && cur.level !== 3 && <ItemPanel key={cur.id} it={cur} model={model} repo={repo} apply={apply} onPick={pick} onDeleted={() => setSel(null)} />}
       </div>
     </div>
   );
 }
 
-function EndToEndPanel({ e, model, repo, apply, onPick }: PageProps & { e: EndToEnd; onPick: (k: "area", id: string) => void }) {
+const fitDot = (m: Model, p: ProcessItem) => {
+  const f = p.fitGap ?? itemFitGap(m.requirements, p.id).fitGap;
+  return f === FIT_GAP.fit ? <span title="Fit" style={{ color: C.ok }}>●</span> : f === FIT_GAP.gap ? <span title="Gap" style={{ color: C.bad }}>●</span> : null;
+};
+
+/** Scope: picking 20 - In scope also brings the parents in (and undecided scenarios below). */
+function ScopeField({ it, model, repo, apply }: PageProps & { it: ProcessItem }) {
   const l = useLook();
-  const save = (patch: Partial<EndToEnd>) => apply(m => repo.saveEndToEnd(m, e, patch));
-  const areas = areasOf(model, e.id);
+  const parentsOut = it.scope === SCOPE.in && !effectiveScope(model, it);
   return (
-    <div className={l.card} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div className={l.row}><Tile icon={endToEndIcon(e.code)} colour={e.accent || C.railActive} size={36} filled /><Pill text="End-to-end process" tone="brand" /><span className={l.code}>{e.code}</span></div>
-      <div className={l.fields}>
-        <Field label="Name" hint={e.catalogName && e.catalogName !== e.name ? "Microsoft: " + e.catalogName : undefined}><Edit value={e.name} onSave={v => v.trim() && save({ name: v.trim() })} /></Field>
-        <Field label="Catalog ID"><Edit value={e.code} onSave={v => save({ code: v.trim() })} /></Field>
-        <Field label="Accent colour"><Edit value={e.accent} onSave={v => save({ accent: v.trim() })} placeholder="#0D9488" /></Field>
-        <Field label="In scope"><Switch checked={e.inScope} onChange={(_, d) => save({ inScope: d.checked })} /></Field>
-      </div>
-      <Field label="Summary"><Edit multiline value={e.summary} onSave={v => save({ summary: v })} /></Field>
-      <div className={l.section}>Process areas ({areas.length})</div>
-      {areas.map(a => <div key={a.id} className={l.node} onClick={() => onPick("area", a.id)}><span className={l.code}>{a.code}</span>{a.name} <span className={l.muted}>· {processesOf(model, a.id).length} business processes</span></div>)}
-      <AddBox placeholder="New process area" onAdd={name => apply(m => repo.saveArea(m, { id: "", endToEndId: e.id, code: "", name, catalogName: "", summary: "", rank: Math.max(0, ...areas.map(x => x.rank)) + 10, inScope: true }, {}))} />
-    </div>
+    <Field label="Scope" hint={parentsOut ? "An item above it is not in scope, so it counts as out." : undefined}>
+      <span className={l.row} data-emph="scope-field">
+        <ListChoice list="scope" value={it.scope} width={170} onChange={v => apply(m => { const x = m.items.find(y => y.id === it.id) || it; return v === SCOPE.in ? repo.setScope(m, x, true) : repo.saveItem(m, x, { scope: v }); })} />
+      </span>
+    </Field>
   );
 }
 
-function AreaPanel({ a, model, repo, apply, onPick }: PageProps & { a: ProcessArea; onPick: (k: "process", id: string) => void }) {
+/** Who set scope or fit-gap, how and when (Microsoft's Set how / by / on). */
+const setLine = (it: ProcessItem) => it.setOn ? [labelOf("setHow", it.setHow), it.setBy, it.setOn, it.workshopName && "in " + it.workshopName].filter(Boolean).join(" · ") : "";
+
+function ItemPanel({ it, model, repo, apply, onPick, onDeleted }: PageProps & { it: ProcessItem; onPick: (id: string) => void; onDeleted: () => void }) {
   const l = useLook();
-  const save = (patch: Partial<ProcessArea>) => apply(m => repo.saveArea(m, a, patch));
-  const procs = processesOf(model, a.id);
+  const save = (patch: Partial<ProcessItem>) => apply(m => repo.saveItem(m, m.items.find(x => x.id === it.id) || it, patch));
+  const kids = childItems(model, it.id);
+  const e2e = levelUp(model.items, it, 1);
+  const products = productsOf(model.items, it);
   return (
-    <div className={l.card} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div className={l.row}><Tile icon={areaIcon(a.name, model.endToEnds.find(x => x.id === a.endToEndId)?.code || "")} colour={model.endToEnds.find(x => x.id === a.endToEndId)?.accent || C.railActive} size={36} /><Pill text="Process area" tone="info" /><span className={l.code}>{a.code}</span></div>
-      <div className={l.fields}>
-        <Field label="Name" hint={a.catalogName && a.catalogName !== a.name ? "Microsoft: " + a.catalogName : undefined}><Edit value={a.name} onSave={v => v.trim() && save({ name: v.trim() })} /></Field>
-        <Field label="Catalog ID"><Edit value={a.code} onSave={v => save({ code: v.trim() })} /></Field>
-        <Field label="In scope"><Switch checked={a.inScope} onChange={(_, d) => save({ inScope: d.checked })} /></Field>
+    <div className={l.card} style={{ display: "flex", flexDirection: "column", gap: 12 }} data-emph="item-panel">
+      <div className={l.row}>
+        {it.level <= 2 && <Tile icon={it.level === 1 ? endToEndIcon(it.code) : areaIcon(it.name, e2e?.code || "")} colour={e2e?.accent || C.railActive} size={36} filled={it.level === 1} />}
+        <Pill text={LEVEL_LABEL[it.level]} tone={it.level === 1 ? "brand" : "info"} /><span className={l.code}>{it.code}</span>
+        {it.isOwn && <Pill text="Our own" tone="info" />}
+        {!effectiveScope(model, it) && <Pill text="Not in scope" />}
+        <span style={{ flexGrow: 1 }} />
+        {it.isOwn && <Button size="small" appearance="subtle" icon={<Delete16Regular />} onClick={() => { if (window.confirm("Delete “" + it.name + "” and our own items below it?")) apply(async m => { const n = await repo.deleteOwnItem(m, it); onDeleted(); return n; }); }}>Delete</Button>}
       </div>
-      <Field label="Summary"><Edit multiline value={a.summary} onSave={v => save({ summary: v })} /></Field>
-      <div className={l.section}>Business processes ({procs.length})</div>
-      <table className={l.table}>
-        <thead><tr><th>ID</th><th>Business process</th><th>In scope</th><th>Review</th><th>Disposition</th></tr></thead>
-        <tbody>{procs.map(p => (
-          <tr key={p.id} className={l.tr} onClick={() => onPick("process", p.id)}>
-            <td className={l.code}>{p.code}</td><td>{p.name} {p.origin === ORIGIN.own && <Pill text="Our own" tone="info" />}</td>
-            <td onClick={ev => ev.stopPropagation()}><Switch checked={p.inScope} onChange={(_, d) => apply(m => repo.saveProcess(m, p, { inScope: d.checked }))} /></td>
-            <td><Pill text={REVIEW_LABEL[p.review] || ""} tone={p.review === REVIEW.confirmed ? "ok" : "neutral"} /></td>
-            <td>{p.disposition != null ? DISPOSITION_LABEL[p.disposition] : ""}</td>
-          </tr>
-        ))}</tbody>
-      </table>
-      <AddBox placeholder="Our own business process in this area" onAdd={name => apply(async m => { const r = await repo.addOwnProcess(m, a.id, name); onPick("process", r.process.id); return r.model; })} />
+      <div className={l.fields}>
+        <Field label="Name" hint={it.catalogName && it.catalogName !== it.name ? "Microsoft: " + it.catalogName : undefined}><Edit value={it.name} onSave={v => v.trim() && save({ name: v.trim() })} /></Field>
+        <Field label="Process sequence ID"><Edit value={it.code} onSave={v => save({ code: v.trim() })} /></Field>
+        <ScopeField it={it} model={model} repo={repo} apply={apply} />
+        <Field label="Scope reason"><Edit value={it.scopeReason} onSave={v => save({ scopeReason: v })} /></Field>
+        {it.level === 1 && <Field label="Accent colour"><Edit value={it.accent} onSave={v => save({ accent: v.trim() })} placeholder="#0D9488" /></Field>}
+        {it.level === 4 && <Field label="Fit gap status"><FitGapPick fitGap={it.fitGap} gapApproach={it.gapApproach} onSave={(fitGap, gapApproach) => save({ fitGap, gapApproach })} /></Field>}
+        {it.level === 4 && <Field label="Products" hint="The software that runs this scenario"><Edit value={it.products} onSave={v => save({ products: v })} /></Field>}
+      </div>
+      {setLine(it) && <div className={l.muted} style={{ fontSize: 12 }}>Set: {setLine(it)}</div>}
+      {it.level < 4 && products.length > 0 && <div className={l.row}><span className={l.muted} style={{ fontSize: 12 }}>Products, from the scenarios in scope:</span>{products.map(x => <Pill key={x} text={x} tone="brand" />)}</div>}
+      <Field label="Description"><Edit multiline value={it.summary} onSave={v => save({ summary: v })} /></Field>
+      {it.level < 4 && <>
+        <div className={l.section}>{LEVEL_LABEL[it.level + 1]}s ({kids.length})</div>
+        <table className={l.table}>
+          <thead><tr><th>ID</th><th>{LEVEL_LABEL[it.level + 1]}</th><th>Scope</th><th>Fit gap</th></tr></thead>
+          <tbody>{kids.map(k => (
+            <tr key={k.id} className={l.tr} onClick={() => onPick(k.id)} style={{ opacity: effectiveScope(model, k) ? 1 : 0.55 }}>
+              <td className={l.code}>{k.code}</td><td>{k.name} {k.isOwn && <Pill text="Our own" tone="info" />}</td>
+              <td onClick={ev => ev.stopPropagation()}><Switch checked={k.scope === SCOPE.in} onChange={(_, d) => apply(m => repo.setScope(m, m.items.find(x => x.id === k.id) || k, d.checked))} /></td>
+              <td>{labelOf("fitGapStatus", k.fitGap ?? itemFitGap(model.requirements, k.id).fitGap)}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+        <AddBox placeholder={"Our own " + LEVEL_LABEL[it.level + 1].toLowerCase() + " here"} onAdd={name => apply(async m => { const r = await repo.addOwnItem(m, it.id, name); onPick(r.item.id); return r.model; })} />
+      </>}
     </div>
   );
 }
 
-function ProcessPanel({ p, model, repo, apply, onDeleted }: PageProps & { p: BusinessProcess; onDeleted: () => void }) {
+function ProcessPanel({ p, model, repo, apply, onDeleted, onPick }: PageProps & { p: ProcessItem; onDeleted: () => void; onPick: (id: string) => void }) {
   const l = useLook();
   const [studio, setStudio] = React.useState(false);
-  const save = (patch: Partial<BusinessProcess>) => apply(m => repo.saveProcess(m, p, patch));
+  const save = (patch: Partial<ProcessItem>) => apply(m => repo.saveItem(m, m.items.find(x => x.id === p.id) || p, patch));
   const roles = rolesOf(model, p.id);
   const { reference, ours } = flowsOf(model, p.id);
-  const decisions = model.decisions.filter(d => d.processId === p.id);
-  const reqs = model.requirements.filter(r => r.processId === p.id);
-  const cov = processCoverage(model.requirements, p.id);
-  const targets = model.apps.filter(a => a.target);
+  const decisions = model.decisions.filter(d => d.itemId === p.id);
+  const scenarios = childItems(model, p.id);
+  const reqs = model.requirements.filter(r => r.itemId === p.id || scenarios.some(s => s.id === r.itemId));
+  const fromReqs = itemFitGap(model.requirements, p.id);
+  const products = productsOf(model.items, p);
+  const area = levelUp(model.items, p, 2);
+  const systems = model.systems.filter(s => s.itemId === p.id || s.itemId === area?.id);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }} data-emph="process-panel">
       <div className={l.card} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div className={l.row}>
           <span className={l.code}>{p.code}</span>
-          <Pill text={ORIGIN_LABEL[p.origin] || ""} tone={p.origin === ORIGIN.own ? "info" : "brand"} />
-          {!effectiveScope(model, p) && <Pill text="Out of scope" />}
-          {cov.coverage != null && <Pill text={"Coverage: " + COVERAGE_LABEL[cov.coverage]} tone={cov.coverage === COVERAGE.gap ? "bad" : cov.coverage === COVERAGE.standard ? "ok" : "warn"} />}
+          <Pill text={p.isOwn ? "Our own" : "Microsoft catalog"} tone={p.isOwn ? "info" : "brand"} />
+          {!effectiveScope(model, p) && <Pill text="Not in scope" />}
+          {fromReqs.gaps > 0 && <Pill text={fromReqs.gaps + " gap" + (fromReqs.gaps === 1 ? "" : "s") + " in requirements"} tone="bad" />}
           <span style={{ flexGrow: 1 }} />
-          {p.origin === ORIGIN.own && <Button size="small" appearance="subtle" icon={<Delete16Regular />} onClick={() => { if (window.confirm("Delete “" + p.name + "” and its flows? Requirements stay, marked for review.")) apply(async m => { const n = await repo.deleteOwnProcess(m, p); onDeleted(); return n; }); }}>Delete</Button>}
+          {p.isOwn && <Button size="small" appearance="subtle" icon={<Delete16Regular />} onClick={() => { if (window.confirm("Delete “" + p.name + "” and its flows? Requirements stay, marked for review.")) apply(async m => { const n = await repo.deleteOwnItem(m, p); onDeleted(); return n; }); }}>Delete</Button>}
         </div>
         <Edit value={p.name} onSave={v => v.trim() && save({ name: v.trim() })} />
         {p.catalogName && p.catalogName !== p.name && <div className={l.muted} style={{ fontSize: 12, marginTop: -6 }}>Microsoft name: {p.catalogName} <Button size="small" appearance="transparent" onClick={() => save({ name: p.catalogName })}>Use Microsoft's name</Button></div>}
         <div className={l.fields}>
-          <Field label="In scope"><Switch checked={p.inScope} onChange={(_, d) => save({ inScope: d.checked })} /></Field>
-          <Field label="Review"><Choice value={p.review} labels={REVIEW_LABEL} onChange={v => save({ review: v ?? REVIEW.open })} /></Field>
-          <Field label="Disposition" hint="What happens to how this is done today"><Choice value={p.disposition} labels={DISPOSITION_LABEL} onChange={v => save({ disposition: v })} /></Field>
-          <Field label="Process owner"><Pick value={p.ownerRoleId} items={model.roles} onChange={v => save({ ownerRoleId: v })} /></Field>
-          <Field label="Application today"><Pick value={p.currentAppId} items={model.apps} onChange={v => save({ currentAppId: v })} /></Field>
-          <Field label="Target application"><Pick value={p.targetAppId} items={targets.length ? targets : model.apps} onChange={v => save({ targetAppId: v })} /></Field>
-          <Field label="Users"><Edit value={p.users} onSave={v => save({ users: v })} placeholder="e.g. 20" /></Field>
+          <ScopeField it={p} model={model} repo={repo} apply={apply} />
+          <Field label="Scope reason"><Edit value={p.scopeReason} onSave={v => save({ scopeReason: v })} /></Field>
+          <Field label="Fit gap status" hint={p.fitGap == null && fromReqs.fitGap != null ? "Requirements say: " + labelOf("fitGapStatus", fromReqs.fitGap) : undefined}>
+            <FitGapPick fitGap={p.fitGap} gapApproach={p.gapApproach} onSave={(fitGap, gapApproach) => save({ fitGap, gapApproach })} />
+          </Field>
+          <Field label="Fit gap rationale"><Edit value={p.fitGapReason} onSave={v => save({ fitGapReason: v })} /></Field>
+          <Field label="Business process owner"><Edit value={p.owner} onSave={v => save({ owner: v })} placeholder={roles[0]?.name || "Name or role"} /></Field>
+          <Field label="Workstream lead"><Edit value={p.workstreamLead} onSave={v => save({ workstreamLead: v })} /></Field>
+          <Field label="Subject matter expert"><Edit value={p.sme} onSave={v => save({ sme: v })} /></Field>
+          <Field label="Baseline complexity"><ListChoice list="baselineComplexity" value={p.complexity} onChange={v => save({ complexity: v })} /></Field>
+          <Field label="Priority"><ListChoice list="priority" value={p.priority} onChange={v => save({ priority: v })} width={90} /></Field>
         </div>
+        {setLine(p) && <div className={l.muted} style={{ fontSize: 12 }} data-emph="set-line">Set: {setLine(p)}</div>}
         <Field label="Roles involved">
           <div className={l.row}>
-            {model.roles.map(r => <Checkbox key={r.id} label={r.name} checked={roles.some(x => x.id === r.id)} onChange={(_, d) => apply(m => repo.setProcessRoles(m, p.id, d.checked ? roles.map(x => x.id).concat(r.id) : roles.filter(x => x.id !== r.id).map(x => x.id)))} />)}
+            {model.roles.map(r => <Checkbox key={r.id} label={r.name} checked={roles.some(x => x.id === r.id)} onChange={(_, d) => apply(m => repo.setItemRoles(m, p.id, d.checked ? roles.map(x => x.id).concat(r.id) : roles.filter(x => x.id !== r.id).map(x => x.id)))} />)}
             {!model.roles.length && <span className={l.muted}>Add roles under Settings.</span>}
           </div>
         </Field>
-        <Field label="Summary"><Edit multiline value={p.summary} onSave={v => save({ summary: v })} /></Field>
+        <div className={l.row} data-emph="process-systems">
+          <span className={l.muted} style={{ fontSize: 12 }}>Today:</span>
+          {systems.length ? systems.map(s => <Pill key={s.id} text={s.name + (s.decision != null ? " · " + labelOf("systemDecision", s.decision) : "")} />) : <span className={l.muted} style={{ fontSize: 12 }}>no current system recorded (Systems page)</span>}
+          <span className={l.muted} style={{ fontSize: 12, marginLeft: 12 }}>Target:</span>
+          {products.length ? products.map(x => <Pill key={x} text={x} tone="brand" />) : <span className={l.muted} style={{ fontSize: 12 }}>no scenario in scope</span>}
+        </div>
+        <Field label="Description"><Edit multiline value={p.summary} onSave={v => save({ summary: v })} /></Field>
         <Field label="Comments"><Edit multiline value={p.comments} onSave={v => save({ comments: v })} /></Field>
+      </div>
+
+      <div className={l.card} style={{ display: "flex", flexDirection: "column", gap: 8 }} data-emph="scenarios">
+        <div className={l.section} style={{ marginTop: 0 }}>Scenarios ({scenarios.filter(s => effectiveScope(model, s)).length} of {scenarios.length} in scope)</div>
+        {scenarios.length > 0 && <table className={l.table}>
+          <thead><tr><th>ID</th><th>Scenario</th><th>Products</th><th>In scope</th><th>Fit gap status</th></tr></thead>
+          <tbody>{scenarios.map(s => {
+            const saveS = (patch: Partial<ProcessItem>) => apply(m => repo.saveItem(m, m.items.find(x => x.id === s.id) || s, patch));
+            return (
+              <tr key={s.id} style={{ opacity: effectiveScope(model, s) ? 1 : 0.55 }} data-emph="scenario-row">
+                <td className={l.code} onClick={() => onPick(s.id)} style={{ cursor: "pointer" }}>{s.code}</td><td onClick={() => onPick(s.id)} style={{ cursor: "pointer" }}>{s.name}</td>
+                <td className={l.muted} style={{ fontSize: 12 }}>{s.products}</td>
+                <td><Switch checked={s.scope === SCOPE.in} onChange={(_, d) => apply(m => repo.setScope(m, m.items.find(x => x.id === s.id) || s, d.checked))} /></td>
+                <td><FitGapPick fitGap={s.fitGap} gapApproach={s.gapApproach} onSave={(fitGap, gapApproach) => saveS({ fitGap, gapApproach })} /></td>
+              </tr>
+            );
+          })}</tbody>
+        </table>}
+        <AddBox placeholder="Our own scenario in this business process" onAdd={name => apply(async m => (await repo.addOwnItem(m, p.id, name)).model)} />
       </div>
 
       <div className={l.card} style={{ display: "flex", alignItems: "center", gap: 14 }}>
@@ -189,22 +243,21 @@ function ProcessPanel({ p, model, repo, apply, onDeleted }: PageProps & { p: Bus
 
       <div className={l.card} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div className={l.section} style={{ marginTop: 0 }}>Requirements ({reqs.length})</div>
-        <Capture model={model} repo={repo} apply={apply} processId={p.id} />
-        {reqs.length > 0 && <RequirementList model={model} repo={repo} apply={apply} rows={reqs} hideProcess />}
+        <Capture model={model} repo={repo} apply={apply} itemId={p.id} />
+        {reqs.length > 0 && <RequirementList model={model} repo={repo} apply={apply} rows={reqs} hideItem />}
       </div>
     </div>
   );
 }
 
-export function DecisionRow({ d, model, repo, apply }: { d: ConfigDecision; model: Model; repo: Repository; apply: PageProps["apply"] }) {
+export function DecisionRow({ d, repo, apply }: { d: ConfigDecision; model: Model; repo: Repository; apply: PageProps["apply"] }) {
   const l = useLook();
   const save = (patch: Partial<ConfigDecision>) => apply(m => repo.saveDecision(m, d, patch));
-  const app = model.apps.find(a => a.id === d.appId);
   return (
     <div style={{ borderTop: "1px solid " + C.line, paddingTop: 10, display: "grid", gridTemplateColumns: "1fr minmax(200px, 300px) auto", gap: 10, alignItems: "start" }}>
       <div>
         <div className={l.row}><span className={l.code}>{d.code}</span><span style={{ fontWeight: 600 }}>{d.question}</span></div>
-        {(d.guidance || d.menuPath || app) && <div className={l.muted} style={{ fontSize: 12, marginTop: 2 }}>{[app?.name, d.menuPath, d.guidance].filter(Boolean).join(" · ")}</div>}
+        {(d.guidance || d.menuPath || d.product) && <div className={l.muted} style={{ fontSize: 12, marginTop: 2 }}>{[d.product, d.menuPath, d.guidance].filter(Boolean).join(" · ")}</div>}
         {d.sourceLink && <a href={d.sourceLink} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>{d.sourceLabel || "Microsoft Learn"}</a>}
       </div>
       <Answer d={d} onSave={answer => save({ answer, state: answer.trim() ? DECISION_STATE.decided : DECISION_STATE.open })} />

@@ -4,11 +4,11 @@ import { Button, Field, Input, Spinner, Dialog, DialogSurface, DialogBody, Dialo
 import { Print20Regular, ArrowDownload20Regular, Delete16Regular } from "@fluentui/react-icons";
 import { C, useLook } from "../look";
 import { Pill, Pick, Choice, Apply } from "../kit";
-import { REVIEW, DISPOSITION_LABEL, DECISION_STATE, SHAPE, DELTA, LICENCE_LABEL } from "../../domain/codes";
+import { SCOPE, DECISION_STATE, SHAPE, DELTA, LICENCE_LABEL, labelOf } from "../../domain/codes";
 import { buildAgenda, agendaHtml, AgendaBlock, processKeyOf, activityCodeOf } from "../../domain/session";
-import { isActive } from "../../domain/rules";
+import { isActive, productsOf, levelUp } from "../../domain/rules";
 import { loadActivities, flowsOf, Repository } from "../../domain/repository";
-import type { Model, Workshop, BusinessProcess, Activity, Role } from "../../domain/types";
+import type { Model, Workshop, ProcessItem, Activity, Role } from "../../domain/types";
 
 /** Our process if there is one, else Microsoft's reference, without dropped activities, in flow order. */
 async function flowOf(model: Model, repo: Repository, processId: string): Promise<Activity[]> {
@@ -18,7 +18,7 @@ async function flowOf(model: Model, repo: Repository, processId: string): Promis
   return (await loadActivities(repo.g, f.id)).filter(a => a.delta !== DELTA.removed).sort((a, b) => a.rank - b.rank);
 }
 
-export function FacilitatorAgenda({ w, model, repo, agenda }: { w: Workshop; model: Model; repo: Repository; agenda: BusinessProcess[] }) {
+export function FacilitatorAgenda({ w, model, repo, agenda }: { w: Workshop; model: Model; repo: Repository; agenda: ProcessItem[] }) {
   const l = useLook();
   const [acts, setActs] = React.useState<Record<string, Activity[]> | null>(null);
   const ids = agenda.map(p => p.id).join(",");
@@ -28,13 +28,13 @@ export function FacilitatorAgenda({ w, model, repo, agenda }: { w: Workshop; mod
     return () => { live = false; };
   }, [ids, model.flows.length]);
   if (!acts) return <Spinner size="tiny" label="Preparing the agenda" />;
-  const app = (id: string | null) => model.apps.find(a => a.id === id)?.name || "";
+  const today = (p: ProcessItem) => { const a = levelUp(model.items, p, 2); return model.systems.filter(s => s.itemId === p.id || (a && s.itemId === a.id)).map(s => s.name + (s.decision != null ? " (" + labelOf("systemDecision", s.decision) + ")" : "")); };
   const blocks: AgendaBlock[] = agenda.map(p => ({
-    key: p.id, code: p.code, name: p.name, notUsed: p.review === REVIEW.notUsed, appToday: app(p.currentAppId), appTarget: app(p.targetAppId),
-    disposition: p.disposition != null ? DISPOSITION_LABEL[p.disposition] || "" : "",
-    roles: model.processRoles.filter(x => x.processId === p.id).map(x => model.roles.find(r => r.id === x.roleId)?.name || "").filter(Boolean),
-    scope: model.requirements.filter(r => r.processId === p.id && isActive(r)).map(r => r.reqId ? r.reqId + " " + r.name : r.name),
-    openQuestions: model.decisions.filter(d => d.processId === p.id && d.state !== DECISION_STATE.decided).length,
+    key: p.id, code: p.code, name: p.name, notUsed: p.scope === SCOPE.na, systemsToday: today(p), products: productsOf(model.items, p),
+    fitGap: p.fitGap != null ? labelOf("fitGapStatus", p.fitGap) : "",
+    roles: model.itemRoles.filter(x => x.itemId === p.id).map(x => model.roles.find(r => r.id === x.roleId)?.name || "").filter(Boolean),
+    scope: model.requirements.filter(r => r.itemId === p.id && isActive(r)).map(r => r.reqId ? r.reqId + " " + r.name : r.name),
+    openQuestions: model.decisions.filter(d => d.itemId === p.id && d.state !== DECISION_STATE.decided).length,
     activities: (acts[p.id] || []).filter(a => a.shape !== SHAPE.start && a.shape !== SHAPE.end).map(a => ({ name: a.name, decision: a.shape === SHAPE.decision })),
   }));
   const plan = buildAgenda(blocks);
@@ -74,7 +74,7 @@ export function FacilitatorAgenda({ w, model, repo, agenda }: { w: Workshop; mod
 
 /** Our process step by step: each click is a timed visit "processId#activityCode", so transcript lines land on the step. */
 export function FlowWalk({ w, model, repo, apply, p, acts, closed, onVisit, onAdapted, onOpenStudio }: {
-  w: Workshop; model: Model; repo: Repository; apply: Apply; p: BusinessProcess; acts: Activity[] | null; closed: boolean;
+  w: Workshop; model: Model; repo: Repository; apply: Apply; p: ProcessItem; acts: Activity[] | null; closed: boolean;
   onVisit: (key: string, name: string) => void; onAdapted: () => void; onOpenStudio: () => void;
 }) {
   const l = useLook();
@@ -146,7 +146,7 @@ export function LicenceDialog({ model, quote, onSave, onClose }: { model: Model;
   const role = model.roles.find(r => r.id === roleId) || null;
   const [type, setType] = React.useState<number | null>(null);
   const [people, setPeople] = React.useState("");
-  React.useEffect(() => { if (role) { setType(role.licenceType ?? null); setPeople(role.licenceUsers != null ? String(role.licenceUsers) : role.headcount != null ? String(role.headcount) : ""); } }, [roleId]);
+  React.useEffect(() => { if (role) { setType(role.licenceType ?? null); setPeople(role.headcount != null ? String(role.headcount) : ""); } }, [roleId]);
   return (
     <Dialog open onOpenChange={(_, d) => { if (!d.open) onClose(); }}>
       <DialogSurface style={{ maxWidth: 520 }}><DialogBody>
