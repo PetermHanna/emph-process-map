@@ -19,11 +19,13 @@ export function Pill({ text, tone = "neutral" }: { text: string; tone?: "neutral
 }
 
 /** Choice from an option set; empty means none. */
-export function Choice({ value, labels, onChange, placeholder = "Not set", disabled, width }: { value: number | null; labels: Record<number, string>; onChange: (v: number | null) => void; placeholder?: string; disabled?: boolean; width?: number }) {
+export function Choice({ value, labels, onChange, placeholder = "Not set", disabled, width, required }: { value: number | null; labels: Record<number, string>; onChange: (v: number | null) => void; placeholder?: string; disabled?: boolean; width?: number; required?: boolean }) {
+  // no empty entry when a value is required, or when the empty entry would read like one of the values (e.g. "10 - Unspecified")
+  const empty = !required && !Object.values(labels).includes(placeholder);
   return (
     <Dropdown disabled={disabled} style={{ minWidth: width || 150 }} value={value != null ? labels[value] || "" : ""} placeholder={placeholder} selectedOptions={value != null ? [String(value)] : []}
       onOptionSelect={(_, d) => onChange(d.optionValue ? Number(d.optionValue) : null)}>
-      <Option value="">{placeholder}</Option>
+      {empty && <Option value="">{placeholder}</Option>}
       {Object.keys(labels).map(k => <Option key={k} value={k}>{labels[Number(k)]}</Option>)}
     </Dropdown>
   );

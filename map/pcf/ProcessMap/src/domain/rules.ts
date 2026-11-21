@@ -136,6 +136,35 @@ export const canApprove = (s: { version: number; state: number }, all: { version
   s.state === SIGNOFF.review && !all.some(x => x.state === SIGNOFF.approved && x.version > s.version);
 
 /** IDs for our own process items run in their own series, apart from Microsoft's catalog numbers. */
+/**
+ * Microsoft's rules for a project's own catalog items (Learn, "About work item types", 2026-11): don't add end-to-end processes;
+ * don't add process areas unless Microsoft's Business Process Excellence team approves; add business processes only when
+ * absolutely necessary; scenarios (level 4) are where a project normally extends the catalog.
+ */
+export const OWN_RULE: Record<number, { allowed: boolean; reason: string; note: string }> = {
+  1: { allowed: false, reason: "", note: "Microsoft: don't add end-to-end processes in an implementation project. Rename one instead, or use a process area under it." },
+  2: { allowed: true, reason: "Microsoft's approval", note: "Microsoft: don't add process areas unless Microsoft's Business Process Excellence team approves. Note who approved it." },
+  3: { allowed: true, reason: "Why the catalog doesn't cover it", note: "Microsoft: add business processes only when absolutely necessary, and propose them at aka.ms/businessprocesscatalogrequests." },
+  4: { allowed: true, reason: "", note: "Scenarios are where a project extends Microsoft's catalog: name it verb + noun + using product." },
+};
+export const ownItemProblem = (level: number, name: string, reason: string): string | null => {
+  const r = OWN_RULE[level];
+  if (!r || !r.allowed) return r ? r.note : "Process items go up to level 4.";
+  if (!name.trim()) return "A process item needs a name.";
+  if (r.reason && !reason.trim()) return r.reason + " is needed: " + r.note;
+  return null;
+};
+/**
+ * The process sequence ID of our own item under its parent, after Microsoft's numbers: areas from parent.90, business
+ * processes and scenarios from parent.900, skipping codes already used (e.g. 20.90, 20.10.900, 20.10.010.900).
+ */
+export function ownCode(parentCode: string, level: number, codes: string[]): string {
+  const width = level === 2 ? 2 : 3, start = level === 2 ? 90 : 900, max = level === 2 ? 99 : 999;
+  const used = new Set(codes);
+  for (let n = start; n <= max; n++) { const c = (parentCode ? parentCode + "." : "") + String(n).padStart(width, "0"); if (!used.has(c)) return c; }
+  return nextOwnCode(codes);
+}
+
 export function nextOwnCode(codes: string[]): string {
   const max = Math.max(0, ...codes.map(x => /^X(\d+)$/.exec(x)).filter(Boolean).map(m => Number((m as RegExpExecArray)[1])));
   return "X" + String(max + 1).padStart(3, "0");

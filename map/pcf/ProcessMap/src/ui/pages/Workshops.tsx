@@ -4,7 +4,7 @@ import * as React from "react";
 import { Button, Field, Input, Switch, Checkbox, Tooltip, ToggleButton, Dialog, DialogSurface, DialogBody, DialogTitle, DialogContent, DialogActions, Spinner } from "@fluentui/react-components";
 import { ChevronLeft20Regular, ChevronRight20Regular, Delete16Regular, Screenshot20Regular, TextQuote20Regular, ArrowUp16Regular, ArrowDown16Regular } from "@fluentui/react-icons";
 import { C, useLook } from "../look";
-import { PageProps, Pill, Pick, Choice, ListChoice, FitGapPick, Edit, AddBox, Empty } from "../kit";
+import { PageProps, Pill, Pick, Choice, ListChoice, FitGapPick, Edit, AddBox, Empty, ScopePick } from "../kit";
 import type { Nav } from "../Shell";
 import { SESSION, LICENCE_LABEL, HOW, RAID, RAID_STATUS, SYSTEM, FIT_GAP, APPROVAL, labelOf, option } from "../../domain/codes";
 import { visit, readBackItems, transcriptDecisions, sourceLine, usedLines, processKeyOf, activityCodeOf, reviewOf, undoRule, withReview, isFacilitator, reviewCounts, ReviewType, PrepSection } from "../../domain/session";
@@ -60,7 +60,7 @@ export function Workshops({ model, repo, apply }: PageProps & { nav: Nav }) {
           <span>New</span>
           <span data-emph="workshop-kind"><Choice value={kindIx} labels={KIND_LABELS} onChange={v => setKindIx(v ?? 0)} width={220} /></span>
           <span>for</span>
-          <Pick value={e2e} items={itemsAt(model, 1).filter(x => effectiveScope(model, x)).map(x => ({ ...x, name: x.code + " " + x.name }))} onChange={setE2e} placeholder={kind === "discovery" ? "All in scope" : "Pick an end-to-end process"} width={260} />
+          <Pick value={e2e} items={itemsAt(model, 1).filter(x => kind === "board" || effectiveScope(model, x)).map(x => ({ ...x, name: x.code + " " + x.name + (kind === "board" && !effectiveScope(model, x) ? " (not in scope yet)" : "") }))} onChange={setE2e} placeholder={kind === "discovery" ? "All in scope" : "Pick an end-to-end process"} width={260} />
           {tpls.length > 1 && <span data-emph="workshop-template"><Pick value={tpl?.id || null} items={tpls.map(t => ({ id: t.id, name: t.id + " " + t.title }))} onChange={setTplId} width={320} /></span>}
           <Button appearance="primary" data-emph="workshop-new" disabled={!canStart} onClick={start}>Start</Button>
         </div>
@@ -341,8 +341,10 @@ function Prepare({ model, repo, apply, w, run, tpl, e2e, processes, save, saveRu
 }) {
   const l = useLook();
   const kind = run.kind;
-  const areas = (w.itemId ? childItems(model, w.itemId) : itemsAt(model, 2)).slice().sort((x, y) => x.code.localeCompare(y.code, undefined, { numeric: true }))
-    .map(a => ({ a, ps: childItems(model, a.id).filter(p => effectiveScope(model, p) || w.session.processIds.includes(p.id)) })).filter(x => x.ps.length);
+  // every area of the workshop's end-to-end process (or of those in scope), so the room can bring an area in or take it out here
+  const units = w.itemId ? [w.itemId] : itemsAt(model, 1).filter(x => effectiveScope(model, x)).map(x => x.id);
+  const areas = units.flatMap(id => childItems(model, id)).sort((x, y) => x.code.localeCompare(y.code, undefined, { numeric: true }))
+    .map(a => ({ a, ps: childItems(model, a.id).filter(p => effectiveScope(model, p) || w.session.processIds.includes(p.id)), all: childItems(model, a.id).length }));
   const pickProcess = (p: ProcessItem, on: boolean) => apply(m => {
     const cur = m.workshops.find(x => x.id === w.id) || w;
     const ids = on ? cur.session.processIds.concat(p.id) : cur.session.processIds.filter(x => x !== p.id);
@@ -389,11 +391,13 @@ function Prepare({ model, repo, apply, w, run, tpl, e2e, processes, save, saveRu
       )}
       {kind === "discovery" && <>
         <div className={l.section}>Business processes on the agenda</div>
-        <div className={l.muted} style={{ fontSize: 12 }}>The business processes in scope{w.itemId ? " in this end-to-end process" : ""}. To add others, put them in scope on Our processes.</div>
-        {!areas.length && <div className={l.muted}>Nothing in scope here yet.</div>}
-        <div style={{ columns: 2 }} data-emph="agenda-pick">{areas.map(({ a, ps }) => (
-          <div key={a.id} style={{ breakInside: "avoid", marginBottom: 8 }}>
-            <div style={{ fontWeight: 600, fontSize: 12, color: C.muted }}><span className={l.code}>{a.code}</span> {a.name}</div>
+        <div className={l.muted} style={{ fontSize: 12 }}>Every process area {w.itemId ? "of this end-to-end process" : "of the end-to-end processes in scope"}, with its scope. Put an area in scope to list its business processes; take one out to drop them.</div>
+        {!areas.length && <div className={l.muted}>No process areas here.</div>}
+        <div style={{ columns: 2 }} data-emph="agenda-pick">{areas.map(({ a, ps, all }) => (
+          <div key={a.id} style={{ breakInside: "avoid", marginBottom: 8 }} data-emph="agenda-area" data-code={a.code}>
+            <div style={{ fontWeight: 600, fontSize: 12, color: C.muted, display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}><span className={l.code}>{a.code}</span> {a.name}
+              <ScopePick it={a} repo={repo} apply={apply} width={150} reason={false} />
+              {!ps.length && <span style={{ fontWeight: 400 }}>{all} business processes</span>}</div>
             {ps.map(p => <Checkbox key={p.id} label={p.code + " " + p.name + (effectiveScope(model, p) ? "" : " (out of scope)")} checked={w.session.processIds.includes(p.id)} onChange={(_, d) => pickProcess(p, !!d.checked)} />)}
           </div>
         ))}</div>

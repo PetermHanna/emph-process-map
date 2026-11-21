@@ -182,8 +182,8 @@ window.EMPH_LOAD = async (catalog, S, add, say = () => {}, flows = null, allFlow
         count += 1 + (p.scenarios || []).length;
       }
       for (const [k, [, name, owner, now, products, fitGap, approach]] of (ownBy.get(a.code) || []).entries()) {
-        const pid = procs[name] = await item(3, aid, { emph_name: name, emph_catalogcode: 'X' + String(k + 1).padStart(3, '0'), emph_rank: 9000 + k, emph_scope: O('scope', '10 - Unspecified'),
-          emph_isown: true, emph_author: O('author', 'Project'), emph_catalogstatus: O('catalogStatus', '50 - Custom'), emph_summary: 'Our own process.', emph_products: products || null,
+        const pid = procs[name] = await item(3, aid, { emph_name: name, emph_catalogcode: a.code + '.' + String(900 + k), emph_rank: 9000 + k, emph_scope: O('scope', '10 - Unspecified'),
+          emph_isown: true, emph_author: O('author', 'Project'), emph_catalogstatus: O('catalogStatus', '50 - Custom'), emph_summary: "Why the catalog doesn't cover it: our own process.", emph_products: products || null,
           emph_businessprocessowner: owner || null, emph_fitgapstatus: O('fitGapStatus', fitGap), emph_gapsolutionapproach: O('gapSolutionApproach', approach), ...migrated });
         await roleOn(pid, owner);
         if (now) (systemsIn[now] = systemsIn[now] || new Set()).add(aid);

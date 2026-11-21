@@ -6,7 +6,7 @@ import { C, useLook } from "../look";
 import { PageProps, Pill, Choice, ListChoice, FitGapPick, Edit, AddBox, Empty, ScopePick } from "../kit";
 import type { Nav } from "../Shell";
 import { ANSWER, ANSWER_LABEL, DECISION_STATE, FIT_GAP, FLOW_STATE, SCOPE, LEVEL_LABEL, labelOf } from "../../domain/codes";
-import { itemFitGap, productsOf, levelUp, offAbove, isOff, fitFromScenarios, softwareOf } from "../../domain/rules";
+import { itemFitGap, productsOf, levelUp, offAbove, isOff, fitFromScenarios, softwareOf, OWN_RULE } from "../../domain/rules";
 import { ItemHistory } from "./History";
 import { childItems, rolesOf, flowsOf, effectiveScope, itemsAt, itemLabel } from "../../domain/repository";
 import type { ConfigDecision, Model, ProcessItem } from "../../domain/types";
@@ -72,7 +72,7 @@ export function Processes({ model, repo, apply, nav }: PageProps & { nav: Nav })
             </React.Fragment>
           ))}
         </div>
-        <div style={{ marginTop: 10 }}><AddBox placeholder="Our own end-to-end process" onAdd={name => apply(async m => { const r = await repo.addOwnItem(m, null, name); setSel(r.item.id); return r.model; })} /></div>
+        <div className={l.muted} style={{ marginTop: 10, fontSize: 12 }} data-emph="own-e2e-rule">{OWN_RULE[1].note}</div>
       </div>
       <div>
         {!cur && <Empty title="Pick an item" text="Choose an end-to-end process, a process area, a business process or a scenario on the left." />}
@@ -164,7 +164,7 @@ function ItemPanel({ it, model, repo, apply, onPick, onDeleted }: PageProps & { 
             </tr>
           ))}</tbody>
         </table>
-        {it.level < 3 && <AddBox placeholder={"Our own " + LEVEL_LABEL[it.level + 1].toLowerCase() + " here"} onAdd={name => apply(async m => { const r = await repo.addOwnItem(m, it.id, name); onPick(r.item.id); return r.model; })} />}
+        {it.level < 3 && <OwnItem level={it.level + 1} onAdd={(name, reason) => apply(async m => { const r = await repo.addOwnItem(m, it.id, name, "", reason); onPick(r.item.id); return r.model; })} />}
       </>}
     </div>
   );
@@ -272,6 +272,29 @@ function ProcessPanel({ p, model, repo, apply, onDeleted, onPick }: PageProps & 
 }
 
 /** Our own scenario: Microsoft names level 4 "<process> by using <software>"; Products Other, the software in Software solutions. */
+/** Our own process area or business process, with the reason Microsoft asks for (its approval, or why the catalog doesn't cover it). */
+function OwnItem({ level, onAdd }: { level: number; onAdd: (name: string, reason: string) => void }) {
+  const l = useLook();
+  const [open, setOpen] = React.useState(false);
+  const [name, setName] = React.useState("");
+  const [reason, setReason] = React.useState("");
+  const rule = OWN_RULE[level];
+  const go = () => { if (!name.trim() || !reason.trim()) return; onAdd(name.trim(), reason.trim()); setName(""); setReason(""); setOpen(false); };
+  if (!open) return <Button size="small" appearance="subtle" icon={<Add16Regular />} data-emph="own-item-open" onClick={() => setOpen(true)}>{"Our own " + LEVEL_LABEL[level].toLowerCase()}</Button>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, borderLeft: "3px solid " + C.warn, paddingLeft: 8 }} data-emph="own-item">
+      <div style={{ fontSize: 12, color: C.warn }}>{rule.note}</div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <Input style={{ flexGrow: 1, minWidth: 220 }} value={name} placeholder={"Our own " + LEVEL_LABEL[level].toLowerCase()} onChange={(_, d) => setName(d.value)} />
+        <Input style={{ flexGrow: 1, minWidth: 220 }} value={reason} placeholder={rule.reason} onChange={(_, d) => setReason(d.value)} onKeyDown={e => { if (e.key === "Enter") go(); }} />
+        <Button icon={<Add16Regular />} disabled={!name.trim() || !reason.trim()} onClick={go}>Add</Button>
+        <Button appearance="subtle" onClick={() => setOpen(false)}>Cancel</Button>
+      </div>
+      <span className={l.muted} style={{ fontSize: 11 }}>It gets a number after Microsoft's under this item, Catalog status 50 - Custom and Author Project.</span>
+    </div>
+  );
+}
+
 function OwnScenario({ onAdd, example }: { onAdd: (name: string, software: string) => void; example: string }) {
   const [name, setName] = React.useState("");
   const [software, setSoftware] = React.useState("");

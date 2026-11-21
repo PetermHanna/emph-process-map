@@ -911,3 +911,21 @@ test("a requirement opens its flow at its step: the link's words", () => {
   assert.equal(R.flowLinkText({ code: "80.20.010", name: "Estimate projects" }, "Approve the estimate"), "Open flow: 80.20.010 Estimate projects › Approve the estimate");
   assert.equal(R.flowLinkText({ code: "", name: "Own process" }, null), "Open flow: Own process");
 });
+
+// ---------- Microsoft's rules for our own catalog items ----------
+test("own items follow Microsoft: no end-to-end, areas need approval, business processes need a reason, scenarios are free", () => {
+  assert.match(R.ownItemProblem(1, "Our e2e", "any"), /don't add end-to-end processes/);
+  assert.match(R.ownItemProblem(2, "Our area", ""), /Microsoft's approval/);
+  assert.equal(R.ownItemProblem(2, "Our area", "Approved by BPE, 2026-11"), null);
+  assert.match(R.ownItemProblem(3, "Our process", " "), /Why the catalog doesn't cover it/);
+  assert.equal(R.ownItemProblem(3, "Our process", "Regulated in our country"), null);
+  assert.equal(R.ownItemProblem(4, "Sell assets by using SAP S/4HANA", ""), null);
+  assert.match(R.ownItemProblem(4, " ", ""), /needs a name/);
+  assert.match(R.ownItemProblem(5, "Too deep", ""), /level 4/);
+});
+
+test("own items are numbered under their parent, after Microsoft's numbers", () => {
+  assert.equal(R.ownCode("20", 2, ["20", "20.10", "20.90"]), "20.91");
+  assert.equal(R.ownCode("20.10", 3, ["20.10.010", "20.10.900"]), "20.10.901");
+  assert.equal(R.ownCode("20.10.010", 4, ["20.10.010.100"]), "20.10.010.900");
+});

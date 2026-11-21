@@ -559,7 +559,61 @@
     if (back.emph_scope !== written[0].before.scope || back.emph_sethow !== 582100004) throw new Error("undo: " + back.emph_scope + " how " + back.emph_sethow);
     return items + " conclusion items agreed, Close wrote " + written.length + " (" + written.map(x => x.label).join("; ").slice(0, 120) + "), How Workshop, history, child task ticked; next: " + next + "; undo restored";
   }
-  const ALL = { pages, mainMap, processAndFlow, guide, capture, fitGap, signOff, workshop, transcript, review, systems, raid, history, changeRequest, licences, boards, board, storyline, quickTrack, close };
+
+  // Catalog rules (Peter, 2026-11-21): no duplicate "10 - Unspecified"; areas in and out from a discovery workshop's Prepare;
+  // the scenario board offers end-to-end processes not in scope yet; own items follow Microsoft's rules and numbering.
+  async function catalogRules() {
+    const item = code => rows("emph_processitem").find(x => x.emph_catalogcode === code);
+    const options = async combo => { combo.click(); await wait(300); const o = [...document.querySelectorAll('[role="option"]')]; return o; };
+    // 1 the scope list has each value once
+    await nav("overview");
+    const combo = await until(() => q('[data-emph="scope-pick"] [role="combobox"]'));
+    const labels = (await options(combo)).map(o => o.innerText.trim());
+    document.body.click(); await wait(200);
+    if (labels.filter(x => x === "10 - Unspecified").length !== 1) throw new Error("scope options: " + labels.join(", "));
+    // 2 a discovery workshop's Prepare lists every area with its scope; an area comes in and goes out there
+    await nav("workshops");
+    if (!q('[data-emph="workshop-new"]')) { button(/All workshops/)?.click(); await wait(300); }
+    q('[data-emph="workshop-new"]').click();
+    const areas = await until(() => { const a = document.querySelectorAll('[data-emph="agenda-area"]'); return a.length && a; });
+    const off = [...areas].find(a => a.querySelector('[data-emph="scope-pick"]') && /10 - Unspecified|30 - Out of scope/.test(a.querySelector('[data-emph="scope-pick"]').innerText));
+    if (!off) throw new Error("no area outside scope listed in Prepare");
+    const code = off.dataset.code;
+    let o = await options(off.querySelector('[data-emph="scope-pick"] [role="combobox"]'));
+    o.find(x => x.innerText.trim() === "20 - In scope").click();
+    await until(() => item(code).emph_scope === 582100001);
+    const listed = await until(() => { const a = q('[data-emph="agenda-area"][data-code="' + code + '"]'); return a && a.querySelectorAll('input[type="checkbox"]').length > 0 && a; });
+    o = await options(listed.querySelector('[data-emph="scope-pick"] [role="combobox"]'));
+    o.find(x => x.innerText.trim() === "30 - Out of scope").click();
+    await until(() => item(code).emph_scope === 582100002);
+    // 3 the scenario board offers an end-to-end process that isn't in scope yet
+    button(/All workshops/)?.click(); await wait(300);
+    o = await options(q('[data-emph="workshop-kind"] [role="combobox"]') || q('[data-emph="workshop-kind"]'));
+    o.find(x => /^Scenario board/.test(x.innerText.trim())).click(); await wait(300);
+    const e2eCombo = [...document.querySelectorAll('[role="combobox"]')].find(c => /end-to-end|All in scope/i.test(c.innerText || c.value || c.placeholder || ""));
+    o = await options(e2eCombo);
+    const notYet = o.filter(x => /not in scope yet/.test(x.innerText)).length;
+    document.body.click(); await wait(200);
+    if (!notYet) throw new Error("board offers only end-to-end processes in scope");
+    // 4 own items: no own end-to-end; an own area needs Microsoft's approval and is numbered under its end-to-end process
+    await nav("processes");
+    if (!q('[data-emph="own-e2e-rule"]')) throw new Error("own end-to-end still offered");
+    const tree = q('[data-emph="process-tree"]');
+    [...tree.querySelectorAll("div")].find(d => /^20\s*Case to resolution$/.test(d.innerText.trim())).click(); await wait(400);
+    (await until(() => q('[data-emph="own-item-open"]'))).click();
+    const form = await until(() => q('[data-emph="own-item"]'));
+    const [nameBox, reasonBox] = form.querySelectorAll("input");
+    const set = (el, v) => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(el, v); el.dispatchEvent(new Event("input", { bubbles: true })); };
+    set(nameBox, "Our test area"); await wait(100);
+    const add = [...form.querySelectorAll("button")].find(b => b.innerText.trim() === "Add");
+    if (!add.disabled) throw new Error("own area added without Microsoft's approval");
+    set(reasonBox, "Approved by Microsoft BPE (made-up test)"); await wait(100);
+    add.click();
+    const own = await until(() => rows("emph_processitem").find(x => x.emph_name === "Our test area"));
+    if (!/^20\.9\d$/.test(own.emph_catalogcode) || !/Microsoft's approval: Approved/.test(own.emph_summary || "")) throw new Error("own area: " + own.emph_catalogcode + " / " + own.emph_summary);
+    return "scope list without duplicate; area " + code + " in and out from Prepare; board offers " + notYet + " not in scope yet; own area " + own.emph_catalogcode + " with approval, no own end-to-end";
+  }
+  const ALL = { pages, mainMap, processAndFlow, guide, capture, fitGap, signOff, workshop, transcript, review, systems, raid, history, changeRequest, licences, boards, board, storyline, quickTrack, close, catalogRules };
   window.__tests = {
     ...ALL,
     async all() { const r = {}; for (const [k, f] of Object.entries(ALL)) { try { r[k] = await f(); } catch (e) { r[k] = "FAIL " + (f.step ? "at step " + f.step + ": " : "") + e.message; } } return r; },

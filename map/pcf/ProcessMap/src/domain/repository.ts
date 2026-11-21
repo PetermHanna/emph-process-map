@@ -6,7 +6,7 @@ import {
   HOW, RAID, RAID_STATUS, PRODUCT_OTHER, LICENCE, PROPOSAL, FIT_GAP, labelOf, option,
 } from "./codes";
 import {
-  isActive, freeze, FrozenItem, titleOf, requirementProblem, flowDeltas, coveredBy, deltaText, touchedByHand, canApprove, nextOwnCode, starterActivities,
+  isActive, freeze, FrozenItem, titleOf, requirementProblem, flowDeltas, coveredBy, deltaText, touchedByHand, canApprove, nextOwnCode, ownCode, ownItemProblem, OWN_RULE, starterActivities,
   inScope, childrenOf, ancestorsOf, descendantsOf, levelUp, fitGapProblem, scopeDecided, scopeProblem, fitGapLevel, isOff, HISTORY_FIELDS, HistoryField, historyText,
   restorePatch, raidProblem, raidStart, changeRequestFor, Difference, nextActivityCode,
 } from "./rules";
@@ -333,14 +333,15 @@ export class Repository {
    * Our own item under `parentId` (level = the parent's + 1): an X-numbered code, Author Project, Catalog status 50 - Custom,
    * in scope. Our own scenario (level 4) runs on other software: Products "Other" and its Software solutions.
    */
-  async addOwnItem(m: Model, parentId: string | null, name: string, softwareSolution = ""): Promise<{ model: Model; item: ProcessItem }> {
+  async addOwnItem(m: Model, parentId: string | null, name: string, softwareSolution = "", reason = ""): Promise<{ model: Model; item: ProcessItem }> {
     const title = name.trim();
-    if (!title) throw new Error("A process item needs a name.");
     const parent = m.items.find(x => x.id === parentId);
     const level = parent ? parent.level + 1 : 1;
-    if (level > 4) throw new Error("Scenarios (level 4) are the lowest level.");
+    const problem = ownItemProblem(level, title, reason);
+    if (problem) throw new Error(problem);
     const siblings = childrenOf(m.items, parentId);
-    const it = blankItem({ level, parentId, code: nextOwnCode(m.items.map(x => x.code)), name: title, rank: Math.max(0, ...siblings.map(x => x.rank)) + 10, scope: level === 3 ? SCOPE.unspecified : SCOPE.in,
+    // Microsoft's rules for own items: numbered under the parent, the reason kept in the description
+    const it = blankItem({ level, parentId, code: ownCode(parent?.code || "", level, m.items.map(x => x.code)), name: title, summary: reason.trim() ? (OWN_RULE[level]?.reason || "Reason") + ": " + reason.trim() : "", rank: Math.max(0, ...siblings.map(x => x.rank)) + 10, scope: level === 3 ? SCOPE.unspecified : SCOPE.in,
       isOwn: true, author: AUTHOR.project, catalogStatus: CATALOG_CUSTOM, accent: level === 1 ? "#0D9488" : "",
       ...(level === 4 ? { products: labelOf("products", PRODUCT_OTHER), softwareSolution: softwareSolution.trim() } : {}) });
     const model = await this.saveItem(m, it, {});
