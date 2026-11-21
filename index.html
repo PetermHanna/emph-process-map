@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EMPH Process Map: demo</title>
+<style>
+ body{margin:0;font-family:'Segoe UI',system-ui,sans-serif;background:#E2E8F0;color:#1E293B}
+ .bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px 18px;padding:8px 16px;background:#0F172A;color:#E2E8F0;font-size:13px}
+ .bar b{font-size:14px;color:#fff}
+ .bar a{color:#93C5FD;text-decoration:none}
+ .bar a.on{color:#fff;font-weight:600;border-bottom:2px solid #38BDF8}
+ .bar .note{color:#94A3B8;flex:1 1 260px}
+ #host{padding:16px}
+</style></head>
+<body>
+<div class="bar">
+ <b>EMPH Process Map</b>
+ <span>Demo:</span>
+ <a data-s="realestate" href="?sample=realestate">Harbourview Properties (real estate)</a>
+ <a data-s="engineering" href="?sample=engineering">Lakeside Engineering</a>
+ <a data-s="catalog" href="?sample=catalog">Catalog only</a>
+ <span class="note">Runs in your browser with in-memory data; nothing is saved, reload to start again. In Dynamics 365 it runs on Dataverse.</span>
+ <a href="https://github.com/PetermHanna/emph-process-map">Source and docs on GitHub</a>
+</div>
+<div id="host" style="width:100%;box-sizing:border-box"></div>
+<script>
+ window.EMPH_SAMPLE_ONLY = true;
+ window.EMPH_SAMPLE_NAME = new URLSearchParams(location.search).get("sample") || "realestate";
+ document.querySelectorAll(".bar a[data-s]").forEach(a => { if (a.dataset.s === window.EMPH_SAMPLE_NAME) a.className = "on"; });
+</script>
+<script src="sample-data.js"></script>
+<script src="mock.js"></script>
+<script src="bundle.js"></script>
+<script>window.__boot();</script>
+</body></html>
