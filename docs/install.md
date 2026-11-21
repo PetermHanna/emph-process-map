@@ -50,6 +50,24 @@ The demos put their own processes in scope on top of the real catalog (and, belo
 
 Open the app **EMPH Process Map** and choose **Process map**. After any new import, hard reload (Ctrl+Shift+R) so the browser doesn't keep the old component.
 
+## AI prompts (optional)
+
+The AI analysis (a workshop's Analyse step, and Draft from documents) and the question generator call **AI Builder prompts** in your own environment through Predict, as the signed-in user. The app holds no keys. Each run uses **AI Builder credits** (the app shows an estimate before every run); the environment needs AI Builder and credits. Without the prompts the app works as before and says the AI is not available.
+
+Nothing in the repository creates or changes a prompt for you. Create them by hand, once per environment:
+
+1. In [make.powerapps.com](https://make.powerapps.com), pick the environment, then **AI hub** > **Prompts** > **Build your own prompt**.
+2. Create **EMPH Analyse** from [`map/schema/prompts/analyse.md`](../map/schema/prompts/analyse.md):
+   1. Paste the text of its *Instructions* block.
+   2. Add the inputs exactly as its table says: `Context`, `Transcript`, `Documents` (text) and `Pictures`, `Document` (image or document), each with the sample value given. Put each input where its `[Name]` placeholder is in the text.
+   3. Model: GPT-5 chat. Output: JSON, with the example from its *Output* block. Save.
+3. Save a copy as **EMPH Analyse (GPT-5 reasoning)** with the model GPT-5 reasoning (the person picks chat or reasoning per run; reasoning is far slower and costs about 17 times the credits).
+4. Create **EMPH Question suggest** and **EMPH Question suggest (GPT-5 reasoning)** the same way from [`map/schema/prompts/questions.md`](../map/schema/prompts/questions.md) (four text inputs).
+5. Give the users who run the analysis access to the prompts (share them, or a security role that can run AI Builder models).
+6. In the app, **Settings** > **AI prompts** > **Check the prompts**: each should say *Found*. Another name, or the prompt's id, can be entered there.
+
+What the prompts return comes from an AI and can be wrong. The app checks every answer (a quote must be in its source, a target must exist, a Gap needs its solution approach) and shows the rest as **suggestions**: nothing changes until someone accepts one, and what is accepted is written to history with How *AI accepted*.
+
 ## Access
 
 Give users a security role with read and write on the `emph_` tables. System Administrator isn't needed.
