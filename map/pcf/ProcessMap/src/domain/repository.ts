@@ -796,7 +796,7 @@ export class Repository {
       }
       case "process": {
         if (d.op === "create") {
-          const r = await this.addOwnItem(model, parentId(), words ?? (f.name || f.text));
+          const r = await this.addOwnItem(model, parentId(), words ?? (f.name || f.text), "", (f.reason || p.reason || "") + (quote ? " (" + heard + ")" : ""));
           model = r.model; rowId = r.item.id;
           const extra: Partial<ProcessItem> = { ...(f.name && f.text ? { summary: f.text } : {}), ...(f.owner ? { owner: f.owner } : {}), ...(f.sme ? { sme: f.sme } : {}) };
           if (Object.keys(extra).length) model = await this.saveItem(model, r.item, extra, how);

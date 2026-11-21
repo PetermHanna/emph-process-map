@@ -161,7 +161,9 @@ test("the guard: parents, steps, open questions without a quote, observations", 
   const { req } = setup();
   const q = ev("L0001", "Every project needs a budget approval");
   const r = A.guardChangeSet(set([
-    it({ ref: "p1", object: "process", parent: "80.20", fields: { name: "Check budgets" }, evidence: q }),
+    it({ ref: "p1", object: "process", parent: "80.20", fields: { name: "Check budgets", reason: "the catalog has no budget check" }, evidence: q }),
+    it({ ref: "p3", object: "process", parent: "80.20", fields: { name: "No reason given" }, evidence: q }),
+    it({ ref: "p4", object: "process", parent: "80", fields: { name: "Own area", reason: "x" }, evidence: q }),
     it({ ref: "r1", parent: "p1", fields: { text: "Budget check per phase" }, evidence: q }),
     it({ ref: "p2", object: "process", parent: "80.20", fields: { name: "Bad one" }, evidence: ev("L0001", "words nobody ever said") }),
     it({ ref: "r2", parent: "p2", fields: { text: "Under a dropped one" }, evidence: q }),
@@ -174,6 +176,8 @@ test("the guard: parents, steps, open questions without a quote, observations", 
   ]), req.guard);
   assert.deepEqual(r.kept.map(k => k.ref), ["p1", "r1", "s1", "v1"]);
   assert.match(r.dropped.find(d => d.item.ref === "r2").reason, /its parent p2 was dropped/);
+  assert.match(r.dropped.find(d => d.item.ref === "p3").reason, /needs the reason \(why the catalog doesn't cover it\)/);
+  assert.match(r.dropped.find(d => d.item.ref === "p4").reason, /a new process area is not suggested/);
   assert.match(r.dropped.find(d => d.item.ref === "r3").reason, /not a process code/);
   assert.match(r.dropped.find(d => d.item.ref === "s2").reason, /nothing can come after End/);
   assert.match(r.dropped.find(d => d.item.ref === "s3").reason, /not in the picture/);
@@ -268,7 +272,7 @@ test("accepting applies through the repository with How AI accepted and history;
 });
 test("reject, Clear this run (only untouched suggestions go), and a child waits for its new process", async () => {
   const { gw, repo, model, by } = await runOf([
-    it({ ref: "p1", object: "process", parent: "80.20", fields: { name: "Check budgets" }, evidence: q1 }),
+    it({ ref: "p1", object: "process", parent: "80.20", fields: { name: "Check budgets", reason: "no catalog process checks phase budgets" }, evidence: q1 }),
     it({ ref: "r1", parent: "p1", fields: { text: "Budget check per phase" }, evidence: q1 }),
     it({ ref: "r2", fields: { text: "Approval above ten thousand euros" }, evidence: q1 }),
     it({ ref: "r3", fields: { text: "Approvals above ten thousand euros by the controller" }, evidence: q1 }),
@@ -350,7 +354,7 @@ test("model choice: credits and time first, reasoning far dearer; prompt names b
 
 // ---------- the prompt files ----------
 test("the prompt files declare the inputs the app sends, and their output example reads as a change set", () => {
-  const md = readFileSync(join(root, "schema/prompts/analyse.md"), "utf8");
+  const md = readFileSync(join(root, "schema/prompts/analyse.md"), "utf8").replace(/\r\n/g, "\n");
   for (const i of M.PROMPT_INPUTS.analyse) { assert.ok(md.includes("| `" + i.name + "` | " + (i.type === "text" ? "Text" : "Image or document")), i.name); assert.ok(md.includes("[" + i.name + "]"), "placeholder " + i.name); }
   const instr = /## Instructions[\s\S]*?```text\n([\s\S]*?)\n```/.exec(md)[1];
   assert.ok(Math.abs(instr.length - M.PROMPT_CHARS.analyse) < 1500, "PROMPT_CHARS.analyse is about the prompt's length: " + instr.length);
@@ -359,7 +363,7 @@ test("the prompt files declare the inputs the app sends, and their output exampl
   const s = A.parseChangeSet(example);
   assert.equal(s.version, A.CONTRACT); assert.equal(s.items[0].object, "requirement");
   assert.ok(!/elevion|ampro|hermos/i.test(md), "no Elevion content");
-  const qmd = readFileSync(join(root, "schema/prompts/questions.md"), "utf8");
+  const qmd = readFileSync(join(root, "schema/prompts/questions.md"), "utf8").replace(/\r\n/g, "\n");
   for (const i of M.PROMPT_INPUTS.questions) { assert.ok(qmd.includes("| `" + i.name + "` |"), i.name); assert.ok(qmd.includes("[" + i.name + "]"), "placeholder " + i.name); }
   assert.ok(A.checkQuestions(/## Output[\s\S]*?```json\n([\s\S]*?)\n```/.exec(qmd)[1], { links: [], steps: [], Asked: "" }).ok);
 });

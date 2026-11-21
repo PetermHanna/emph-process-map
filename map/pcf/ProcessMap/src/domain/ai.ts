@@ -14,7 +14,7 @@ import type { Utterance, Visit } from "./session";
 import type { Drawing } from "./drawing";
 import { clock, processKeyOf, activityCodeOf } from "./session";
 import { DELTA, SCOPE, FIT_GAP, GAP_UNSPECIFIED, RAID, RAID_STATUS, LICENCE, SYSTEM, APPROVAL, FLOW_STATE, FLOW_TYPE, SHAPE, AI_CONFIDENCE, PROPOSAL, PROPOSAL_SOURCE, LEVEL_LABEL, labelOf, option, listOf, moscowOf } from "./codes";
-import { inScope, ancestorsOf, childrenOf, isActive, isOff } from "./rules";
+import { inScope, ancestorsOf, childrenOf, isActive, isOff, OWN_RULE } from "./rules";
 
 export const CONTRACT = "emph-1";
 
@@ -339,7 +339,7 @@ export const CONFIDENCES = ["high", "medium", "low"] as const;
 export const OBJECT_RULES: Record<ObjectKind, { ops: string[]; fields: string[]; target: PictureObject[] }> = {
   scope: { ops: ["create", "remove"], fields: ["reason"], target: ["process"] },
   fit_gap: { ops: ["change"], fields: ["fit", "approach", "reason"], target: ["process"] },
-  process: { ops: ["create", "change"], fields: ["name", "text", "owner", "sme"], target: ["process"] },
+  process: { ops: ["create", "change"], fields: ["name", "text", "owner", "sme", "reason"], target: ["process"] },
   step: { ops: ["create", "change", "remove"], fields: ["name", "lane", "after", "text"], target: ["step", "flow"] },
   requirement: { ops: ["create", "change", "remove"], fields: ["text", "type", "priority", "fit", "approach", "owner", "speaker"], target: ["requirement"] },
   risk: { ops: ["create", "change"], fields: ["text", "owner", "due", "impact", "mitigation"], target: ["raid"] },
@@ -550,7 +550,12 @@ export function guardChangeSet(set: ChangeSet, ctx: GuardContext): GuardResult {
       if (p) {
         const a = alive.get(p.toLowerCase()), inPic = pic.get(p.toLowerCase());
         if (a) { if (a.object !== "process" || a.op !== "create") why = "its parent " + p + " is not a process this set creates"; else if (a.ref.toLowerCase() === k.ref.toLowerCase()) why = "it is its own parent"; }
-        else if (ctx.codes.has(p) || (inPic && inPic.object === "process")) { if (k.object === "process" && (ctx.codes.get(p) ?? inPic?.itemLevel ?? 9) >= 4) why = "a process can't go under a scenario (level 4)"; }
+        else if (ctx.codes.has(p) || (inPic && inPic.object === "process")) { if (k.object === "process" && k.op === "create") {
+          // Microsoft's rules for own items (rules.ts OWN_RULE): no own end-to-end process or area here; a business process says why
+          const level = (ctx.codes.get(p) ?? inPic?.itemLevel ?? 9) + 1, rule = OWN_RULE[level];
+          if (!rule || !rule.allowed || level === 2) why = level > 4 ? "a process can't go under a scenario (level 4)" : "a new " + (LEVEL_LABEL[level] || "item").toLowerCase() + " is not suggested: " + (rule?.note || "");
+          else if (rule.reason && !k.fields.reason) why = "a new business process needs the reason (" + rule.reason.toLowerCase() + ")";
+        } }
         else if (inPic && inPic.object === "step" && k.object === "comment") { /* a comment on a flow step */ }
         else if (set.items.some(x => x.ref.toLowerCase() === p.toLowerCase())) why = "its parent " + p + " was dropped";
         else why = "parent " + p + " is not a process code or a ref in this set";

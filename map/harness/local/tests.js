@@ -613,7 +613,133 @@
     if (!/^20\.9\d$/.test(own.emph_catalogcode) || !/Microsoft's approval: Approved/.test(own.emph_summary || "")) throw new Error("own area: " + own.emph_catalogcode + " / " + own.emph_summary);
     return "scope list without duplicate; area " + code + " in and out from Prepare; board offers " + notYet + " not in scope yet; own area " + own.emph_catalogcode + " with approval, no own end-to-end";
   }
-  const ALL = { pages, mainMap, processAndFlow, guide, capture, fitGap, signOff, workshop, transcript, review, systems, raid, history, changeRequest, licences, boards, board, storyline, quickTrack, close, catalogRules };
+  // ---------- slice 5: AI analysis with the local fake AI (made-up answers; no real model) ----------
+  const AI_TRANSCRIPT = "Ana Field   0:01\nEvery project needs a budget approval above ten thousand euros.\n\nBen Office   0:02\nI think the controller usually checks the budget.\n\nAna Field   0:03\nWe plan all resources in a spreadsheet today.\n\nCarl Site   0:04\nWe are worried that approvals will slow the project start.";
+  const items = () => [...document.querySelectorAll('[data-emph="ai-item"]')];
+  const aiItem = re => items().find(x => re.test(x.innerText));
+  const proposals = () => rows("emph_proposal");
+  // A discovery workshop with a transcript; Analyse with the fake AI; the checks drop what can't be true; review by segment;
+  // accept (How AI accepted, history), edit, reject, Accept all, Clear this run
+  async function aiAnalyse() {
+    await newWorkshop("Discovery (EMPH)");
+    q('[data-emph="prepare-start"]').click(); await wait(300);
+    const agenda = await until(() => { const a = document.querySelectorAll('[data-emph="agenda-item"]'); return a.length >= 1 && a; });
+    agenda[0].click(); await wait(300);
+    q('[data-emph="transcript-toggle"]').click();
+    const box = await until(() => q('[data-emph="transcript-paste"] textarea') || q('textarea[data-emph="transcript-paste"]'));
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(box, AI_TRANSCRIPT); box.dispatchEvent(new Event("input", { bubbles: true })); await wait(150);
+    q('[data-emph="transcript-keep"]').click();
+    await until(() => (lastWorkshop().emph_transcript || "").includes("spreadsheet"));
+    q('[data-emph="transcript-toggle"]').click(); await wait(200);
+    await toStep(2);
+    await until(() => q('[data-emph="ai-warning"]'));
+    if (!/come from an AI/.test(q('[data-emph="ai-warning"]').innerText)) throw new Error("no AI warning");
+    const est = await until(() => /credits/.test(q('[data-emph="ai-model"]')?.innerText || "") && q('[data-emph="ai-model"]').innerText);
+    if (!/GPT-5 chat \(fast\): about \d+ AI Builder credits/.test(est) || !/GPT-5 reasoning/.test(est)) throw new Error("estimate: " + est);
+    const runBtn = await until(() => { const b = q('[data-emph="ai-run"]'); return b && !b.disabled && b; }, 6000);
+    const before = proposals().length;
+    window.__fakeAiDelay = 1500;
+    runBtn.click();
+    await until(() => q('[data-emph="ai-progress"]'));
+    await until(() => q('[data-emph="ai-review"]') && proposals().length > before, 10000);
+    const ws = lastWorkshop(), log = session(ws).ai[0];
+    if (!log || log.dropped.length < 3 || !log.skipped.length) throw new Error("log: " + JSON.stringify(log && { d: log.dropped.map(d => d.reason), s: log.skipped }));
+    const reasons = log.dropped.map(d => d.reason).join(" | ");
+    for (const re of [/the quote is not in S1/, /a Gap needs a gap solution approach/, /RQ-99999 is not in the picture/]) if (!re.test(reasons)) throw new Error("not dropped: " + re + " in " + reasons);
+    const mine = proposals().filter(p => p.emph_run === log.run);
+    if (!mine.length || !mine.every(p => p.emph_status === 582100000 && p._emph_workshop_value === ws.emph_workshopid)) throw new Error("proposals " + JSON.stringify(mine.map(p => p.emph_status)));
+    const segs = [...document.querySelectorAll('[data-emph="ai-segment"]')].map(s => s.dataset.key);
+    if (!segs.length || q('[data-emph="ai-segment"]').querySelector('[data-emph="ai-segment-count"]').innerText.indexOf("open") < 0) throw new Error("segments " + segs);
+    // nothing changed yet
+    const reqs = rows("emph_requirement").length, hist = rows("emph_history").length;
+    if (rows("emph_requirement").some(r => /budget approval above ten thousand/.test(r.emph_description || ""))) throw new Error("written before accept");
+    // accept the requirement: applied with How AI accepted and history
+    aiItem(/Requirement · new[\s\S]*budget approval above ten thousand/).querySelector('[data-emph="ai-accept"]').click();
+    const rq = await until(() => rows("emph_requirement").length === reqs + 1 && rows("emph_requirement")[reqs]);
+    if (rq.emph_requirementtype !== 582100006 || rq.emph_sourcetype !== "AI analysis (accepted)" || rq.emph_raisedby !== "Ana Field") throw new Error("requirement " + JSON.stringify(rq));
+    const h = await until(() => rows("emph_history").slice(hist).find(x => x.emph_rowid === rq.emph_requirementid));
+    if (h.emph_how !== 582100005 || h.emph_workshopname !== ws.emph_name) throw new Error("history " + JSON.stringify(h));
+    // edit the risk, reject the open question
+    const risk = aiItem(/Risk · new/);
+    risk.querySelector('[data-emph="ai-edit"]').click();
+    const ta = await until(() => q('[data-emph="ai-edit-box"] textarea'));
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value").set.call(ta, "Approvals may delay project starts by a week"); ta.dispatchEvent(new Event("input", { bubbles: true })); await wait(100);
+    q('[data-emph="ai-edit-accept"]').click();
+    await until(() => rows("emph_raid").some(r => r.emph_description === "Approvals may delay project starts by a week" && r.emph_raidtype === 582100000));
+    aiItem(/Open question · new/).querySelector('[data-emph="ai-reject"]').click();
+    await until(() => proposals().some(p => p.emph_run === log.run && p.emph_status === 582100003));
+    const statuses = proposals().filter(p => p.emph_run === log.run).map(p => p.emph_status);
+    if (!statuses.includes(582100001) || !statuses.includes(582100002)) throw new Error("statuses " + statuses);
+    // the confirmed badge shows on a change to a value agreed in a workshop: none here, so just count what's open, then Clear this run
+    const open = proposals().filter(p => p.emph_run === log.run && p.emph_status === 582100000).length;
+    const realConfirm = window.confirm; window.confirm = () => true;
+    try { q('[data-emph="ai-clear"]').click(); await until(() => !proposals().some(p => p.emph_run === log.run && p.emph_status === 582100000)); } finally { window.confirm = realConfirm; }
+    const left = proposals().filter(p => p.emph_run === log.run).length;
+    if (left !== 3) throw new Error("after clear " + left);
+    // history page shows How AI accepted
+    await nav("history");
+    await until(() => [...document.querySelectorAll('[data-emph="history-row"]')].some(r => /AI accepted/.test(r.innerText)));
+    return mine.length + " suggestions in " + segs.length + " segments (" + segs.join(", ") + "); dropped: " + log.dropped.length + " (" + log.dropped.map(d => d.reason.slice(0, 40)).join("; ") + "); already so: " + log.skipped.length +
+      "; accepted " + rq.emph_reqid + " (How AI accepted, history), edited a risk, rejected a question, cleared " + open + " untouched";
+  }
+  // Accept all in a segment applies each one; a fit-gap Gap comes with its approach
+  async function aiAcceptAll() {
+    await nav("workshops");
+    const w = lastWorkshop();
+    [...document.querySelectorAll("tbody tr")].find(t => t.innerText.includes(w.emph_name))?.click(); await wait(300);
+    await toStep(2);
+    window.__fakeAiDelay = 200;
+    (await until(() => { const b = q('[data-emph="ai-run"]'); return b && !b.disabled && b; }, 6000)).click();
+    await until(() => session(lastWorkshop()).ai.length === 2, 10000);
+    const run = session(lastWorkshop()).ai[0].run;
+    const seg = await until(() => [...document.querySelectorAll('[data-emph="ai-segment"]')].find(s => s.querySelector('[data-emph="ai-accept-all"]') && !s.querySelector('[data-emph="ai-accept-all"]').disabled && /Fit gap/.test(s.innerText)));
+    seg.querySelector('[data-emph="ai-accept-all"]').click();
+    await until(() => !proposals().some(p => p.emph_run === run && p.emph_status === 582100000 && JSON.parse(p.emph_details).segment === seg.dataset.key), 8000);
+    const fg = proposals().find(p => p.emph_run === run && JSON.parse(p.emph_details).object === "fit_gap");
+    const it = rows("emph_processitem").find(r => r.emph_processitemid === fg.emph_targetrowid);
+    if (it.emph_fitgapstatus !== 582100001 || it.emph_gapsolutionapproach !== 582100002 || it.emph_sethow !== 582100005) throw new Error("fit gap " + JSON.stringify([it.emph_fitgapstatus, it.emph_gapsolutionapproach, it.emph_sethow]));
+    return "Accept all in " + seg.dataset.key + ": " + it.emph_catalogcode + " Gap (30 - Power Platform), How AI accepted; second run kept apart from the first";
+  }
+  // Prepare: the question generator; a made-up link is removed, a question is added to the workshop as an open question
+  async function aiQuestions() {
+    await toStep(0);
+    const gen = await until(() => q('[data-emph="ai-questions-gen"]'));
+    gen.querySelector('[data-emph="ai-questions-run"]').click();
+    const qs = await until(() => document.querySelectorAll('[data-emph="ai-suggested-question"]').length && document.querySelectorAll('[data-emph="ai-suggested-question"]'), 8000);
+    if (![...qs].some(x => /link was not one Microsoft's flow gives/.test(x.innerText))) throw new Error("made-up link not removed");
+    const n = rows("emph_raid").length;
+    qs[0].querySelector('[data-emph="ai-question-keep"]').click();
+    const r = await until(() => rows("emph_raid").length === n + 1 && rows("emph_raid")[n]);
+    if (!r.emph_isquestion || r._emph_workshop_value !== lastWorkshop().emph_workshopid || !/AI question generator/.test(r.emph_sourcetext)) throw new Error("question " + JSON.stringify(r));
+    return qs.length + " questions suggested; added “" + r.emph_description.slice(0, 60) + "…” as an open question";
+  }
+  // Draft from documents: no workshop; a text document read in the browser; the run log in the workspace settings
+  async function aiDraft() {
+    await nav("workshops");
+    if (!q('[data-emph="ai-draft-toggle"]')) { button(/All workshops/).click(); await wait(250); }
+    q('[data-emph="ai-draft-toggle"]').click();
+    const input = await until(() => q('[data-emph="ai-draft-card"] input[data-emph="ai-file"]'));
+    const dt = new DataTransfer();
+    dt.items.add(new File(["Procedure\nEvery purchase order above five hundred euros needs a second signature.\n"], "procedure.txt", { type: "text/plain" }));
+    input.files = dt.files; input.dispatchEvent(new Event("change", { bubbles: true }));
+    await until(() => /procedure\.txt\s*\(read as text\)/.test(q('[data-emph="ai-draft-card"] [data-emph="ai-docs"]').innerText));
+    const before = (JSON.parse(rows("emph_workspace")[0].emph_settings || "{}").aiRuns || []).length;
+    (await until(() => { const b = q('[data-emph="ai-draft-card"] [data-emph="ai-run"]'); return b && !b.disabled && b; })).click();
+    await until(() => (JSON.parse(rows("emph_workspace")[0].emph_settings || "{}").aiRuns || []).length === before + 1, 10000);
+    const run = JSON.parse(rows("emph_workspace")[0].emph_settings).aiRuns[0];
+    const mine = proposals().filter(p => p.emph_run === run.run);
+    if (!mine.length || mine.some(p => p._emph_workshop_value) || !mine.some(p => /second signature/.test(p.emph_proposedvalue || ""))) throw new Error("draft " + JSON.stringify(mine.map(p => p.emph_proposedvalue)));
+    if (!run.sources.some(s => s.kind === "text" && s.name === "procedure.txt")) throw new Error("sources " + JSON.stringify(run.sources));
+    return mine.length + " suggestion(s) from procedure.txt without a workshop; run log in the workspace settings";
+  }
+  // Settings: the prompts are found (by the fake); a missing prompt says so in the Analyse step
+  async function aiPrompts() {
+    await nav("settings");
+    q('[data-emph="ai-prompts-check"]').click();
+    await until(() => (q('[data-emph="ai-prompts"]').innerText.match(/Found/g) || []).length === 4);
+    return "4 prompts found (fake AI Builder)";
+  }
+  const ALL = { pages, mainMap, processAndFlow, guide, capture, fitGap, signOff, workshop, transcript, review, systems, raid, history, changeRequest, licences, boards, board, storyline, quickTrack, close, catalogRules, aiAnalyse, aiAcceptAll, aiQuestions, aiDraft, aiPrompts };
   window.__tests = {
     ...ALL,
     async all() { const r = {}; for (const [k, f] of Object.entries(ALL)) { try { r[k] = await f(); } catch (e) { r[k] = "FAIL " + (f.step ? "at step " + f.step + ": " : "") + e.message; } } return r; },

@@ -27,6 +27,8 @@ import { StoryTool } from "./WorkshopStory";
 import { Conclusion, Close, kindLabel, peopleOf } from "./WorkshopClose";
 import { FlowStudio } from "../flow/FlowStudio";
 import { GUIDANCE } from "../guidance";
+import { AiAnalyse } from "./AiAnalyse";
+import { AiQuestions } from "./AiQuestions";
 
 const anyInScope = (m: Model) => itemsAt(m, 3).some(p => effectiveScope(m, p));
 /** Systems used today for a business process: on the process itself or on its area. */
@@ -44,6 +46,7 @@ export function Workshops({ model, repo, apply }: PageProps & { nav: Nav }) {
   const [kindIx, setKindIx] = React.useState<number>(KINDS.findIndex(k => k.kind === "discovery"));
   const [tplId, setTplId] = React.useState<string | null>(null);
   const [problem, setProblem] = React.useState<string | null>(null);
+  const [draft, setDraft] = React.useState(false);
   const kind = KINDS[kindIx].kind;
   const e2eItem = model.items.find(x => x.id === e2e) || null;
   const tpls = kind !== "discovery" && e2eItem ? templatesFor(GUIDANCE, kind, e2eItem.code) : [];
@@ -84,6 +87,13 @@ export function Workshops({ model, repo, apply }: PageProps & { nav: Nav }) {
           </table>
         </div>
       )}
+      <div className={l.card} data-emph="ai-draft-card">
+        <div className={l.row} style={{ justifyContent: "space-between" }}>
+          <span style={{ fontSize: 13 }}><b>Draft from documents</b> <span className={l.muted}>· processes, fit-gap, flows, requirements and open questions from the organisation's own documents, with or without a workshop. An AI suggests; you decide.</span></span>
+          <Button size="small" data-emph="ai-draft-toggle" onClick={() => setDraft(d => !d)}>{draft ? "Hide" : "Open"}</Button>
+        </div>
+        {draft && <AiAnalyse model={model} repo={repo} apply={apply} w={null} shots={[]} />}
+      </div>
       <div className={l.muted} style={{ fontSize: 11 }}>Microsoft's workshop templates: {GUIDANCE.templates.length} templates from <a href={GUIDANCE.source.repository} target="_blank" rel="noreferrer">microsoft/dynamics365patternspractices</a> ({GUIDANCE.source.importedOn}), CC BY 4.0 / CC BY-SA 4.0.</div>
     </>
   );
@@ -304,6 +314,7 @@ function Runner({ w, model, repo, apply, onBack, onOpen }: PageProps & { w: Work
               </div>
             )}
             {step === 2 && <Analyse w={w} run={run} model={model} shots={shots} transcriptLines={transcript.length} used={review.accepted} todo={review.todo} rejected={review.rejected} captured={captured.length} openPoints={openPoints.length} />}
+            {step === 2 && <AiAnalyse model={model} repo={repo} apply={apply} w={w} shots={shots} />}
             {step === 3 && <Conclusion model={model} repo={repo} apply={apply} w={w} run={run} onRun={saveRun} items={conclusion} readBack={readBack} onSession={saveSession} closed={closed} />}
             {step === 4 && <Close model={model} repo={repo} apply={apply} w={w} run={run} items={conclusion} cards={cards} closed={closed} how={how} onPlanned={onOpen} readBack={readBack} openList={openList} transcriptTodo={review.todo} />}
           </fieldset>
@@ -417,6 +428,8 @@ function Prepare({ model, repo, apply, w, run, tpl, e2e, processes, save, saveRu
         <AddBox placeholder="An agenda line of our own" onAdd={text => saveRun(r => addLine(r, text))} />
       </div>
       {kind === "discovery" && processes.length > 0 && <FacilitatorAgenda w={w} model={model} repo={repo} agenda={processes} />}
+      <AiQuestions model={model} repo={repo} apply={apply} w={w} tpl={tpl}
+        processes={processes.length ? processes : itemsAt(model, 3).filter(x => effectiveScope(model, x) && (!w.itemId || levelUp(model.items, x, 1)?.id === w.itemId))} />
       <div><Button appearance="primary" data-emph="prepare-start" disabled={!run.agenda.length} onClick={() => save({ phase: 1 })}>Run the agenda</Button></div>
     </>
   );
@@ -504,7 +517,7 @@ function Analyse({ w, run, model, shots, transcriptLines, used, todo, rejected, 
   return (
     <div data-emph="analyse" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <table className={l.table}><tbody>{rows.map(([k, v]) => <tr key={k}><td>{k}</td><td>{v}</td></tr>)}</tbody></table>
-      <div className={l.muted} style={{ fontSize: 12 }}>Nothing here changes data. Go on to the Conclusion when the record is complete.</div>
+      <div className={l.muted} style={{ fontSize: 12 }}>The record above changes nothing. The AI analysis below only suggests: what you accept is written, with How "AI accepted". Go on to the Conclusion when the record is complete.</div>
     </div>
   );
 }

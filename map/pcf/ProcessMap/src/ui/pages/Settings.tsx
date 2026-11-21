@@ -10,6 +10,7 @@ import { PageProps, Edit, AddBox, ListChoice, Pill, Choice } from "../kit";
 import { LICENCE, labelOf, labels, option } from "../../domain/codes";
 import { licenceProblems, licenceSummary, roleProducts, suggestLicence, PRICE_KINDS } from "../../domain/rules";
 import type { LicencePrice, Role } from "../../domain/types";
+import { AI_JOB_LABEL, AI_MODELS, AI_MODEL_LABEL, PROMPT_NAMES, AiJob, promptOf } from "../../domain/aiModels";
 
 const today = () => new Date().toISOString().slice(0, 10);
 const money = (n: number, cur: string) => n.toLocaleString(undefined, { maximumFractionDigits: 2 }) + (cur ? " " + cur : "");
@@ -49,6 +50,7 @@ export function Settings({ model, repo, apply }: PageProps) {
         </div>
       </div>
       <Prices prices={prices} onSave={list => apply(m => repo.saveSettings(m, { ...m.workspace.settings, prices: list }))} />
+      <AiPrompts model={model} repo={repo} apply={apply} />
     </>
   );
 }
@@ -115,6 +117,37 @@ function Prices({ prices, onSave }: { prices: LicencePrice[]; onSave: (list: Lic
         ))}</tbody>
       </table>
       <Button style={{ marginTop: 8 }} icon={<Add16Regular />} data-emph="price-add" onClick={() => onSave(prices.concat({ product: "", kind: "Base", price: 0, currency: prices[prices.length - 1]?.currency || "USD", validFrom: today(), source: "" }))}>Add a price</Button>
+    </div>
+  );
+}
+
+/** The AI Builder prompts the AI analysis and the question generator call: a name or an id per job and model (install.md, "AI prompts"). */
+function AiPrompts({ model, repo, apply }: PageProps) {
+  const l = useLook();
+  const set = model.workspace.settings.aiPrompts || {};
+  const [state, setState] = React.useState<Record<string, string>>({});
+  const check = async () => {
+    const out: Record<string, string> = {};
+    for (const job of Object.keys(PROMPT_NAMES) as AiJob[]) for (const m of AI_MODELS) { const r = await repo.g.promptReady(promptOf(set, job, m)); out[job + m] = r ? "Not found: " + r : "Found"; }
+    setState(out);
+  };
+  return (
+    <div className={l.card} data-emph="ai-prompts">
+      <div className={l.section} style={{ marginTop: 0 }}>AI prompts</div>
+      <div className={l.muted} style={{ fontSize: 12, marginBottom: 8 }}>The AI analysis and the question generator call AI Builder prompts in this environment (they use AI Builder credits). Create them as install.md says,
+        then leave a field empty for the default name, or give another name or the prompt's id. What they return comes from an AI: it is shown as suggestions, and nothing changes until someone accepts one.</div>
+      <table className={l.table}>
+        <thead><tr><th>Job</th><th>Model</th><th>Prompt name or id</th><th /></tr></thead>
+        <tbody>{(Object.keys(PROMPT_NAMES) as AiJob[]).flatMap(job => AI_MODELS.map(m => (
+          <tr key={job + m}>
+            <td>{AI_JOB_LABEL[job]}</td><td>{AI_MODEL_LABEL[m]}</td>
+            <td><Input data-emph={"ai-prompt-" + job + "-" + m} defaultValue={set[job]?.[m] || ""} placeholder={PROMPT_NAMES[job][m]} style={{ width: 320 }}
+              onBlur={e => { const v = e.target.value.trim(); if (v === (set[job]?.[m] || "")) return; apply(mm => repo.saveSettings(mm, { ...mm.workspace.settings, aiPrompts: { ...set, [job]: { ...(set[job] || {}), [m]: v } } })); }} /></td>
+            <td style={{ fontSize: 12 }}>{state[job + m] || ""}</td>
+          </tr>
+        )))}</tbody>
+      </table>
+      <div style={{ marginTop: 8 }}><Button size="small" data-emph="ai-prompts-check" onClick={check}>Check the prompts</Button></div>
     </div>
   );
 }

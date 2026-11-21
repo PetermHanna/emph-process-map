@@ -64,7 +64,7 @@ export const questionCount = (g: Guidance) => g.templates.reduce((n, t) => n + q
 export const STEPS: { name: string; discuss: string; produces: string }[] = [
   { name: "Prepare", discuss: "Who comes, the template and its assumptions, the agenda", produces: "the workshop as it will run" },
   { name: "Run the agenda", discuss: "Each agenda line opens its tool: the board, the storyline review, the key questions, or a business process (scope, walk-through, flow, configuration, fit-gap)", produces: "scope and fit marks, answers, requirements, comments and RAID items" },
-  { name: "Analyse", discuss: "What the workshop recorded: transcript lines used, screenshots, marks. The AI analysis comes later", produces: "the record of the workshop" },
+  { name: "Analyse", discuss: "What the workshop recorded: transcript lines used, screenshots, marks; then the AI analysis suggests changes with quotes, for you to accept, edit or reject", produces: "the record of the workshop and the changes you accepted" },
   { name: "Conclusion", discuss: "One list for the room: agreed, not agreed or parked; read back; who was there", produces: "the agreed conclusion" },
   { name: "Close", discuss: "Write what was agreed, tick Microsoft's child tasks, plan the next workshop", produces: "a closed workshop and the next one" },
 ];

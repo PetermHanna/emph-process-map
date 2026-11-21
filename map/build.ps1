@@ -8,5 +8,5 @@ try {
   node isolate-tabster.mjs; if ($LASTEXITCODE) { throw 'isolate-tabster failed' }
 } finally { Pop-Location }
 python (Join-Path $PSScriptRoot 'package.py'); if ($LASTEXITCODE) { throw 'package failed' }
-node --test (Join-Path $PSScriptRoot 'harness\rules.test.mjs'); if ($LASTEXITCODE) { throw 'tests failed' }
+node --test (Join-Path $PSScriptRoot 'harness\rules.test.mjs') (Join-Path $PSScriptRoot 'harness\ai.test.mjs'); if ($LASTEXITCODE) { throw 'tests failed' }
 Write-Host 'BUILD OK'
